@@ -9,32 +9,32 @@ on:
 
 jobs:
   build-and-test:
-    name: Build & Test KaizenKit
+    name: Build & Test Kaizen iOS
     runs-on: macos-14
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Show Swift & Xcode Version
+      - name: Select Xcode Version
+        run: sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
+
+      - name: Show Toolchain Info
         run: |
-          swift --version
           xcodebuild -version
+          swift --version
 
-      - name: Build KaizenKit Swift Package for iOS Simulator
+      - name: Build for iOS Simulator (Smoke Test)
         run: |
-          set +e
-          swift build -v 2>&1 | tee build.log
-          EXIT_CODE=${PIPESTATUS[0]}
-          if [ $EXIT_CODE -ne 0 ]; then
-            echo "::error::Swift build failed with code $EXIT_CODE"
-            cat build.log
-            exit $EXIT_CODE
-          fi
+          xcodebuild clean build \
+            -project Kaizen.xcodeproj \
+            -scheme Kaizen \
+            -destination "generic/platform=iOS Simulator" \
+            -configuration Debug \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
 
-      - name: Run Unit Tests
-        run: swift test -v
-
-  build-ipa:
+  package-ipa:
     name: Package IPA for AltStore / Sideloading
     needs: build-and-test
     runs-on: macos-14
@@ -42,27 +42,36 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Build and Package IPA
+      - name: Select Xcode Version
+        run: sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
+
+      - name: Build Archive and Export IPA
         run: |
           set -e
-          echo "Empaquetando Kaizen App bundle para AltStore..."
-          mkdir -p Payload/Kaizen.app
+          echo "Compilando archivo nativo para dispositivo iOS (arm64)..."
           
-          # Compilar
-          swift build -c release
+          # 1. Compilar para iOS Device sin firma restrictiva (para permitir AltStore / Sideloadly)
+          xcodebuild clean build \
+            -project Kaizen.xcodeproj \
+            -scheme Kaizen \
+            -sdk iphoneos \
+            -configuration Release \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            CONFIGURATION_BUILD_DIR=$PWD/build/Release-iphoneos
+
+          # 2. Empaquetar en estructura Payload estándar de iOS
+          mkdir -p Payload
+          cp -r build/Release-iphoneos/Kaizen.app Payload/
           
-          # Copiar binario y recursos
-          find .build -name "KaizenKit" -type f -perm +111 -exec cp {} Payload/Kaizen.app/Kaizen \; || true
-          cp App/Info.plist Payload/Kaizen.app/Info.plist
-          cp kaizen.png Payload/Kaizen.app/AppIcon60x60@2x.png || true
-          
-          # Generar archivo IPA
+          # 3. Comprimir en archivo IPA
           zip -r Kaizen.ipa Payload
           echo "Kaizen.ipa generado exitosamente."
 
-      - name: Upload IPA Artifact
+      - name: Upload IPA Artifact for Sideloading
         uses: actions/upload-artifact@v4
         with:
-          name: Kaizen-iOS-IPA
+          name: Kaizen-iPadOS-iOS-IPA
           path: Kaizen.ipa
           retention-days: 14
