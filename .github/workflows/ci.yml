@@ -15,63 +15,24 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Select Xcode Version
-        run: sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
-
       - name: Show Toolchain Info
         run: |
           xcodebuild -version
           swift --version
 
+      - name: Inspect schemes and destinations
+        run: |
+          xcodebuild -project Kaizen.xcodeproj -list
+          xcodebuild -project Kaizen.xcodeproj -showdestinations -scheme Kaizen || true
+
       - name: Build for iOS Simulator (Smoke Test)
         run: |
-          xcodebuild clean build \
+          xcodebuild build \
             -project Kaizen.xcodeproj \
             -scheme Kaizen \
             -destination "generic/platform=iOS Simulator" \
             -configuration Debug \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO
-
-  package-ipa:
-    name: Package IPA for AltStore / Sideloading
-    needs: build-and-test
-    runs-on: macos-14
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Select Xcode Version
-        run: sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
-
-      - name: Build Archive and Export IPA
-        run: |
-          set -e
-          echo "Compilando archivo nativo para dispositivo iOS (arm64)..."
-          
-          # 1. Compilar para iOS Device sin firma restrictiva (para permitir AltStore / Sideloadly)
-          xcodebuild clean build \
-            -project Kaizen.xcodeproj \
-            -scheme Kaizen \
-            -sdk iphoneos \
-            -configuration Release \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
-            CONFIGURATION_BUILD_DIR=$PWD/build/Release-iphoneos
-
-          # 2. Empaquetar en estructura Payload estándar de iOS
-          mkdir -p Payload
-          cp -r build/Release-iphoneos/Kaizen.app Payload/
-          
-          # 3. Comprimir en archivo IPA
-          zip -r Kaizen.ipa Payload
-          echo "Kaizen.ipa generado exitosamente."
-
-      - name: Upload IPA Artifact for Sideloading
-        uses: actions/upload-artifact@v4
-        with:
-          name: Kaizen-iPadOS-iOS-IPA
-          path: Kaizen.ipa
-          retention-days: 14
+            2>&1 | tee xcodebuild.log || (echo "=== LOG COMPLETO DE XCODEBUILD ===" && cat xcodebuild.log && exit 1)
