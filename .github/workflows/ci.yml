@@ -1,4 +1,4 @@
-﻿name: CI & Build Kaizen iOS
+﻿name: CI & Build Kaizen iOS (Release IPA)
 
 on:
   push:
@@ -10,7 +10,7 @@ on:
 jobs:
   build-and-test:
     name: Build & Test KaizenKit
-    runs-on: macos-14 # macOS runner con Xcode moderno de Apple
+    runs-on: macos-14
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -28,3 +28,47 @@ jobs:
 
       - name: Run Unit Tests (Swift Testing)
         run: swift test -v
+
+  build-ipa:
+    name: Package IPA for AltStore / Sideloading
+    needs: build-and-test
+    runs-on: macos-14
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer || true
+
+      - name: Build and Package IPA
+        run: |
+          set -e
+          echo "Compilando Kaizen App para iOS Device (arm64)..."
+          
+          # Crear directorio temporal para el bundle .app
+          mkdir -p Payload/Kaizen.app
+          
+          # Compilar el binario ejecutable con Swift PM en modo release
+          swift build -c release --triple arm64-apple-ios17.0
+          
+          # Copiar el binario generado al bundle
+          if [ -f .build/arm64-apple-ios17.0/release/KaizenKit ]; then
+            cp .build/arm64-apple-ios17.0/release/KaizenKit Payload/Kaizen.app/Kaizen
+          elif [ -f .build/release/KaizenKit ]; then
+            cp .build/release/KaizenKit Payload/Kaizen.app/Kaizen
+          fi
+          
+          # Copiar Info.plist y recursos
+          cp App/Info.plist Payload/Kaizen.app/Info.plist
+          cp kaizen.png Payload/Kaizen.app/AppIcon60x60@2x.png || true
+          
+          # Comprimir en formato IPA estándar
+          zip -r Kaizen.ipa Payload
+          echo "Kaizen.ipa generado exitosamente."
+
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kaizen-iOS-IPA
+          path: Kaizen.ipa
+          retention-days: 14
