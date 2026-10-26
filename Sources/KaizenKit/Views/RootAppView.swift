@@ -36,32 +36,37 @@ struct iPhoneRootLayout: View {
     
     var body: some View {
         TabView {
-            Tab(String(localized: "tab_home"), systemImage: "house.fill") {
-                LibraryView(apiClient: apiClient)
-            }
+            LibraryView(apiClient: apiClient)
+                .tabItem {
+                    Label(String(localized: "tab_home"), systemImage: "house.fill")
+                }
             
-            Tab(String(localized: "tab_library"), systemImage: "books.vertical.fill") {
-                LibraryView(apiClient: apiClient)
-            }
+            LibraryView(apiClient: apiClient)
+                .tabItem {
+                    Label(String(localized: "tab_library"), systemImage: "books.vertical.fill")
+                }
             
-            Tab(String(localized: "tab_requests"), systemImage: "tray.and.arrow.down.fill") {
-                MangaRequestsView(apiClient: apiClient)
-            }
+            MangaRequestsView(apiClient: apiClient)
+                .tabItem {
+                    Label(String(localized: "tab_requests"), systemImage: "tray.and.arrow.down.fill")
+                }
             
-            // Pestañas exclusivas de Administrador / Manager
             if appState.isManagement {
-                Tab(String(localized: "tab_admin"), systemImage: "server.rack") {
-                    AdminDashboardView(apiClient: apiClient)
-                }
+                AdminDashboardView(apiClient: apiClient)
+                    .tabItem {
+                        Label(String(localized: "tab_admin"), systemImage: "server.rack")
+                    }
                 
-                Tab(String(localized: "tab_ai_studio"), systemImage: "sparkles") {
-                    AIStudioView(apiClient: apiClient)
-                }
+                AIStudioView(apiClient: apiClient)
+                    .tabItem {
+                        Label(String(localized: "tab_ai_studio"), systemImage: "sparkles")
+                    }
             }
             
-            Tab(String(localized: "tab_settings"), systemImage: "gearshape.fill") {
-                UserSettingsView(apiClient: apiClient)
-            }
+            UserSettingsView(apiClient: apiClient)
+                .tabItem {
+                    Label(String(localized: "tab_settings"), systemImage: "gearshape.fill")
+                }
         }
     }
 }

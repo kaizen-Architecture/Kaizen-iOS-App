@@ -20,8 +20,16 @@ jobs:
           swift --version
           xcodebuild -version
 
-      - name: Build KaizenKit Swift Package
-        run: swift build -v
+      - name: Build KaizenKit Swift Package for iOS Simulator
+        run: |
+          set +e
+          swift build -v 2>&1 | tee build.log
+          EXIT_CODE=${PIPESTATUS[0]}
+          if [ $EXIT_CODE -ne 0 ]; then
+            echo "::error::Swift build failed with code $EXIT_CODE"
+            cat build.log
+            exit $EXIT_CODE
+          fi
 
       - name: Run Unit Tests
         run: swift test -v
