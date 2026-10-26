@@ -11,4 +11,8 @@ xcuserdata/
 
 # Agent skills
 .agents/
+# Generated Xcode project
+*.xcodeproj
 
+# Temporary CI runs
+run_jobs.json

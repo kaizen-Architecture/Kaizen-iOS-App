@@ -1,0 +1,44 @@
+name: Kaizen
+options:
+  bundleIdPrefix: io.kaizen
+  developmentLanguage: es
+  deploymentTarget:
+    iOS: "17.0"
+targets:
+  Kaizen:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+        excludes:
+          - Info.plist
+      - path: Sources/KaizenKit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.kaizen.manga
+        INFOPLIST_FILE: App/Info.plist
+        SWIFT_VERSION: "5.10"
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGNING_ALLOWED: NO
+        CODE_SIGNING_REQUIRED: NO
+        CODE_SIGN_IDENTITY: ""
+  KaizenTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests/KaizenKitTests
+    dependencies:
+      - target: Kaizen
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.kaizen.tests
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "5.10"
+schemes:
+  Kaizen:
+    build:
+      targets:
+        Kaizen: all
+    test:
+      targets:
+        - KaizenTests

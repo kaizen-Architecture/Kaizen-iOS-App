@@ -1,0 +1,9 @@
+* text=auto eol=lf
+*.xcodeproj text eol=lf
+*.xcscheme text eol=lf
+*.xcworkspacedata text eol=lf
+*.plist text eol=lf
++.ymt text eol=lf
++.yaml text eol=lf
+*.swift text eol=lf
++.xcstrings text eol=lf

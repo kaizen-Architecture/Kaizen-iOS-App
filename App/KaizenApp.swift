@@ -1,5 +1,4 @@
-﻿import SwiftUI
-import KaizenKit
+import SwiftUI
 
 @main
 struct KaizenApp: App {

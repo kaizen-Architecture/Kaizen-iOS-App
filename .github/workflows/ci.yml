@@ -1,4 +1,4 @@
-﻿name: CI & Build Kaizen iOS (Release IPA)
+name: CI & Build Kaizen iOS (Release IPA)
 
 on:
   push:
@@ -8,8 +8,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-and-test:
-    name: Build & Test Kaizen iOS
+  build-and-package:
+    name: Build, Test & Package Kaizen iOS IPA
     runs-on: macos-14
     steps:
       - name: Checkout repository
@@ -18,37 +18,22 @@ jobs:
       - name: Select Xcode Version
         run: sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
 
-      - name: Show Toolchain Info
-        run: |
-          xcodebuild -version
-          swift --version
+      - name: Install XcodeGen
+        run: brew install xcodegen
 
-      - name: Build for iOS Simulator (Smoke Test)
+      - name: Generate Xcode Project
+        run: xcodegen generate
+
+      - name: Run Unit Tests
         run: |
-          xcodebuild clean build \
+          xcodebuild test \
             -project Kaizen.xcodeproj \
             -scheme Kaizen \
-            -destination "generic/platform=iOS Simulator" \
-            -configuration Debug \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
+            -destination "platform=iOS Simulator,name=iPhone 15" \
             CODE_SIGNING_ALLOWED=NO
 
-  package-ipa:
-    name: Package IPA for AltStore / Sideloading
-    needs: build-and-test
-    runs-on: macos-14
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Select Xcode Version
-        run: sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
-
-      - name: Build and Export IPA
+      - name: Build Release App for iOS Device (arm64)
         run: |
-          set -e
-          echo "Compilando Kaizen para dispositivo iOS arm64..."
           xcodebuild clean build \
             -project Kaizen.xcodeproj \
             -scheme Kaizen \
@@ -59,10 +44,12 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CONFIGURATION_BUILD_DIR=$PWD/build/Release-iphoneos
 
+      - name: Package IPA for AltStore
+        run: |
           mkdir -p Payload
           cp -r build/Release-iphoneos/Kaizen.app Payload/
           zip -r Kaizen.ipa Payload
-          echo "Kaizen.ipa generado con éxito."
+          echo "Kaizen.ipa packaged successfully."
 
       - name: Upload IPA Artifact for Sideloading
         uses: actions/upload-artifact@v4

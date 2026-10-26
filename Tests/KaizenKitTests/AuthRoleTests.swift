@@ -1,5 +1,5 @@
-﻿import XCTest
-@testable import KaizenKit
+import XCTest
+@testable import Kaizen
 
 final class AuthRoleXCTests: XCTestCase {
     func testUserRoleManagement() {
