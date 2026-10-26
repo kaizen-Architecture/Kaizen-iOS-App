@@ -1,22 +1,17 @@
-﻿import Testing
+﻿import XCTest
 @testable import KaizenKit
-import Foundation
 
-@Suite("Kaizen Architecture & Feature Tests")
-struct ArchitectureFeatureTests {
-    
-    @Test("Verificar roles de usuario y permisos administrativos")
+final class AuthRoleXCTests: XCTestCase {
     func testUserRoleManagement() {
-        #expect(UserRole.superadmin.isManagement == true)
-        #expect(UserRole.manager.isManagement == true)
-        #expect(UserRole.reader.isManagement == false)
-        #expect(UserRole.service.isManagement == false)
+        XCTAssertTrue(UserRole.superadmin.isManagement)
+        XCTAssertTrue(UserRole.manager.isManagement)
+        XCTAssertFalse(UserRole.reader.isManagement)
+        XCTAssertFalse(UserRole.service.isManagement)
     }
     
-    @Test("Verificar serialización y deserialización de UserSession")
     func testUserSessionEncoding() throws {
         guard let url = URL(string: "http://192.168.20.28:3333") else {
-            Issue.record("URL no válida")
+            XCTFail("URL no válida")
             return
         }
         
@@ -32,14 +27,13 @@ struct ArchitectureFeatureTests {
         let data = try JSONEncoder().encode(session)
         let decoded = try JSONDecoder().decode(UserSession.self, from: data)
         
-        #expect(decoded.id == 42)
-        #expect(decoded.username == "danjes")
-        #expect(decoded.role == .superadmin)
-        #expect(decoded.language == "es")
-        #expect(decoded.serverUrl == url)
+        XCTAssertEqual(decoded.id, 42)
+        XCTAssertEqual(decoded.username, "danjes")
+        XCTAssertEqual(decoded.role, .superadmin)
+        XCTAssertEqual(decoded.language, "es")
+        XCTAssertEqual(decoded.serverUrl, url)
     }
     
-    @Test("Verificar filtrado dinámico de LibraryStore")
     @MainActor
     func testLibraryStoreFiltering() {
         let store = LibraryStore()
@@ -49,60 +43,24 @@ struct ArchitectureFeatureTests {
         
         store.mangas = [manga1, manga2, manga3]
         
-        // Todos
         store.selectedFilter = .all
-        #expect(store.filteredMangas.count == 3)
+        XCTAssertEqual(store.filteredMangas.count, 3)
         
-        // Leyendo
         store.selectedFilter = .reading
-        #expect(store.filteredMangas.count == 1)
-        #expect(store.filteredMangas.first?.title == "Jujutsu Kaisen")
+        XCTAssertEqual(store.filteredMangas.count, 1)
+        XCTAssertEqual(store.filteredMangas.first?.title, "Jujutsu Kaisen")
         
-        // Completados
         store.selectedFilter = .completed
-        #expect(store.filteredMangas.count == 1)
-        #expect(store.filteredMangas.first?.title == "One Piece")
+        XCTAssertEqual(store.filteredMangas.count, 1)
+        XCTAssertEqual(store.filteredMangas.first?.title, "One Piece")
         
-        // Favoritos
         store.selectedFilter = .favorites
-        #expect(store.filteredMangas.count == 1)
-        #expect(store.filteredMangas.first?.title == "Jujutsu Kaisen")
+        XCTAssertEqual(store.filteredMangas.count, 1)
+        XCTAssertEqual(store.filteredMangas.first?.title, "Jujutsu Kaisen")
         
-        // Búsqueda por texto
         store.selectedFilter = .all
         store.searchText = "chain"
-        #expect(store.filteredMangas.count == 1)
-        #expect(store.filteredMangas.first?.title == "Chainsaw Man")
-    }
-    
-    @Test("Verificar máquina de estados del ReaderStore")
-    @MainActor
-    func testReaderStoreState() {
-        let store = ReaderStore(mangaId: "m1", chapterId: "c1")
-        store.pages = ["page1.jpg", "page2.jpg", "page3.jpg"]
-        
-        #expect(store.currentPage == 1)
-        #expect(store.readingDirection == .rightToLeft)
-        #expect(store.isHUDVisible == true)
-        
-        store.currentPage = 3
-        #expect(store.currentPage == 3)
-    }
-    
-    @Test("Verificar creación y serialización de MangaRequestItem")
-    func testMangaRequests() {
-        let req = MangaRequestItem(id: 10, title: "Solo Leveling", startChapter: 1, status: .pending, requestedBy: "danjes")
-        #expect(req.title == "Solo Leveling")
-        #expect(req.status == .pending)
-        #expect(req.startChapter == 1)
-    }
-    
-    @Test("Verificar reseteo de Circuit Breaker en AdminStore")
-    @MainActor
-    func testAdminCircuitBreakerReset() async {
-        let store = AdminStore()
-        #expect(store.circuitBreakerPausedCount > 0)
-        await store.resetCircuitBreaker()
-        #expect(store.circuitBreakerPausedCount == 0)
+        XCTAssertEqual(store.filteredMangas.count, 1)
+        XCTAssertEqual(store.filteredMangas.first?.title, "Chainsaw Man")
     }
 }

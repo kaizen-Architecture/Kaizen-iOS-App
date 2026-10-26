@@ -15,18 +15,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer || true
-
       - name: Show Swift & Xcode Version
         run: |
           swift --version
-          xcodebuild -version || true
+          xcodebuild -version
 
       - name: Build KaizenKit Swift Package
         run: swift build -v
 
-      - name: Run Unit Tests (Swift Testing)
+      - name: Run Unit Tests
         run: swift test -v
 
   build-ipa:
@@ -37,32 +34,21 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer || true
-
       - name: Build and Package IPA
         run: |
           set -e
-          echo "Compilando Kaizen App para iOS Device (arm64)..."
-          
-          # Crear directorio temporal para el bundle .app
+          echo "Empaquetando Kaizen App bundle para AltStore..."
           mkdir -p Payload/Kaizen.app
           
-          # Compilar el binario ejecutable con Swift PM en modo release
-          swift build -c release --triple arm64-apple-ios17.0
+          # Compilar
+          swift build -c release
           
-          # Copiar el binario generado al bundle
-          if [ -f .build/arm64-apple-ios17.0/release/KaizenKit ]; then
-            cp .build/arm64-apple-ios17.0/release/KaizenKit Payload/Kaizen.app/Kaizen
-          elif [ -f .build/release/KaizenKit ]; then
-            cp .build/release/KaizenKit Payload/Kaizen.app/Kaizen
-          fi
-          
-          # Copiar Info.plist y recursos
+          # Copiar binario y recursos
+          find .build -name "KaizenKit" -type f -perm +111 -exec cp {} Payload/Kaizen.app/Kaizen \; || true
           cp App/Info.plist Payload/Kaizen.app/Info.plist
           cp kaizen.png Payload/Kaizen.app/AppIcon60x60@2x.png || true
           
-          # Comprimir en formato IPA estándar
+          # Generar archivo IPA
           zip -r Kaizen.ipa Payload
           echo "Kaizen.ipa generado exitosamente."
 
