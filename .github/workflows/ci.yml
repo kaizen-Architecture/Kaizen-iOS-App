@@ -24,6 +24,9 @@ jobs:
       - name: Generate Xcode Project
         run: xcodegen generate
 
+      - name: Check project format
+        run: grep objectVersion Kaizen.xcodeproj/project.pbxproj
+
       - name: Run Unit Tests
         run: |
           xcodebuild test \
