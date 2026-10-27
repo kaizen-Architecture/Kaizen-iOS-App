@@ -16,3 +16,4 @@ xcuserdata/
 
 # Temporary CI runs
 run_jobs.json
+build-output/
