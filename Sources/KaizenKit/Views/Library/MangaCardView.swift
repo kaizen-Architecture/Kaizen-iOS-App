@@ -1,7 +1,8 @@
-﻿import SwiftUI
+import SwiftUI
 
 /// Tarjeta visual reutilizable para portadas de Manga en cuadrículas
 public struct MangaCardView: View {
+    @Environment(AppState.self) private var appState
     public let manga: Manga
     
     public init(manga: Manga) {
@@ -13,27 +14,10 @@ public struct MangaCardView: View {
             ZStack(alignment: .topTrailing) {
                 // Portada
                 Group {
-                    if let urlStr = manga.coverUrl, let url = URL(string: urlStr) {
-                        AsyncImage(url: url) { phase in
-                            switch phase {
-                            case .success(let image):
-                                image
-                                    .resizable()
-                                    .scaledToFill()
-                            case .failure:
-                                placeholderCover
-                            case .empty:
-                                ZStack {
-                                    Color.white.opacity(0.05)
-                                    ProgressView().tint(.cyan)
-                                }
-                            @unknown default:
-                                placeholderCover
-                            }
-                        }
-                    } else {
-                        placeholderCover
-                    }
+                    RemoteImage(
+                        url: manga.coverUrl.flatMap { URL(string: $0) },
+                        token: appState.session?.apiToken
+                    )
                 }
                 .aspectRatio(2/3, contentMode: .fit)
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))

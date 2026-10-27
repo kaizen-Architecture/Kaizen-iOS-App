@@ -37,9 +37,9 @@ final class AuthRoleXCTests: XCTestCase {
     @MainActor
     func testLibraryStoreFiltering() {
         let store = LibraryStore()
-        let manga1 = Manga(id: "1", title: "Jujutsu Kaisen", readingPercentage: 50.0, isFavorite: true)
-        let manga2 = Manga(id: "2", title: "One Piece", readingPercentage: 100.0, isFavorite: false)
-        let manga3 = Manga(id: "3", title: "Chainsaw Man", readingPercentage: 0.0, isFavorite: false)
+        let manga1 = Manga(id: 1, title: "Jujutsu Kaisen", readingPercentage: 50.0, isFavorite: true)
+        let manga2 = Manga(id: 2, title: "One Piece", readingPercentage: 100.0, isFavorite: false)
+        let manga3 = Manga(id: 3, title: "Chainsaw Man", readingPercentage: 0.0, isFavorite: false)
         
         store.mangas = [manga1, manga2, manga3]
         
@@ -62,5 +62,51 @@ final class AuthRoleXCTests: XCTestCase {
         store.searchText = "chain"
         XCTAssertEqual(store.filteredMangas.count, 1)
         XCTAssertEqual(store.filteredMangas.first?.title, "Chainsaw Man")
+    }
+    
+    /// Forma real de `GET /api/v1/mangas` en el servidor Kaizen (id numérico, metadata y readingStatus anidados).
+    func testMangaDecodesServerShape() throws {
+        let json = """
+        [{
+          "id": 7, "isFavorite": true, "title": "Berserk", "libraryId": 1,
+          "createdAt": "2026-10-26T12:35:23.123Z",
+          "metadata": {
+            "cover": "http://192.168.20.28:3333/api/v1/mangas/7/cover",
+            "summary": "Dark fantasy.", "authors": ["Kentaro Miura"],
+            "genres": ["Fantasy"], "status": "ONGOING", "synonyms": ["ベルセルク"]
+          },
+          "library": { "id": 1, "path": "/manga" },
+          "readingStatus": {
+            "totalChapters": 10, "readChapters": 4, "unreadChapters": 6,
+            "percentageComplete": 40, "isFullyRead": false
+          }
+        }]
+        """.data(using: .utf8)!
+        
+        let mangas = try JSONDecoder().decode([Manga].self, from: json)
+        XCTAssertEqual(mangas.count, 1)
+        XCTAssertEqual(mangas[0].id, 7)
+        XCTAssertEqual(mangas[0].title, "Berserk")
+        XCTAssertEqual(mangas[0].coverUrl, "http://192.168.20.28:3333/api/v1/mangas/7/cover")
+        XCTAssertEqual(mangas[0].authors, ["Kentaro Miura"])
+        XCTAssertEqual(mangas[0].totalChapters, 10)
+        XCTAssertEqual(mangas[0].unreadCount, 6)
+        XCTAssertEqual(mangas[0].readingPercentage, 40)
+        XCTAssertTrue(mangas[0].isFavorite)
+    }
+    
+    func testServerURLParsing() {
+        XCTAssertEqual(ServerURL.parse("192.168.20.28:3333")?.absoluteString, "http://192.168.20.28:3333")
+        XCTAssertEqual(ServerURL.parse(" http://kaizen.local:3333/ ")?.absoluteString, "http://kaizen.local:3333")
+        XCTAssertEqual(ServerURL.parse("https://example.com")?.absoluteString, "https://example.com")
+        XCTAssertNil(ServerURL.parse(""))
+        XCTAssertNil(ServerURL.parse("ftp://example.com"))
+    }
+    
+    func testFriendlyErrorsAreBilingual() {
+        XCTAssertTrue(KaizenError.invalidCredentials.userMessage(language: "es").contains("incorrectos"))
+        XCTAssertTrue(KaizenError.invalidCredentials.userMessage(language: "en").contains("Wrong"))
+        XCTAssertTrue(KaizenError.cannotReachServer(host: "192.168.20.28").userMessage(language: "es").contains("192.168.20.28"))
+        XCTAssertTrue(KaizenError.tokenRejected.userMessage(language: "en").contains("API Token"))
     }
 }

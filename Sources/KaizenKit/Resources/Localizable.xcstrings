@@ -1,4 +1,4 @@
-﻿{
+{
   "sourceLanguage" : "es",
   "strings" : {
     "app_name" : {
@@ -48,6 +48,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "URL del Servidor"
+          }
+        }
+      }
+    },
+    "login_api_token" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API Token"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API Token"
+          }
+        }
+      }
+    },
+    "login_api_token_hint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy it from Kaizen › Users › API Token of your account."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cópialo en Kaizen › Usuarios › API Token de tu cuenta."
           }
         }
       }

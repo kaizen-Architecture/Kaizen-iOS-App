@@ -1,8 +1,11 @@
-﻿import Foundation
+import Foundation
 
-/// Modelo representativo de un manga en la biblioteca de Kaizen
-public struct Manga: Identifiable, Codable, Sendable, Equatable {
-    public let id: String
+/// Manga de la biblioteca de Kaizen, decodificado desde `GET /api/v1/mangas`.
+///
+/// El servidor devuelve `id` numérico, los datos descriptivos dentro de `metadata`
+/// y el progreso dentro de `readingStatus`; aquí se aplanan.
+public struct Manga: Identifiable, Decodable, Sendable, Equatable {
+    public let id: Int
     public let title: String
     public let altTitles: [String]?
     public let coverUrl: String?
@@ -16,7 +19,7 @@ public struct Manga: Identifiable, Codable, Sendable, Equatable {
     public let isFavorite: Bool
     
     public init(
-        id: String,
+        id: Int,
         title: String,
         altTitles: [String]? = nil,
         coverUrl: String? = nil,
@@ -41,6 +44,32 @@ public struct Manga: Identifiable, Codable, Sendable, Equatable {
         self.unreadCount = unreadCount
         self.readingPercentage = readingPercentage
         self.isFavorite = isFavorite
+    }
+    
+    private enum Keys: String, CodingKey { case id, title, isFavorite, metadata, readingStatus }
+    private enum MetadataKeys: String, CodingKey { case cover, summary, authors, genres, status, synonyms }
+    private enum ProgressKeys: String, CodingKey { case totalChapters, unreadChapters, percentageComplete }
+    
+    public init(from decoder: Decoder) throws {
+        let root = try decoder.container(keyedBy: Keys.self)
+        id = try root.decode(Int.self, forKey: .id)
+        title = try root.decode(String.self, forKey: .title)
+        isFavorite = try root.decodeIfPresent(Bool.self, forKey: .isFavorite) ?? false
+        
+        let meta = try? root.nestedContainer(keyedBy: MetadataKeys.self, forKey: .metadata)
+        let cover = try meta?.decodeIfPresent(String.self, forKey: .cover)
+        let summary = try meta?.decodeIfPresent(String.self, forKey: .summary)
+        coverUrl = (cover?.isEmpty == false) ? cover : nil
+        synopsis = (summary?.isEmpty == false) ? summary : nil
+        authors = try meta?.decodeIfPresent([String].self, forKey: .authors)
+        genres = try meta?.decodeIfPresent([String].self, forKey: .genres)
+        status = try meta?.decodeIfPresent(String.self, forKey: .status)
+        altTitles = try meta?.decodeIfPresent([String].self, forKey: .synonyms)
+        
+        let progress = try? root.nestedContainer(keyedBy: ProgressKeys.self, forKey: .readingStatus)
+        totalChapters = try progress?.decodeIfPresent(Int.self, forKey: .totalChapters) ?? 0
+        unreadCount = try progress?.decodeIfPresent(Int.self, forKey: .unreadChapters) ?? 0
+        readingPercentage = try progress?.decodeIfPresent(Double.self, forKey: .percentageComplete) ?? 0
     }
 }
 

@@ -35,6 +35,8 @@
         <string>UIInterfaceOrientationLandscapeLeft</string>
         <string>UIInterfaceOrientationLandscapeRight</string>
     </array>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Kaizen necesita acceder a tu red local para conectar con tu servidor Kaizen. / Kaizen needs local network access to connect to your Kaizen server.</string>
     <key>NSAppTransportSecurity</key>
     <dict>
         <key>NSAllowsArbitraryLoads</key>

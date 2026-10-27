@@ -1,4 +1,4 @@
-﻿import SwiftUI
+import SwiftUI
 
 public enum LibraryFilter: String, CaseIterable, Identifiable {
     case all = "Todos"
@@ -41,7 +41,7 @@ public final class LibraryStore {
         }
     }
     
-    public func loadLibrary(apiClient: KaizenAPIClient, session: UserSession?) async {
+    public func loadLibrary(apiClient: KaizenAPIClient, session: UserSession?, language: String = "es") async {
         guard let session else { return }
         isLoading = true
         errorMessage = nil
@@ -52,8 +52,10 @@ public final class LibraryStore {
                 serverUrl: session.serverUrl,
                 token: session.apiToken
             )
+        } catch let error as KaizenError {
+            errorMessage = error.userMessage(language: language)
         } catch {
-            errorMessage = "Error cargando la biblioteca: \(error.localizedDescription)"
+            errorMessage = error.localizedDescription
         }
     }
 }
@@ -110,11 +112,30 @@ public struct LibraryView: View {
                         Spacer()
                     } else if store.filteredMangas.isEmpty {
                         Spacer()
-                        ContentUnavailableView(
-                            "No hay mangas",
-                            systemImage: "books.vertical",
-                            description: Text(store.searchText.isEmpty ? "Tu biblioteca está vacía" : "Ningún título coincide con la búsqueda")
-                        )
+                        if let error = store.errorMessage {
+                            VStack(spacing: 14) {
+                                ContentUnavailableView(
+                                    "No se pudo cargar la biblioteca",
+                                    systemImage: "exclamationmark.triangle",
+                                    description: Text(error)
+                                )
+                                Button("Reintentar") {
+                                    Task {
+                                        await store.loadLibrary(apiClient: apiClient, session: appState.session, language: appState.currentLanguage)
+                                    }
+                                }
+                                .buttonStyle(.borderedProminent)
+                                Button("Cerrar sesión", role: .destructive) {
+                                    appState.logout()
+                                }
+                            }
+                        } else {
+                            ContentUnavailableView(
+                                "No hay mangas",
+                                systemImage: "books.vertical",
+                                description: Text(store.searchText.isEmpty ? "Tu biblioteca está vacía" : "Ningún título coincide con la búsqueda")
+                            )
+                        }
                         Spacer()
                     } else {
                         ScrollView {
@@ -133,7 +154,7 @@ public struct LibraryView: View {
                             .padding(.bottom, 24)
                         }
                         .refreshable {
-                            await store.loadLibrary(apiClient: apiClient, session: appState.session)
+                            await store.loadLibrary(apiClient: apiClient, session: appState.session, language: appState.currentLanguage)
                         }
                     }
                 }
@@ -142,7 +163,7 @@ public struct LibraryView: View {
             .searchable(text: $store.searchText, prompt: "Buscar en tu catálogo")
             .task {
                 if store.mangas.isEmpty {
-                    await store.loadLibrary(apiClient: apiClient, session: appState.session)
+                    await store.loadLibrary(apiClient: apiClient, session: appState.session, language: appState.currentLanguage)
                 }
             }
             .sheet(item: $selectedManga) { manga in
