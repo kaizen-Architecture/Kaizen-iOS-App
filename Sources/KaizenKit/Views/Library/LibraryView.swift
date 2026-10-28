@@ -29,6 +29,7 @@ public struct LibraryView: View {
     @State private var searchText: String = ""
     @State private var selectedManga: Manga?
     @State private var showCreateLibraryAlert = false
+    @State private var showAddMangaSheet = false
     @State private var newLibraryPath = ""
     @State private var creationError: String?
     
@@ -359,8 +360,21 @@ public struct LibraryView: View {
                     }
                 }
             }
-            .navigationTitle(String(localized: "tab_library"))
+            .navigationTitle(isEn ? "Library" : "Biblioteca")
             .searchable(text: $searchText, prompt: isEn ? "Search your catalog..." : "Buscar en tu catálogo...")
+            .toolbar {
+                if appState.isManagement {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            showAddMangaSheet = true
+                        } label: {
+                            Label(isEn ? "Add Manga" : "Añadir Manga", systemImage: "plus.circle.fill")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.cyan)
+                        }
+                    }
+                }
+            }
             .task {
                 if appState.mangas.isEmpty {
                     await appState.loadLibrary(client: apiClient, force: false)
@@ -368,6 +382,11 @@ public struct LibraryView: View {
             }
             .sheet(item: $selectedManga) { manga in
                 MangaDetailSheet(manga: manga, apiClient: apiClient)
+            }
+            .sheet(isPresented: $showAddMangaSheet) {
+                AddMangaRemoteSheet(apiClient: apiClient) {
+                    Task { await appState.loadLibrary(client: apiClient, force: true) }
+                }
             }
             .alert(isEn ? "New Server Library" : "Nueva Biblioteca", isPresented: $showCreateLibraryAlert) {
                 TextField(isEn ? "Server path (e.g. /manga/manhwa)" : "Ruta en servidor (ej: /manga/manhwa)", text: $newLibraryPath)

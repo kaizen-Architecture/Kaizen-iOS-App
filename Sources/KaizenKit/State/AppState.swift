@@ -279,13 +279,19 @@ public final class AppState {
         }
     }
     
-    public func switchLanguage(to language: String, client: KaizenAPIClient) async {
+    public func setLanguage(_ language: String) {
         self.currentLanguage = language
         UserDefaults.standard.set(language, forKey: "kaizen_user_language")
         if var current = session {
             current.language = language
             self.session = current
             try? KeychainService.shared.saveSession(current)
+        }
+    }
+    
+    public func switchLanguage(to language: String, client: KaizenAPIClient? = nil) async {
+        setLanguage(language)
+        if let client, let current = session {
             try? await client.updateUserLanguage(
                 serverUrl: current.serverUrl,
                 token: current.apiToken,

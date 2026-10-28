@@ -178,4 +178,28 @@ final class AuthRoleXCTests: XCTestCase {
         appState.deleteHistoryEntry(id: entryId)
         XCTAssertTrue(appState.history.isEmpty)
     }
+    
+    @MainActor
+    func testLanguageSwitchingPersistence() {
+        let appState = AppState()
+        appState.setLanguage("en")
+        XCTAssertEqual(appState.currentLanguage, "en")
+        XCTAssertEqual(UserDefaults.standard.string(forKey: "kaizen_user_language"), "en")
+        
+        appState.setLanguage("es")
+        XCTAssertEqual(appState.currentLanguage, "es")
+        XCTAssertEqual(UserDefaults.standard.string(forKey: "kaizen_user_language"), "es")
+    }
+    
+    func testKaizenSourceItemModel() {
+        let s1 = KaizenSourceItem(name: "mangadex", isInstalled: true, isActive: true, isFailed: false, origin: "MANGAL")
+        XCTAssertEqual(s1.id, "mangadex")
+        XCTAssertTrue(s1.isActive)
+        XCTAssertFalse(s1.isFailed)
+        
+        let s2 = KaizenSourceItem(name: "olympus_AI", isInstalled: true, isActive: false, isFailed: true, origin: "AI_GENERATED")
+        XCTAssertFalse(s2.isActive)
+        XCTAssertTrue(s2.isFailed)
+    }
 }
+

@@ -214,7 +214,12 @@ public struct UserSettingsView: View {
                     LabeledContent(isEn ? "Target" : "Plataforma", value: "Native SwiftUI (arm64)")
                 }
             }
-            .navigationTitle(String(localized: "tab_settings"))
+            .navigationTitle(isEn ? "Settings" : "Ajustes")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    InAppLanguageToggle(apiClient: apiClient)
+                }
+            }
             .task {
                 await store.loadSettings(apiClient: apiClient, session: appState.session)
             }

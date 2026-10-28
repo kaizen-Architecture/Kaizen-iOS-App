@@ -211,6 +211,145 @@ public actor KaizenAPIClient {
         let (_, http) = try await send(req)
         guard (200...299).contains(http.statusCode) else { throw KaizenError.server(status: http.statusCode) }
     }
+    
+    // MARK: - Control Remoto del Servidor Kaizen (tRPC)
+    
+    public func refreshAllMetadata(serverUrl: URL, token: String) async throws {
+        let req = try request(try endpoint(serverUrl, path: "/api/trpc/manga.refreshAllMetadata"), method: "POST", token: token, json: ["json": [:]])
+        let (_, http) = try await send(req)
+        guard (200...299).contains(http.statusCode) else { throw KaizenError.server(status: http.statusCode) }
+    }
+    
+    public func cleanupDuplicates(serverUrl: URL, token: String) async throws {
+        let req = try request(try endpoint(serverUrl, path: "/api/trpc/manga.cleanupDuplicates"), method: "POST", token: token, json: ["json": [:]])
+        let (_, http) = try await send(req)
+        guard (200...299).contains(http.statusCode) else { throw KaizenError.server(status: http.statusCode) }
+    }
+    
+    public func resetAllCircuitBreakers(serverUrl: URL, token: String) async throws {
+        let req = try request(try endpoint(serverUrl, path: "/api/trpc/manga.resetAllCircuitBreakers"), method: "POST", token: token, json: ["json": [:]])
+        let (_, http) = try await send(req)
+        guard (200...299).contains(http.statusCode) else { throw KaizenError.server(status: http.statusCode) }
+    }
+    
+    public func triggerStatusAudit(serverUrl: URL, token: String) async throws {
+        let req = try request(try endpoint(serverUrl, path: "/api/trpc/manga.triggerStatusAudit"), method: "POST", token: token, json: ["json": [:]])
+        let (_, http) = try await send(req)
+        guard (200...299).contains(http.statusCode) else { throw KaizenError.server(status: http.statusCode) }
+    }
+    
+    public func syncScrapers(serverUrl: URL, token: String) async throws {
+        let req = try request(try endpoint(serverUrl, path: "/api/trpc/sources.sync"), method: "POST", token: token, json: ["json": [:]])
+        let (_, http) = try await send(req)
+        guard (200...299).contains(http.statusCode) else { throw KaizenError.server(status: http.statusCode) }
+    }
+    
+    public func syncAniList(serverUrl: URL, token: String) async throws {
+        let req = try request(try endpoint(serverUrl, path: "/api/trpc/settings.syncAniListProgress"), method: "POST", token: token, json: ["json": [:]])
+        let (_, http) = try await send(req)
+        guard (200...299).contains(http.statusCode) else { throw KaizenError.server(status: http.statusCode) }
+    }
+    
+    public func retryAllFailedJobs(serverUrl: URL, token: String) async throws {
+        let req = try request(try endpoint(serverUrl, path: "/api/trpc/manga.retryAllFailedJobs"), method: "POST", token: token, json: ["json": [:]])
+        let (_, http) = try await send(req)
+        guard (200...299).contains(http.statusCode) else { throw KaizenError.server(status: http.statusCode) }
+    }
+    
+    public func cleanQueue(serverUrl: URL, token: String, queueName: String = "downloadQueue", type: String = "completed") async throws {
+        let req = try request(try endpoint(serverUrl, path: "/api/trpc/queues.cleanQueue"), method: "POST", token: token, json: ["json": ["queueName": queueName, "type": type]])
+        let (_, http) = try await send(req)
+        guard (200...299).contains(http.statusCode) else { throw KaizenError.server(status: http.statusCode) }
+    }
+    
+    public func updateRequestStatus(serverUrl: URL, token: String, requestId: Int, status: String) async throws {
+        let req = try request(try endpoint(serverUrl, path: "/api/trpc/mangaRequest.updateStatus"), method: "POST", token: token, json: ["json": ["id": requestId, "status": status]])
+        let (_, http) = try await send(req)
+        guard (200...299).contains(http.statusCode) else { throw KaizenError.server(status: http.statusCode) }
+    }
+    
+    // MARK: - Añadir Manga Remoto (tRPC)
+    
+    public func fetchAvailableSources(serverUrl: URL, token: String) async throws -> [String] {
+        let req = request(try trpcQueryURL(serverUrl, procedure: "manga.sources", input: [:]), token: token)
+        let (data, http) = try await send(req)
+        guard (200...299).contains(http.statusCode) else { throw KaizenError.server(status: http.statusCode) }
+        guard let list = trpcRawData(data) as? [String] else { return [] }
+        return list
+    }
+    
+    public func searchMangaRemote(serverUrl: URL, token: String, keyword: String, source: String) async throws -> [RemoteSearchResult] {
+        let req = request(try trpcQueryURL(serverUrl, procedure: "manga.search", input: ["keyword": keyword, "source": source]), token: token)
+        let (data, http) = try await send(req)
+        guard (200...299).contains(http.statusCode) else { throw KaizenError.server(status: http.statusCode) }
+        guard let items = trpcRawData(data) as? [[String: Any]] else { return [] }
+        
+        return items.compactMap { dict in
+            guard let title = dict["title"] as? String else { return nil }
+            let src = (dict["source"] as? String) ?? source
+            let status = dict["status"] as? String
+            let chapters = (dict["chapters"] as? Int) ?? 0
+            let cover = dict["cover"] as? String
+            return RemoteSearchResult(title: title, source: src, status: status, chapters: chapters, cover: cover)
+        }
+    }
+    
+    public func addMangaRemote(
+        serverUrl: URL,
+        token: String,
+        source: String,
+        title: String,
+        interval: String = "0 * * * *",
+        minChapters: Int = 0
+    ) async throws {
+        let body: [String: Any] = [
+            "json": [
+                "source": source,
+                "title": title,
+                "interval": interval,
+                "minChapters": minChapters
+            ]
+        ]
+        let req = try request(try endpoint(serverUrl, path: "/api/trpc/manga.add"), method: "POST", token: token, json: body)
+        let (data, http) = try await send(req)
+        if !(200...299).contains(http.statusCode) {
+            if let str = String(data: data, encoding: .utf8), str.contains("CONFLICT") {
+                throw NSError(domain: "Kaizen", code: 409, userInfo: [NSLocalizedDescriptionKey: "Esta serie ya existe en la biblioteca de Kaizen"])
+            }
+            throw KaizenError.server(status: http.statusCode)
+        }
+    }
+
+    // MARK: - Gestión de Fuentes y Scrapers (tRPC)
+    
+    public func fetchSourcesList(serverUrl: URL, token: String) async throws -> [KaizenSourceItem] {
+        let req = request(try trpcQueryURL(serverUrl, procedure: "sources.list", input: [:]), token: token)
+        let (data, http) = try await send(req)
+        guard (200...299).contains(http.statusCode) else { throw KaizenError.server(status: http.statusCode) }
+        guard let list = trpcRawData(data) as? [[String: Any]] else { return [] }
+        
+        return list.compactMap { dict in
+            guard let name = dict["name"] as? String else { return nil }
+            let isInstalled = (dict["isInstalled"] as? Bool) ?? true
+            let isActive = (dict["isActive"] as? Bool) ?? false
+            let isFailed = (dict["isFailed"] as? Bool) ?? false
+            let origin = dict["origin"] as? String
+            return KaizenSourceItem(name: name, isInstalled: isInstalled, isActive: isActive, isFailed: isFailed, origin: origin)
+        }
+    }
+    
+    public func toggleSource(serverUrl: URL, token: String, name: String, activate: Bool, isFailed: Bool = false) async throws {
+        let body: [String: Any] = [
+            "json": [
+                "name": name,
+                "activate": activate,
+                "isFailed": isFailed
+            ]
+        ]
+        let req = try request(try endpoint(serverUrl, path: "/api/trpc/sources.toggle"), method: "POST", token: token, json: body)
+        let (_, http) = try await send(req)
+        guard (200...299).contains(http.statusCode) else { throw KaizenError.server(status: http.statusCode) }
+    }
 
     // MARK: - Ajustes de usuario remotos (tRPC)
 

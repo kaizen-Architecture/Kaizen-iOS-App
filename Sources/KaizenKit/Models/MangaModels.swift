@@ -332,3 +332,39 @@ public enum ReaderTheme: String, CaseIterable, Identifiable, Codable, Sendable {
     public var id: String { rawValue }
 }
 
+/// Resultado de búsqueda remota en fuentes de Kaizen (`trpc/manga.search`)
+public struct RemoteSearchResult: Identifiable, Codable, Sendable, Equatable {
+    public var id: String { "\(source)_\(title)" }
+    public let title: String
+    public let source: String
+    public let status: String?
+    public let chapters: Int
+    public let cover: String?
+    
+    public init(title: String, source: String, status: String? = nil, chapters: Int = 0, cover: String? = nil) {
+        self.title = title
+        self.source = source
+        self.status = status
+        self.chapters = chapters
+        self.cover = cover
+    }
+}
+
+/// Fuente o scraper de Kaizen con estado de activación y fallos (útil ante bloqueos de La Liga / ISPs)
+public struct KaizenSourceItem: Identifiable, Codable, Sendable, Equatable {
+    public var id: String { name }
+    public let name: String
+    public var isInstalled: Bool
+    public var isActive: Bool
+    public var isFailed: Bool
+    public let origin: String?
+    
+    public init(name: String, isInstalled: Bool = true, isActive: Bool = true, isFailed: Bool = false, origin: String? = nil) {
+        self.name = name
+        self.isInstalled = isInstalled
+        self.isActive = isActive
+        self.isFailed = isFailed
+        self.origin = origin
+    }
+}
+

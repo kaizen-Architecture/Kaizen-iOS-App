@@ -26,10 +26,10 @@ public final class MangaRequestsStore {
         }
     }
     
-    public func submitRequest(apiClient: KaizenAPIClient, session: UserSession?) async {
+    public func submitRequest(apiClient: KaizenAPIClient, session: UserSession?, isEn: Bool) async {
         let cleanTitle = titleInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let session, !cleanTitle.isEmpty else {
-            errorMessage = "Introduce el título del manga"
+            errorMessage = isEn ? "Please enter manga title" : "Introduce el título del manga"
             return
         }
         
@@ -46,10 +46,25 @@ public final class MangaRequestsStore {
             )
             titleInput = ""
             startChapterInput = 1
-            successMessage = "¡Solicitud registrada correctamente!"
+            successMessage = isEn ? "Request registered successfully!" : "¡Solicitud registrada correctamente!"
             await loadRequests(apiClient: apiClient, session: session)
         } catch {
-            errorMessage = "Error al registrar la solicitud: \(error.localizedDescription)"
+            errorMessage = isEn ? "Error registering request: \(error.localizedDescription)" : "Error al registrar la solicitud: \(error.localizedDescription)"
+        }
+    }
+    
+    public func updateStatus(apiClient: KaizenAPIClient, session: UserSession?, requestId: Int, status: String) async {
+        guard let session else { return }
+        do {
+            try await apiClient.updateRequestStatus(
+                serverUrl: session.serverUrl,
+                token: session.apiToken,
+                requestId: requestId,
+                status: status
+            )
+            await loadRequests(apiClient: apiClient, session: session)
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 }
@@ -63,6 +78,10 @@ public struct MangaRequestsView: View {
         self.apiClient = apiClient
     }
     
+    private var isEn: Bool {
+        appState.currentLanguage == "en"
+    }
+    
     public var body: some View {
         NavigationStack {
             ZStack {
@@ -71,17 +90,17 @@ public struct MangaRequestsView: View {
                 VStack(spacing: 16) {
                     // Tarjeta superior para solicitar nueva serie
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Solicitar nueva serie a Kaizen")
+                        Text(isEn ? "Request New Series to Kaizen" : "Solicitar nueva serie a Kaizen")
                             .font(.headline)
                             .foregroundStyle(.white)
                         
-                        TextField("Título del manga (AniList / MangaDex)...", text: $store.titleInput)
+                        TextField(isEn ? "Manga title (AniList / MangaDex)..." : "Título del manga (AniList / MangaDex)...", text: $store.titleInput)
                             .textFieldStyle(.plain)
                             .padding(12)
                             .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
                         
                         HStack {
-                            Text("Capítulo inicio:")
+                            Text(isEn ? "Start Chapter:" : "Capítulo inicio:")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                             
@@ -91,27 +110,28 @@ public struct MangaRequestsView: View {
                             Spacer()
                             
                             Button {
-                                Task { await store.submitRequest(apiClient: apiClient, session: appState.session) }
+                                Task { await store.submitRequest(apiClient: apiClient, session: appState.session, isEn: isEn) }
                             } label: {
                                 if store.isSubmitting {
                                     ProgressView().tint(.black)
                                 } else {
-                                    Text("Solicitar")
+                                    Text(isEn ? "Request" : "Solicitar")
                                         .font(.subheadline.weight(.semibold))
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 8)
+                                        .background(Color.cyan, in: RoundedRectangle(cornerRadius: 8))
+                                        .foregroundStyle(.black)
                                 }
                             }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                            .background(Color.cyan, in: Capsule())
-                            .foregroundStyle(.black)
-                            .disabled(store.titleInput.isEmpty || store.isSubmitting)
+                            .disabled(store.isSubmitting || store.titleInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         }
                         
                         if let error = store.errorMessage {
                             Text(error)
                                 .font(.caption)
                                 .foregroundStyle(.red)
-                        } else if let success = store.successMessage {
+                        }
+                        if let success = store.successMessage {
                             Text(success)
                                 .font(.caption)
                                 .foregroundStyle(.green)
@@ -119,11 +139,9 @@ public struct MangaRequestsView: View {
                     }
                     .padding(16)
                     .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 16))
-                    .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.1), lineWidth: 1))
                     .padding(.horizontal)
-                    .padding(.top, 8)
                     
-                    // Listado de peticiones reales
+                    // Lista de peticiones
                     if store.isLoading && store.requests.isEmpty {
                         Spacer()
                         ProgressView().tint(.cyan)
@@ -131,14 +149,14 @@ public struct MangaRequestsView: View {
                     } else if store.requests.isEmpty {
                         Spacer()
                         ContentUnavailableView(
-                            "Sin peticiones registradas",
+                            isEn ? "No Requests Found" : "Sin peticiones registradas",
                             systemImage: "tray",
-                            description: Text("Cuando solicites series o las soliciten otros usuarios en Kaizen, aparecerán aquí con su estado en vivo.")
+                            description: Text(isEn ? "When you or other readers request manga, they will appear here with live status." : "Cuando solicites series o las soliciten otros usuarios en Kaizen, aparecerán aquí con su estado en vivo.")
                         )
                         Spacer()
                     } else {
                         List {
-                            Section("Peticiones en Curso (\(store.requests.count))") {
+                            Section(isEn ? "Pending & Active Requests (\(store.requests.count))" : "Peticiones en Curso (\(store.requests.count))") {
                                 ForEach(store.requests) { req in
                                     HStack(spacing: 12) {
                                         Image(systemName: "book.closed.fill")
@@ -151,7 +169,7 @@ public struct MangaRequestsView: View {
                                                 .foregroundStyle(.white)
                                             
                                             HStack(spacing: 6) {
-                                                Text("Desde Cap. \(req.startChapter)")
+                                                Text((isEn ? "From Ch. " : "Desde Cap. ") + "\(req.startChapter)")
                                                     .font(.caption2)
                                                     .foregroundStyle(.secondary)
                                                 if let username = req.username {
@@ -170,6 +188,44 @@ public struct MangaRequestsView: View {
                                         statusBadge(for: req.status)
                                     }
                                     .padding(.vertical, 4)
+                                    .contextMenu {
+                                        if appState.isManagement {
+                                            Button {
+                                                Task { await store.updateStatus(apiClient: apiClient, session: appState.session, requestId: req.id, status: "APPROVED") }
+                                            } label: {
+                                                Label(isEn ? "Approve Request" : "Aprobar Solicitud", systemImage: "checkmark.circle.fill")
+                                            }
+                                            
+                                            Button {
+                                                Task { await store.updateStatus(apiClient: apiClient, session: appState.session, requestId: req.id, status: "DOWNLOADING") }
+                                            } label: {
+                                                Label(isEn ? "Mark as Downloading" : "Poner a Descargar", systemImage: "arrow.down.circle.fill")
+                                            }
+                                            
+                                            Button(role: .destructive) {
+                                                Task { await store.updateStatus(apiClient: apiClient, session: appState.session, requestId: req.id, status: "REJECTED") }
+                                            } label: {
+                                                Label(isEn ? "Reject Request" : "Rechazar Solicitud", systemImage: "xmark.circle.fill")
+                                            }
+                                        }
+                                    }
+                                    .swipeActions(edge: .trailing) {
+                                        if appState.isManagement {
+                                            Button {
+                                                Task { await store.updateStatus(apiClient: apiClient, session: appState.session, requestId: req.id, status: "APPROVED") }
+                                            } label: {
+                                                Label(isEn ? "Approve" : "Aprobar", systemImage: "checkmark")
+                                            }
+                                            .tint(.green)
+                                            
+                                            Button {
+                                                Task { await store.updateStatus(apiClient: apiClient, session: appState.session, requestId: req.id, status: "REJECTED") }
+                                            } label: {
+                                                Label(isEn ? "Reject" : "Rechazar", systemImage: "xmark")
+                                            }
+                                            .tint(.red)
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -180,7 +236,12 @@ public struct MangaRequestsView: View {
                     }
                 }
             }
-            .navigationTitle(String(localized: "tab_requests"))
+            .navigationTitle(isEn ? "Requests" : "Peticiones")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    InAppLanguageToggle(apiClient: apiClient)
+                }
+            }
             .task {
                 await store.loadRequests(apiClient: apiClient, session: appState.session)
             }
@@ -191,14 +252,14 @@ public struct MangaRequestsView: View {
     private func statusBadge(for status: String) -> some View {
         switch status.uppercased() {
         case "PENDING":
-            Text("Pendiente")
+            Text(isEn ? "Pending" : "Pendiente")
                 .font(.caption2.weight(.bold))
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
                 .background(Color.orange.opacity(0.2), in: Capsule())
                 .foregroundStyle(.orange)
         case "APPROVED":
-            Text("Aprobado")
+            Text(isEn ? "Approved" : "Aprobado")
                 .font(.caption2.weight(.bold))
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
@@ -207,7 +268,7 @@ public struct MangaRequestsView: View {
         case "DOWNLOADING":
             HStack(spacing: 4) {
                 ProgressView().tint(.cyan).scaleEffect(0.7)
-                Text("Descargando")
+                Text(isEn ? "Downloading" : "Descargando")
                     .font(.caption2.weight(.bold))
             }
             .padding(.horizontal, 8)
@@ -215,7 +276,7 @@ public struct MangaRequestsView: View {
             .background(Color.cyan.opacity(0.2), in: Capsule())
             .foregroundStyle(.cyan)
         case "AVAILABLE":
-            Text("Disponible")
+            Text(isEn ? "Available" : "Disponible")
                 .font(.caption2.weight(.bold))
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
