@@ -1,4 +1,4 @@
-﻿import SwiftUI
+import SwiftUI
 
 /// Vista de Historial de Lectura cronológico (inspirado en Paperback, bilingüe)
 public struct ReadingHistoryView: View {
@@ -26,7 +26,7 @@ public struct ReadingHistoryView: View {
         return baseSections.compactMap { section in
             let filtered = section.entries.filter {
                 $0.mangaTitle.localizedLowercase.contains(query) ||
-                $0.chapterFileName.localizedLowercase.contains(query)
+                ($0.chapterFileName?.localizedLowercase.contains(query) ?? false)
             }
             return filtered.isEmpty ? nil : (title: section.title, entries: filtered)
         }

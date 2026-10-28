@@ -148,13 +148,12 @@ final class AuthRoleXCTests: XCTestCase {
         appState.clearHistory()
         XCTAssertTrue(appState.history.isEmpty)
         
+        let manga = Manga(id: 10, title: "Tower of God")
+        let chapter = Chapter(id: 101, mangaId: 10, index: 5, fileName: "ch_005.cbz")
+        
         appState.recordHistory(
-            mangaId: 10,
-            mangaTitle: "Tower of God",
-            coverUrl: nil,
-            chapterId: 101,
-            chapterIndex: 5,
-            chapterFileName: "ch_005.cbz",
+            manga: manga,
+            chapter: chapter,
             pageIndex: 12,
             totalPages: 30
         )
@@ -166,12 +165,8 @@ final class AuthRoleXCTests: XCTestCase {
         
         // Actualizar el mismo capítulo en otra página no debe duplicar la entrada
         appState.recordHistory(
-            mangaId: 10,
-            mangaTitle: "Tower of God",
-            coverUrl: nil,
-            chapterId: 101,
-            chapterIndex: 5,
-            chapterFileName: "ch_005.cbz",
+            manga: manga,
+            chapter: chapter,
             pageIndex: 20,
             totalPages: 30
         )

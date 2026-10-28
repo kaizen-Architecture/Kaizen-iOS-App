@@ -256,7 +256,7 @@ public struct ReadingHistoryEntry: Identifiable, Codable, Sendable, Equatable {
     public var coverUrl: String?
     public var chapterId: Int
     public var chapterIndex: Int
-    public var chapterFileName: String
+    public var chapterFileName: String?
     public var pageIndex: Int
     public var totalPages: Int
     public var updatedAt: Date
@@ -268,7 +268,7 @@ public struct ReadingHistoryEntry: Identifiable, Codable, Sendable, Equatable {
         coverUrl: String? = nil,
         chapterId: Int,
         chapterIndex: Int,
-        chapterFileName: String,
+        chapterFileName: String? = nil,
         pageIndex: Int,
         totalPages: Int,
         updatedAt: Date = Date()
