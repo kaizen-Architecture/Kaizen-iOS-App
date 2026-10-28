@@ -247,3 +247,73 @@ public struct UserShelf: Identifiable, Codable, Sendable, Equatable {
         self.mangaIds = mangaIds
     }
 }
+
+/// Registro en el historial de lectura del usuario (inspirado en Paperback)
+public struct ReadingHistoryEntry: Identifiable, Codable, Sendable, Equatable {
+    public var id: UUID
+    public var mangaId: Int
+    public var mangaTitle: String
+    public var coverUrl: String?
+    public var chapterId: Int
+    public var chapterIndex: Int
+    public var chapterFileName: String
+    public var pageIndex: Int
+    public var totalPages: Int
+    public var updatedAt: Date
+    
+    public init(
+        id: UUID = UUID(),
+        mangaId: Int,
+        mangaTitle: String,
+        coverUrl: String? = nil,
+        chapterId: Int,
+        chapterIndex: Int,
+        chapterFileName: String,
+        pageIndex: Int,
+        totalPages: Int,
+        updatedAt: Date = Date()
+    ) {
+        self.id = id
+        self.mangaId = mangaId
+        self.mangaTitle = mangaTitle
+        self.coverUrl = coverUrl
+        self.chapterId = chapterId
+        self.chapterIndex = chapterIndex
+        self.chapterFileName = chapterFileName
+        self.pageIndex = pageIndex
+        self.totalPages = totalPages
+        self.updatedAt = updatedAt
+    }
+    
+    public var progressPercentage: Double {
+        guard totalPages > 0 else { return 0 }
+        return min(100.0, max(0.0, (Double(pageIndex + 1) / Double(totalPages)) * 100.0))
+    }
+}
+
+/// Modos de lectura soportados (Webtoon, LTR, RTL)
+public enum ReaderMode: String, CaseIterable, Identifiable, Codable, Sendable {
+    case webtoon = "Webtoon (Cascada)"
+    case horizontalLTR = "Páginas (Izquierda a Derecha)"
+    case horizontalRTL = "Manga (Derecha a Izquierda)"
+    
+    public var id: String { rawValue }
+    
+    public var iconName: String {
+        switch self {
+        case .webtoon: return "arrow.up.and.down"
+        case .horizontalLTR: return "arrow.right"
+        case .horizontalRTL: return "arrow.left"
+        }
+    }
+}
+
+/// Temas de fondo para el lector
+public enum ReaderTheme: String, CaseIterable, Identifiable, Codable, Sendable {
+    case black = "Negro OLED"
+    case darkGray = "Gris Oscuro"
+    case light = "Blanco"
+    
+    public var id: String { rawValue }
+}
+

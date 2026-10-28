@@ -73,7 +73,7 @@ public struct MangaCardView: View {
                 .multilineTextAlignment(.leading)
             
             // Subtítulo con capítulos
-            Text("\(manga.totalChapters) capítulos")
+            Text(appState.currentLanguage == "en" ? "\(manga.totalChapters) chapters" : "\(manga.totalChapters) capítulos")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }

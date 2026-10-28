@@ -1,4 +1,4 @@
-﻿import SwiftUI
+import SwiftUI
 
 /// Pantalla Principal (Home) con estanterías lógicas y lectura en curso
 public struct HomeDashboardView: View {
@@ -14,9 +14,21 @@ public struct HomeDashboardView: View {
         self.apiClient = apiClient
     }
     
-    // Mangas que se están leyendo actualmente
+    // Mangas que se están leyendo actualmente (ordenados cronológicamente por el historial)
     private var inProgressMangas: [Manga] {
-        appState.mangas.filter { $0.readingPercentage > 0 && $0.readingPercentage < 100 }
+        let historyMangaIds = appState.history.map { $0.mangaId }
+        var result: [Manga] = []
+        for id in historyMangaIds {
+            if let m = appState.mangas.first(where: { $0.id == id }), !result.contains(where: { $0.id == id }) {
+                result.append(m)
+            }
+        }
+        for m in appState.mangas where m.readingPercentage > 0 && m.readingPercentage < 100 {
+            if !result.contains(where: { $0.id == m.id }) {
+                result.append(m)
+            }
+        }
+        return result
     }
     
     // Mangas favoritos
@@ -29,6 +41,10 @@ public struct HomeDashboardView: View {
         Array(appState.mangas.suffix(10).reversed())
     }
     
+    private var isEn: Bool {
+        appState.currentLanguage == "en"
+    }
+    
     public var body: some View {
         NavigationStack {
             ZStack {
@@ -38,9 +54,9 @@ public struct HomeDashboardView: View {
                     ProgressView().tint(.cyan)
                 } else if appState.mangas.isEmpty {
                     ContentUnavailableView(
-                        "Bienvenido a Kaizen",
+                        isEn ? "Welcome to Kaizen" : "Bienvenido a Kaizen",
                         systemImage: "house",
-                        description: Text("Tu biblioteca aún se está sincronizando con el servidor.")
+                        description: Text(isEn ? "Your library is syncing with the server." : "Tu biblioteca aún se está sincronizando con el servidor.")
                     )
                 } else {
                     ScrollView {
@@ -48,46 +64,30 @@ public struct HomeDashboardView: View {
                             // SECCIÓN 1: Continuar Leyendo
                             if !inProgressMangas.isEmpty {
                                 shelfSection(
-                                    title: "Continuar leyendo",
+                                    title: isEn ? "Continue Reading" : "Continuar leyendo",
                                     icon: "play.circle.fill",
                                     iconColor: .cyan,
                                     mangas: inProgressMangas
                                 )
                             }
                             
-                            // SECCIÓN 2: Estanterías Lógicas Personalizadas del Usuario
+                            // SECCIÓN 2: Estanterías Lógicas Personalizadas (Solo las creadas que tengan mangas)
                             ForEach(appState.shelves) { shelf in
                                 let shelfMangas = appState.mangas.filter { shelf.mangaIds.contains($0.id) }
-                                VStack(alignment: .leading, spacing: 12) {
-                                    HStack {
-                                        Image(systemName: shelf.icon)
-                                            .foregroundStyle(.yellow)
-                                        Text(shelf.name)
-                                            .font(.title3.weight(.bold))
-                                            .foregroundStyle(.white)
-                                        Text("(\(shelfMangas.count))")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                        Spacer()
-                                    }
-                                    .padding(.horizontal, 16)
-                                    
-                                    if shelfMangas.isEmpty {
-                                        Text("Estantería vacía. Añade obras desde la ficha de cualquier manga.")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                            .padding(.horizontal, 16)
-                                            .padding(.vertical, 8)
-                                    } else {
-                                        horizontalMangaList(mangas: shelfMangas)
-                                    }
+                                if !shelfMangas.isEmpty {
+                                    shelfSection(
+                                        title: shelf.name,
+                                        icon: shelf.icon,
+                                        iconColor: .yellow,
+                                        mangas: shelfMangas
+                                    )
                                 }
                             }
                             
                             // SECCIÓN 3: Favoritos
                             if !favoriteMangas.isEmpty {
                                 shelfSection(
-                                    title: "Tus Favoritos",
+                                    title: isEn ? "Your Favorites" : "Tus Favoritos",
                                     icon: "heart.fill",
                                     iconColor: .pink,
                                     mangas: favoriteMangas
@@ -97,7 +97,7 @@ public struct HomeDashboardView: View {
                             // SECCIÓN 4: Recién Añadidos
                             if !recentlyAddedMangas.isEmpty {
                                 shelfSection(
-                                    title: "Recién añadidos",
+                                    title: isEn ? "Recently Added" : "Recién añadidos",
                                     icon: "sparkles",
                                     iconColor: .purple,
                                     mangas: recentlyAddedMangas
@@ -118,7 +118,7 @@ public struct HomeDashboardView: View {
                         newShelfName = ""
                         showCreateShelfSheet = true
                     } label: {
-                        Label("Nueva Estantería", systemImage: "plus.rectangle.on.folder")
+                        Label(isEn ? "New Shelf" : "Nueva Estantería", systemImage: "plus.rectangle.on.folder")
                             .foregroundStyle(.cyan)
                     }
                 }
@@ -131,14 +131,14 @@ public struct HomeDashboardView: View {
             .sheet(item: $selectedManga) { manga in
                 MangaDetailSheet(manga: manga, apiClient: apiClient)
             }
-            .alert("Nueva Estantería Lógica", isPresented: $showCreateShelfSheet) {
-                TextField("Ej: Joyas de la corona, Volver a leer...", text: $newShelfName)
-                Button("Crear") {
+            .alert(isEn ? "New Shelf" : "Nueva Estantería", isPresented: $showCreateShelfSheet) {
+                TextField(isEn ? "e.g. Shonen, Top Picks, Re-reading..." : "Ej: Shonen, Selección, Para releer...", text: $newShelfName)
+                Button(isEn ? "Create" : "Crear") {
                     appState.createShelf(name: newShelfName)
                 }
-                Button("Cancelar", role: .cancel) {}
+                Button(isEn ? "Cancel" : "Cancelar", role: .cancel) {}
             } message: {
-                Text("Organiza tus mangas a tu gusto con tus propias estanterías personales.")
+                Text(isEn ? "Organize your mangas into custom shelves." : "Organiza tus mangas a tu gusto con tus propias estanterías personales.")
             }
         }
     }

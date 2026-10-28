@@ -18,6 +18,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.kaizen.manga
         INFOPLIST_FILE: App/Info.plist
+        MARKETING_VERSION: "1.1.0"
+        CURRENT_PROJECT_VERSION: "2"
         SWIFT_VERSION: "5.10"
         CODE_SIGN_STYLE: Manual
         CODE_SIGNING_ALLOWED: NO

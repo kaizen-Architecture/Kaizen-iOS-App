@@ -7,6 +7,15 @@ public enum LibraryFilter: String, CaseIterable, Identifiable {
     case favorites = "Favoritos"
     
     public var id: String { rawValue }
+    
+    public func label(language: String) -> String {
+        switch self {
+        case .all: return language == "en" ? "All" : "Todos"
+        case .reading: return language == "en" ? "Reading" : "Leyendo"
+        case .caughtUp: return language == "en" ? "Caught Up" : "Al día"
+        case .favorites: return language == "en" ? "Favorites" : "Favoritos"
+        }
+    }
 }
 
 public struct LibraryView: View {
@@ -15,6 +24,8 @@ public struct LibraryView: View {
     
     @State private var selectedFilter: LibraryFilter = .all
     @State private var selectedLibraryId: Int? = nil
+    @State private var selectedStatus: String? = nil
+    @State private var selectedGenre: String? = nil
     @State private var searchText: String = ""
     @State private var selectedManga: Manga?
     @State private var showCreateLibraryAlert = false
@@ -29,13 +40,82 @@ public struct LibraryView: View {
         self.apiClient = apiClient
     }
     
+    private var isEn: Bool {
+        appState.currentLanguage == "en"
+    }
+    
+    private var availableGenres: [String] {
+        let all = appState.mangas.compactMap(\.genres).flatMap { $0 }
+        let cleaned = all.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        return Array(Set(cleaned)).sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+    
+    private var availableStatuses: [String] {
+        let all = appState.mangas.compactMap(\.status)
+        let cleaned = all.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() }.filter { !$0.isEmpty }
+        let set = Set(cleaned)
+        if set.isEmpty {
+            return ["ONGOING", "COMPLETED"]
+        }
+        return Array(set).sorted()
+    }
+    
+    private func localizedStatus(_ status: String) -> String {
+        switch status.uppercased() {
+        case "ONGOING":
+            return isEn ? "Ongoing" : "En emisión"
+        case "COMPLETED":
+            return isEn ? "Completed" : "Finalizado"
+        case "HIATUS":
+            return isEn ? "Hiatus" : "En pausa"
+        case "CANCELLED", "CANCELED":
+            return isEn ? "Cancelled" : "Cancelado"
+        default:
+            return status.capitalized
+        }
+    }
+    
+    private var hasActiveFilters: Bool {
+        selectedFilter != .all || selectedLibraryId != nil || selectedStatus != nil || selectedGenre != nil || !searchText.isEmpty
+    }
+    
+    private func resetFilters() {
+        selectedFilter = .all
+        selectedLibraryId = nil
+        selectedStatus = nil
+        selectedGenre = nil
+        searchText = ""
+    }
+    
     private var filteredMangas: [Manga] {
         appState.mangas.filter { manga in
-            let matchesSearch = searchText.isEmpty ||
-                manga.title.localizedCaseInsensitiveContains(searchText) ||
-                (manga.authors?.contains { $0.localizedCaseInsensitiveContains(searchText) } ?? false)
+            let matchesSearch: Bool
+            if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                matchesSearch = true
+            } else {
+                let text = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                let titleMatch = manga.title.localizedCaseInsensitiveContains(text)
+                let authorMatch = manga.authors?.contains { $0.localizedCaseInsensitiveContains(text) } ?? false
+                let altMatch = manga.altTitles?.contains { $0.localizedCaseInsensitiveContains(text) } ?? false
+                let genreMatch = manga.genres?.contains { $0.localizedCaseInsensitiveContains(text) } ?? false
+                matchesSearch = titleMatch || authorMatch || altMatch || genreMatch
+            }
             
             let matchesLibrary = selectedLibraryId == nil || manga.libraryId == selectedLibraryId
+            
+            let matchesStatus: Bool
+            if let selectedStatus {
+                matchesStatus = manga.status?.uppercased() == selectedStatus.uppercased()
+            } else {
+                matchesStatus = true
+            }
+            
+            let matchesGenre: Bool
+            if let selectedGenre {
+                matchesGenre = manga.genres?.contains { $0.caseInsensitiveCompare(selectedGenre) == .orderedSame } ?? false
+            } else {
+                matchesGenre = true
+            }
             
             let matchesFilter: Bool
             switch selectedFilter {
@@ -49,7 +129,7 @@ public struct LibraryView: View {
                 matchesFilter = manga.isFavorite
             }
             
-            return matchesSearch && matchesLibrary && matchesFilter
+            return matchesSearch && matchesLibrary && matchesStatus && matchesGenre && matchesFilter
         }
     }
     
@@ -60,57 +140,141 @@ public struct LibraryView: View {
                 
                 VStack(spacing: 0) {
                     // Barra superior con filtros y selector de biblioteca
-                    HStack {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 8) {
-                                ForEach(LibraryFilter.allCases) { filter in
-                                    Button(filter.rawValue) {
-                                        selectedFilter = filter
+                    VStack(spacing: 8) {
+                        // Fila 1: Filtros de lectura y biblioteca remota del servidor
+                        HStack {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 8) {
+                                    ForEach(LibraryFilter.allCases) { filter in
+                                        Button(filter.label(language: appState.currentLanguage)) {
+                                            selectedFilter = filter
+                                        }
+                                        .font(.subheadline.weight(.medium))
+                                        .padding(.horizontal, 14)
+                                        .padding(.vertical, 7)
+                                        .background(
+                                            selectedFilter == filter ?
+                                            Color.cyan : Color.white.opacity(0.08),
+                                            in: Capsule()
+                                        )
+                                        .foregroundStyle(
+                                            selectedFilter == filter ? Color.black : Color.white
+                                        )
                                     }
-                                    .font(.subheadline.weight(.medium))
-                                    .padding(.horizontal, 14)
-                                    .padding(.vertical, 8)
-                                    .background(
-                                        selectedFilter == filter ?
-                                        Color.cyan : Color.white.opacity(0.08),
-                                        in: Capsule()
-                                    )
-                                    .foregroundStyle(
-                                        selectedFilter == filter ? Color.black : Color.white
-                                    )
+                                }
+                            }
+                            
+                            // Menú de Bibliotecas de Kaizen
+                            if !appState.libraries.isEmpty {
+                                Menu {
+                                    Button(isEn ? "All Server Libraries" : "Todas las bibliotecas") {
+                                        selectedLibraryId = nil
+                                    }
+                                    Divider()
+                                    ForEach(appState.libraries) { lib in
+                                        Button(lib.displayTitle) {
+                                            selectedLibraryId = lib.id
+                                        }
+                                    }
+                                    Divider()
+                                    Button(isEn ? "Add Library..." : "Añadir biblioteca...") {
+                                        newLibraryPath = ""
+                                        creationError = nil
+                                        showCreateLibraryAlert = true
+                                    }
+                                } label: {
+                                    Image(systemName: selectedLibraryId != nil ? "folder.fill.badge.gearshape" : "folder.badge.gearshape")
+                                        .font(.headline)
+                                        .foregroundStyle(selectedLibraryId != nil ? Color.black : Color.cyan)
+                                        .padding(8)
+                                        .background(selectedLibraryId != nil ? Color.cyan : Color.white.opacity(0.08), in: Circle())
                                 }
                             }
                         }
                         
-                        // Menú de Bibliotecas de Kaizen
-                        if !appState.libraries.isEmpty {
-                            Menu {
-                                Button("Todas las bibliotecas") {
-                                    selectedLibraryId = nil
-                                }
-                                Divider()
-                                ForEach(appState.libraries) { lib in
-                                    Button(lib.displayTitle) {
-                                        selectedLibraryId = lib.id
+                        // Fila 2: Filtros por Tipo (Estado) y Género
+                        HStack(spacing: 8) {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 8) {
+                                    // Selector de Tipo / Estado
+                                    Menu {
+                                        Button(isEn ? "All Types" : "Todos los tipos") {
+                                            selectedStatus = nil
+                                        }
+                                        Divider()
+                                        ForEach(availableStatuses, id: \.self) { status in
+                                            Button(localizedStatus(status)) {
+                                                selectedStatus = status
+                                            }
+                                        }
+                                    } label: {
+                                        HStack(spacing: 5) {
+                                            Image(systemName: "line.3.horizontal.decrease.circle")
+                                            Text(selectedStatus == nil ? (isEn ? "Type: All" : "Tipo: Todos") : localizedStatus(selectedStatus!))
+                                                .fontWeight(.medium)
+                                            Image(systemName: "chevron.down")
+                                                .font(.caption2)
+                                        }
+                                        .font(.caption)
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 6)
+                                        .background(
+                                            selectedStatus != nil ? Color.cyan : Color.white.opacity(0.07),
+                                            in: Capsule()
+                                        )
+                                        .foregroundStyle(selectedStatus != nil ? Color.black : Color.white)
+                                    }
+                                    
+                                    // Selector de Género
+                                    if !availableGenres.isEmpty {
+                                        Menu {
+                                            Button(isEn ? "All Genres" : "Todos los géneros") {
+                                                selectedGenre = nil
+                                            }
+                                            Divider()
+                                            ForEach(availableGenres, id: \.self) { genre in
+                                                Button(genre) {
+                                                    selectedGenre = genre
+                                                }
+                                            }
+                                        } label: {
+                                            HStack(spacing: 5) {
+                                                Image(systemName: "tag")
+                                                Text(selectedGenre == nil ? (isEn ? "Genre: All" : "Género: Todos") : selectedGenre!)
+                                                    .fontWeight(.medium)
+                                                Image(systemName: "chevron.down")
+                                                    .font(.caption2)
+                                            }
+                                            .font(.caption)
+                                            .padding(.horizontal, 10)
+                                            .padding(.vertical, 6)
+                                            .background(
+                                                selectedGenre != nil ? Color.cyan : Color.white.opacity(0.07),
+                                                in: Capsule()
+                                            )
+                                            .foregroundStyle(selectedGenre != nil ? Color.black : Color.white)
+                                        }
+                                    }
+                                    
+                                    // Botón para resetear filtros si hay alguno activo
+                                    if hasActiveFilters {
+                                        Button(action: resetFilters) {
+                                            HStack(spacing: 4) {
+                                                Image(systemName: "xmark.circle.fill")
+                                                Text(isEn ? "Clear" : "Limpiar")
+                                            }
+                                            .font(.caption.weight(.medium))
+                                            .foregroundStyle(.secondary)
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 6)
+                                        }
                                     }
                                 }
-                                Divider()
-                                Button("Añadir biblioteca...") {
-                                    newLibraryPath = ""
-                                    creationError = nil
-                                    showCreateLibraryAlert = true
-                                }
-                            } label: {
-                                Image(systemName: "folder.badge.gearshape")
-                                    .font(.headline)
-                                    .foregroundStyle(.cyan)
-                                    .padding(8)
-                                    .background(Color.white.opacity(0.08), in: Circle())
                             }
                         }
                     }
                     .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
+                    .padding(.vertical, 8)
                     
                     // Contenido
                     if appState.isLoadingLibrary && appState.mangas.isEmpty {
@@ -122,11 +286,11 @@ public struct LibraryView: View {
                         if let error = appState.libraryErrorMessage {
                             VStack(spacing: 14) {
                                 ContentUnavailableView(
-                                    "No se pudo cargar la biblioteca",
+                                    isEn ? "Failed to load library" : "No se pudo cargar la biblioteca",
                                     systemImage: "exclamationmark.triangle",
                                     description: Text(error)
                                 )
-                                Button("Reintentar") {
+                                Button(isEn ? "Retry" : "Reintentar") {
                                     Task {
                                         await appState.loadLibrary(client: apiClient, force: true)
                                     }
@@ -134,11 +298,20 @@ public struct LibraryView: View {
                                 .buttonStyle(.borderedProminent)
                             }
                         } else {
-                            ContentUnavailableView(
-                                "No hay mangas",
-                                systemImage: "books.vertical",
-                                description: Text(searchText.isEmpty ? (selectedFilter == .favorites ? "No tienes mangas marcados como favoritos" : "Tu biblioteca está vacía") : "Ningún título coincide con la búsqueda")
-                            )
+                            VStack(spacing: 16) {
+                                ContentUnavailableView(
+                                    isEn ? "No manga found" : "No hay mangas",
+                                    systemImage: "books.vertical",
+                                    description: Text(hasActiveFilters ? (isEn ? "No manga match the selected filters or search." : "Ningún manga coincide con los filtros o la búsqueda.") : (isEn ? "Your library is empty" : "Tu biblioteca está vacía"))
+                                )
+                                if hasActiveFilters {
+                                    Button(isEn ? "Reset Filters" : "Restablecer filtros") {
+                                        resetFilters()
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .tint(.cyan)
+                                }
+                            }
                         }
                         Spacer()
                     } else {
@@ -156,18 +329,20 @@ public struct LibraryView: View {
                                             Task { await appState.toggleFavorite(mangaId: manga.id, client: apiClient) }
                                         } label: {
                                             Label(
-                                                manga.isFavorite ? "Quitar de favoritos" : "Añadir a favoritos",
+                                                manga.isFavorite ? (isEn ? "Remove from favorites" : "Quitar de favoritos") : (isEn ? "Add to favorites" : "Añadir a favoritos"),
                                                 systemImage: manga.isFavorite ? "heart.slash" : "heart.fill"
                                             )
                                         }
                                         
-                                        Menu("Estanterías") {
-                                            ForEach(appState.shelves) { shelf in
-                                                Button {
-                                                    appState.toggleMangaInShelf(shelfId: shelf.id, mangaId: manga.id)
-                                                } label: {
-                                                    let inShelf = appState.isMangaInShelf(shelfId: shelf.id, mangaId: manga.id)
-                                                    Label(shelf.name, systemImage: inShelf ? "checkmark.circle.fill" : "circle")
+                                        if !appState.shelves.isEmpty {
+                                            Menu(isEn ? "Shelves" : "Estanterías") {
+                                                ForEach(appState.shelves) { shelf in
+                                                    Button {
+                                                        appState.toggleMangaInShelf(shelfId: shelf.id, mangaId: manga.id)
+                                                    } label: {
+                                                        let inShelf = appState.isMangaInShelf(shelfId: shelf.id, mangaId: manga.id)
+                                                        Label(shelf.name, systemImage: inShelf ? "checkmark.circle.fill" : "circle")
+                                                    }
                                                 }
                                             }
                                         }
@@ -185,7 +360,7 @@ public struct LibraryView: View {
                 }
             }
             .navigationTitle(String(localized: "tab_library"))
-            .searchable(text: $searchText, prompt: "Buscar en tu catálogo")
+            .searchable(text: $searchText, prompt: isEn ? "Search your catalog..." : "Buscar en tu catálogo...")
             .task {
                 if appState.mangas.isEmpty {
                     await appState.loadLibrary(client: apiClient, force: false)
@@ -194,9 +369,9 @@ public struct LibraryView: View {
             .sheet(item: $selectedManga) { manga in
                 MangaDetailSheet(manga: manga, apiClient: apiClient)
             }
-            .alert("Nueva Biblioteca", isPresented: $showCreateLibraryAlert) {
-                TextField("Ruta en servidor (ej: /manga/manhwa)", text: $newLibraryPath)
-                Button("Crear") {
+            .alert(isEn ? "New Server Library" : "Nueva Biblioteca", isPresented: $showCreateLibraryAlert) {
+                TextField(isEn ? "Server path (e.g. /manga/manhwa)" : "Ruta en servidor (ej: /manga/manhwa)", text: $newLibraryPath)
+                Button(isEn ? "Create" : "Crear") {
                     guard let session = appState.session, !newLibraryPath.trimmingCharacters(in: .whitespaces).isEmpty else { return }
                     Task {
                         do {
@@ -207,9 +382,9 @@ public struct LibraryView: View {
                         }
                     }
                 }
-                Button("Cancelar", role: .cancel) {}
+                Button(isEn ? "Cancel" : "Cancelar", role: .cancel) {}
             } message: {
-                Text("Introduce la ruta absoluta en el disco del servidor donde se alojarán los mangas.")
+                Text(isEn ? "Enter the absolute path on the server disk where manga will be stored." : "Introduce la ruta absoluta en el disco del servidor donde se alojarán los mangas.")
             }
         }
     }
@@ -226,10 +401,16 @@ public struct MangaDetailSheet: View {
     @State private var isLoadingChapters: Bool = false
     @State private var readingChapter: Chapter?
     @State private var errorMessage: String?
+    @State private var showCreateShelfAlert: Bool = false
+    @State private var newShelfName: String = ""
     
     public init(manga: Manga, apiClient: KaizenAPIClient) {
         self.manga = manga
         self.apiClient = apiClient
+    }
+    
+    private var isEn: Bool {
+        appState.currentLanguage == "en"
     }
     
     private var currentManga: Manga {
@@ -237,11 +418,16 @@ public struct MangaDetailSheet: View {
     }
     
     private var chapters: [Chapter] {
-        currentManga.chapters ?? []
+        detailedManga?.chapters ?? currentManga.chapters ?? []
     }
     
-    private var firstUnreadChapter: Chapter? {
-        chapters.sorted { $0.index < $1.index }.first { !$0.isRead } ?? chapters.sorted { $0.index < $1.index }.first
+    private var isCaughtUp: Bool {
+        if chapters.isEmpty { return false }
+        return chapters.allSatisfy { $0.isRead } || currentManga.readingPercentage >= 100
+    }
+    
+    private var nextUnreadChapter: Chapter? {
+        chapters.sorted { $0.index < $1.index }.first { !$0.isRead }
     }
     
     public var body: some View {
@@ -269,7 +455,7 @@ public struct MangaDetailSheet: View {
                                 
                                 // Estado de publicación
                                 HStack(spacing: 8) {
-                                    Text(currentManga.status == "COMPLETED" ? "Finalizado" : "En emisión")
+                                    Text(currentManga.status == "COMPLETED" ? (isEn ? "Completed" : "Finalizado") : (isEn ? "Ongoing" : "En emisión"))
                                         .font(.caption2.weight(.bold))
                                         .padding(.horizontal, 8)
                                         .padding(.vertical, 4)
@@ -277,7 +463,7 @@ public struct MangaDetailSheet: View {
                                         .foregroundStyle(currentManga.status == "COMPLETED" ? Color.purple : Color.green)
                                     
                                     if currentManga.readingPercentage >= 100 {
-                                        Text("Al día")
+                                        Text(isEn ? "Caught Up" : "Al día")
                                             .font(.caption2.weight(.bold))
                                             .padding(.horizontal, 8)
                                             .padding(.vertical, 4)
@@ -289,11 +475,11 @@ public struct MangaDetailSheet: View {
                                 // Porcentaje de lectura
                                 VStack(alignment: .leading, spacing: 4) {
                                     HStack {
-                                        Text("Progreso: \(Int(currentManga.readingPercentage))%")
+                                        Text(isEn ? "Progress: \(Int(currentManga.readingPercentage))%" : "Progreso: \(Int(currentManga.readingPercentage))%")
                                             .font(.caption.weight(.semibold))
                                             .foregroundStyle(.secondary)
                                         Spacer()
-                                        Text("\(currentManga.totalChapters - currentManga.unreadCount)/\(currentManga.totalChapters) cap.")
+                                        Text("\(currentManga.totalChapters - currentManga.unreadCount)/\(currentManga.totalChapters) " + (isEn ? "ch." : "cap."))
                                             .font(.caption2)
                                             .foregroundStyle(.secondary)
                                     }
@@ -301,7 +487,7 @@ public struct MangaDetailSheet: View {
                                         .tint(.cyan)
                                 }
                                 
-                                // Botones de Favorito y Estanterías Lógicas
+                                // Botones de Favorito y Librerías de Lectura
                                 HStack(spacing: 8) {
                                     Button {
                                         Task {
@@ -312,7 +498,7 @@ public struct MangaDetailSheet: View {
                                         HStack(spacing: 6) {
                                             Image(systemName: currentManga.isFavorite ? "heart.fill" : "heart")
                                                 .foregroundStyle(currentManga.isFavorite ? .pink : .white)
-                                            Text(currentManga.isFavorite ? "Favorito" : "Favorito")
+                                            Text(isEn ? "Favorite" : "Favorito")
                                                 .font(.caption.weight(.semibold))
                                         }
                                         .padding(.horizontal, 10)
@@ -330,11 +516,20 @@ public struct MangaDetailSheet: View {
                                                 Label(shelf.name, systemImage: inShelf ? "checkmark.circle.fill" : "circle")
                                             }
                                         }
+                                        
+                                        Divider()
+                                        
+                                        Button {
+                                            newShelfName = ""
+                                            showCreateShelfAlert = true
+                                        } label: {
+                                            Label(isEn ? "+ New Reading Library..." : "+ Nueva librería de lectura...", systemImage: "plus")
+                                        }
                                     } label: {
                                         HStack(spacing: 6) {
                                             Image(systemName: "books.vertical.fill")
                                                 .foregroundStyle(.yellow)
-                                            Text("Estanterías")
+                                            Text(isEn ? "Reading Library" : "Librería de lectura")
                                                 .font(.caption.weight(.semibold))
                                         }
                                         .padding(.horizontal, 10)
@@ -347,16 +542,50 @@ public struct MangaDetailSheet: View {
                         .padding(.horizontal, 16)
                         .padding(.top, 16)
                         
-                        // Botón de acción principal: Continuar Lectura
-                        if let next = firstUnreadChapter {
+                        // Botón de acción principal: Continuar Lectura / Todo Leído
+                        if isCaughtUp {
+                            VStack(spacing: 8) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "checkmark.seal.fill")
+                                        .font(.title3)
+                                    Text(isEn ? "All Caught Up • Everything Read" : "¡Al día! Todo leído")
+                                        .font(.headline.weight(.bold))
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
+                                .background(Color.green.opacity(0.18), in: RoundedRectangle(cornerRadius: 12))
+                                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.green.opacity(0.4), lineWidth: 1))
+                                .foregroundStyle(Color.green)
+                                
+                                if let firstCh = chapters.sorted(by: { $0.index < $1.index }).first {
+                                    Button {
+                                        readingChapter = firstCh
+                                    } label: {
+                                        HStack(spacing: 6) {
+                                            Image(systemName: "arrow.counterclockwise")
+                                            Text(isEn ? "Re-read from Chapter 1" : "Volver a leer desde el inicio")
+                                        }
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(.secondary)
+                                        .padding(.vertical, 4)
+                                    }
+                                }
+                            }
+                            .padding(.horizontal, 16)
+                        } else if let next = nextUnreadChapter {
                             Button {
                                 readingChapter = next
                             } label: {
                                 HStack {
                                     Image(systemName: "book.fill")
-                                    Text(next.lastReadPage > 0 ? "Continuar Cap. \(next.index) (pág. \(next.lastReadPage))" : "Leer Cap. \(next.index)")
-                                        .font(.headline)
+                                    let validPage = (next.lastReadPage > 0 && next.lastReadPage < 9000) ? next.lastReadPage : 1
+                                    if validPage > 1 {
+                                        Text(isEn ? "Continue Ch. \(next.index) (p. \(validPage))" : "Continuar Cap. \(next.index) (pág. \(validPage))")
+                                    } else {
+                                        Text(isEn ? "Read Ch. \(next.index)" : "Leer Cap. \(next.index)")
+                                    }
                                 }
+                                .font(.headline.weight(.bold))
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 14)
                                 .background(Color.cyan, in: RoundedRectangle(cornerRadius: 12))
@@ -368,7 +597,7 @@ public struct MangaDetailSheet: View {
                         // Sinopsis
                         if let synopsis = currentManga.synopsis, !synopsis.isEmpty {
                             VStack(alignment: .leading, spacing: 6) {
-                                Text("Sinopsis")
+                                Text(isEn ? "Synopsis" : "Sinopsis")
                                     .font(.headline)
                                     .foregroundStyle(.white)
                                 Text(synopsis)
@@ -382,14 +611,14 @@ public struct MangaDetailSheet: View {
                         // Listado de Capítulos
                         VStack(alignment: .leading, spacing: 12) {
                             HStack {
-                                Text("Capítulos (\(chapters.count))")
+                                Text((isEn ? "Chapters (" : "Capítulos (") + "\(chapters.count))")
                                     .font(.title3.weight(.bold))
                                     .foregroundStyle(.white)
                                 
                                 Spacer()
                                 
                                 if !chapters.isEmpty {
-                                    Button("Marcar todo leído") {
+                                    Button(isEn ? "Mark all read" : "Marcar todo leído") {
                                         markAllAsRead()
                                     }
                                     .font(.caption.weight(.semibold))
@@ -406,7 +635,7 @@ public struct MangaDetailSheet: View {
                                 }
                                 .padding(.vertical, 30)
                             } else if chapters.isEmpty {
-                                Text("No hay capítulos disponibles en el servidor")
+                                Text(isEn ? "No chapters available on the server" : "No hay capítulos disponibles en el servidor")
                                     .font(.subheadline)
                                     .foregroundStyle(.secondary)
                                     .padding(.horizontal, 16)
@@ -432,7 +661,7 @@ public struct MangaDetailSheet: View {
                                                             .font(.subheadline.weight(.semibold))
                                                             .foregroundStyle(.white)
                                                         if chapter.lastReadPage > 0 && !chapter.isRead {
-                                                            Text("Página \(chapter.lastReadPage)")
+                                                            Text(isEn ? "Page \(chapter.lastReadPage)" : "Página \(chapter.lastReadPage)")
                                                                 .font(.caption2)
                                                                 .foregroundStyle(.cyan)
                                                         }
@@ -468,23 +697,40 @@ public struct MangaDetailSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cerrar") { dismiss() }
+                    Button(isEn ? "Close" : "Cerrar") { dismiss() }
                 }
             }
             .task {
                 await loadDetail()
             }
             .fullScreenCover(item: $readingChapter) { chapter in
+                let safePage = (chapter.lastReadPage > 0 && chapter.lastReadPage < 9000) ? chapter.lastReadPage : 1
                 ReaderView(
+                    manga: currentManga,
                     mangaId: currentManga.id,
                     chapterId: chapter.id,
                     chapterIndex: chapter.index,
-                    initialPage: chapter.lastReadPage > 0 ? chapter.lastReadPage : 1,
+                    initialPage: safePage,
+                    allChapters: detailedManga?.chapters ?? [],
                     apiClient: apiClient
                 )
                 .onDisappear {
                     Task { await loadDetail() }
                 }
+            }
+            .alert(isEn ? "New Reading Library" : "Nueva Librería de Lectura", isPresented: $showCreateShelfAlert) {
+                TextField(isEn ? "e.g. Masterpieces, Re-read, Top Tier..." : "Ej: Obras maestras, Relecturas, Favoritos...", text: $newShelfName)
+                Button(isEn ? "Create & Add" : "Crear y Añadir") {
+                    let name = newShelfName.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !name.isEmpty {
+                        let newShelf = UserShelf(name: name, icon: "books.vertical.fill", mangaIds: [currentManga.id])
+                        appState.shelves.append(newShelf)
+                        appState.saveShelves()
+                    }
+                }
+                Button(isEn ? "Cancel" : "Cancelar", role: .cancel) {}
+            } message: {
+                Text(isEn ? "Create a custom reading library and automatically add this manga to it." : "Crea una librería de lectura y asigna este manga inmediatamente.")
             }
         }
     }

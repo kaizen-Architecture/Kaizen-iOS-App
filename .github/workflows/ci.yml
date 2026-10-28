@@ -63,14 +63,19 @@ jobs:
 
       - name: Package IPA for AltStore
         run: |
+          VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" App/Info.plist 2>/dev/null || echo "1.1.0")
+          echo "Packaging version: $VERSION"
           mkdir -p Payload
           cp -r build/Release-iphoneos/Kaizen.app Payload/
-          zip -r Kaizen.ipa Payload
-          echo "Kaizen.ipa packaged successfully."
+          zip -r "Kaizen_v${VERSION}.ipa" Payload
+          cp "Kaizen_v${VERSION}.ipa" Kaizen.ipa
+          echo "Kaizen_v${VERSION}.ipa and Kaizen.ipa packaged successfully."
 
       - name: Upload IPA Artifact for Sideloading
         uses: actions/upload-artifact@v4
         with:
-          name: Kaizen-iPadOS-iOS-IPA
-          path: Kaizen.ipa
+          name: Kaizen-v1.1.0-IPA
+          path: |
+            Kaizen_v*.ipa
+            Kaizen.ipa
           retention-days: 14

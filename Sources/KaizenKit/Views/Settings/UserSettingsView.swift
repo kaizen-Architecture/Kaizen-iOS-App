@@ -79,41 +79,45 @@ public struct UserSettingsView: View {
         self.apiClient = apiClient
     }
     
+    private var isEn: Bool {
+        appState.currentLanguage == "en"
+    }
+    
     public var body: some View {
         NavigationStack {
             Form {
                 // Sección AniList & Tracker (Sincronizado con Kaizen)
                 Section {
-                    LabeledContent("Estado") {
+                    LabeledContent(isEn ? "Status" : "Estado") {
                         HStack(spacing: 6) {
                             Circle()
                                 .fill(store.anilistEnabled ? Color.green : Color.secondary)
                                 .frame(width: 8, height: 8)
-                            Text(store.anilistEnabled ? "Conectado en Kaizen" : "Desconectado")
+                            Text(store.anilistEnabled ? (isEn ? "Connected in Kaizen" : "Conectado en Kaizen") : (isEn ? "Disconnected" : "Desconectado"))
                                 .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(store.anilistEnabled ? .green : .secondary)
                         }
                     }
                     
                     if store.anilistEnabled {
-                        LabeledContent("Usuario de AniList", value: store.anilistUsername.isEmpty ? "Configurado" : store.anilistUsername)
-                        LabeledContent("Auto-sync", value: store.anilistAutoSync ? "Activado" : "Desactivado")
+                        LabeledContent(isEn ? "AniList User" : "Usuario de AniList", value: store.anilistUsername.isEmpty ? (isEn ? "Configured" : "Configurado") : store.anilistUsername)
+                        LabeledContent("Auto-sync", value: store.anilistAutoSync ? (isEn ? "Enabled" : "Activado") : (isEn ? "Disabled" : "Desactivado"))
                     }
                 } header: {
-                    Text("Integración con AniList (Servidor Kaizen)")
+                    Text(isEn ? "AniList Integration (Kaizen Server)" : "Integración con AniList (Servidor Kaizen)")
                 } footer: {
-                    Text("Los capítulos leídos se sincronizan automáticamente con tu cuenta de AniList a través del servidor.")
+                    Text(isEn ? "Read chapters automatically sync to your AniList account through the server." : "Los capítulos leídos se sincronizan automáticamente con tu cuenta de AniList a través del servidor.")
                 }
                 
                 // Sección: Estanterías Lógicas del Lector
-                Section("Tus Estanterías Personales") {
+                Section(isEn ? "Your Reading Shelves" : "Tus Estanterías de Lectura") {
                     ForEach(appState.shelves) { shelf in
                         HStack {
                             Image(systemName: shelf.icon)
                                 .foregroundStyle(.yellow)
                             Text(shelf.name)
                             Spacer()
-                            Text("\(shelf.mangaIds.count) obras")
+                            Text("\(shelf.mangaIds.count) " + (isEn ? (shelf.mangaIds.count == 1 ? "title" : "titles") : (shelf.mangaIds.count == 1 ? "obra" : "obras")))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -129,17 +133,17 @@ public struct UserSettingsView: View {
                         newShelfName = ""
                         showNewShelfAlert = true
                     } label: {
-                        Label("Crear nueva estantería...", systemImage: "plus")
+                        Label(isEn ? "Create new shelf..." : "Crear nueva estantería...", systemImage: "plus")
                     }
                 }
                 
                 // Canales de Notificación Personales
-                Section("Canales de Notificación Personales") {
+                Section(isEn ? "Personal Notifications" : "Canales de Notificación") {
                     Toggle("WhatsApp (CallMeBot)", isOn: $store.whatsappEnabled)
                         .tint(.green)
                     if store.whatsappEnabled {
-                        TextField("Teléfono (+34...)", text: $store.whatsappPhone)
-                        SecureField("API Key de CallMeBot", text: $store.whatsappApiKey)
+                        TextField(isEn ? "Phone (+34...)" : "Teléfono (+34...)", text: $store.whatsappPhone)
+                        SecureField(isEn ? "CallMeBot API Key" : "API Key de CallMeBot", text: $store.whatsappApiKey)
                     }
                     
                     Toggle("Discord Webhook", isOn: $store.discordEnabled)
@@ -156,19 +160,19 @@ public struct UserSettingsView: View {
                     
                     if store.whatsappEnabled || store.discordEnabled || store.telegramEnabled {
                         Button {
-                            Task { await store.testConnection(channelName: "Notificaciones") }
+                            Task { await store.testConnection(channelName: isEn ? "Notifications" : "Notificaciones") }
                         } label: {
                             HStack {
                                 Image(systemName: "bell.badge.fill")
-                                Text("Probar Enlace en Vivo")
+                                Text(isEn ? "Test Live Link" : "Probar Enlace en Vivo")
                             }
                         }
                     }
                 }
                 
                 // Preferencias del Lector
-                Section("Preferencias del Lector") {
-                    Picker("Dirección de lectura", selection: $store.defaultReadingDirection) {
+                Section(isEn ? "Reader Preferences" : "Preferencias del Lector") {
+                    Picker(isEn ? "Reading direction" : "Dirección de lectura", selection: $store.defaultReadingDirection) {
                         ForEach(ReadingDirection.allCases) { dir in
                             Text(dir.rawValue).tag(dir)
                         }
@@ -176,8 +180,8 @@ public struct UserSettingsView: View {
                 }
                 
                 // Idioma de la Aplicación
-                Section("Idioma") {
-                    Picker("Idioma de la interfaz", selection: Binding(
+                Section(isEn ? "App Language" : "Idioma") {
+                    Picker(isEn ? "Interface Language" : "Idioma de la interfaz", selection: Binding(
                         get: { appState.currentLanguage },
                         set: { newLang in
                             Task {
@@ -191,28 +195,35 @@ public struct UserSettingsView: View {
                 }
                 
                 // Información de Sesión y Salida
-                Section("Sesión Activa") {
+                Section(isEn ? "Active Session" : "Sesión Activa") {
                     if let user = appState.session {
-                        LabeledContent("Usuario", value: user.username)
-                        LabeledContent("Rol", value: user.role.rawValue)
-                        LabeledContent("Servidor", value: user.serverUrl.absoluteString)
+                        LabeledContent(isEn ? "User" : "Usuario", value: user.username)
+                        LabeledContent(isEn ? "Role" : "Rol", value: user.role.rawValue)
+                        LabeledContent(isEn ? "Server" : "Servidor", value: user.serverUrl.absoluteString)
                     }
                     
-                    Button("Cerrar Sesión", role: .destructive) {
+                    Button(isEn ? "Log Out" : "Cerrar Sesión", role: .destructive) {
                         appState.logout()
                     }
+                }
+                
+                // Versión de la Aplicación
+                Section(isEn ? "About Kaizen" : "Acerca de Kaizen") {
+                    LabeledContent(isEn ? "Version" : "Versión", value: "1.1.0 (Build 2)")
+                    LabeledContent(isEn ? "Compatibility" : "Compatibilidad", value: "iOS 17+ / iPadOS")
+                    LabeledContent(isEn ? "Target" : "Plataforma", value: "Native SwiftUI (arm64)")
                 }
             }
             .navigationTitle(String(localized: "tab_settings"))
             .task {
                 await store.loadSettings(apiClient: apiClient, session: appState.session)
             }
-            .alert("Nueva Estantería", isPresented: $showNewShelfAlert) {
-                TextField("Nombre de la estantería", text: $newShelfName)
-                Button("Crear") {
+            .alert(isEn ? "New Shelf" : "Nueva Estantería", isPresented: $showNewShelfAlert) {
+                TextField(isEn ? "Shelf name..." : "Nombre de la estantería...", text: $newShelfName)
+                Button(isEn ? "Create" : "Crear") {
                     appState.createShelf(name: newShelfName)
                 }
-                Button("Cancelar", role: .cancel) {}
+                Button(isEn ? "Cancel" : "Cancelar", role: .cancel) {}
             }
         }
     }

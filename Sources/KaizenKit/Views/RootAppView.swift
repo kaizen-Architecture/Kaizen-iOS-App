@@ -46,6 +46,11 @@ struct iPhoneRootLayout: View {
                     Label(String(localized: "tab_library"), systemImage: "books.vertical.fill")
                 }
             
+            ReadingHistoryView(apiClient: apiClient)
+                .tabItem {
+                    Label("Historial", systemImage: "clock.arrow.circlepath")
+                }
+            
             MangaRequestsView(apiClient: apiClient)
                 .tabItem {
                     Label(String(localized: "tab_requests"), systemImage: "tray.and.arrow.down.fill")
@@ -84,6 +89,7 @@ struct iPadRootLayout: View {
                 Section {
                     Label(String(localized: "tab_home"), systemImage: "house.fill").tag("home")
                     Label(String(localized: "tab_library"), systemImage: "books.vertical.fill").tag("library")
+                    Label("Historial", systemImage: "clock.arrow.circlepath").tag("history")
                     Label(String(localized: "tab_requests"), systemImage: "tray.and.arrow.down.fill").tag("requests")
                 }
                 
@@ -129,6 +135,8 @@ struct iPadRootLayout: View {
                 HomeDashboardView(apiClient: apiClient)
             case "library":
                 LibraryView(apiClient: apiClient)
+            case "history":
+                ReadingHistoryView(apiClient: apiClient)
             case "requests":
                 MangaRequestsView(apiClient: apiClient)
             case "admin":

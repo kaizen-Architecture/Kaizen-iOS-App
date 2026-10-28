@@ -122,4 +122,65 @@ final class AuthRoleXCTests: XCTestCase {
         XCTAssertTrue(KaizenError.cannotReachServer(host: "192.168.20.28").userMessage(language: "es").contains("192.168.20.28"))
         XCTAssertTrue(KaizenError.tokenRejected.userMessage(language: "en").contains("API Token"))
     }
+    
+    @MainActor
+    func testGenreAndStatusFiltering() {
+        let m1 = Manga(id: 1, title: "Solo Leveling", genres: ["Action", "Fantasy"], status: "COMPLETED")
+        let m2 = Manga(id: 2, title: "Omniscient Reader", genres: ["Action", "Psychological"], status: "ONGOING")
+        let m3 = Manga(id: 3, title: "Horimiya", genres: ["Romance", "Comedy"], status: "COMPLETED")
+        let list = [m1, m2, m3]
+        
+        let actionMangas = list.filter { $0.genres?.contains("Action") ?? false }
+        XCTAssertEqual(actionMangas.count, 2)
+        
+        let ongoingMangas = list.filter { $0.status?.uppercased() == "ONGOING" }
+        XCTAssertEqual(ongoingMangas.count, 1)
+        XCTAssertEqual(ongoingMangas.first?.title, "Omniscient Reader")
+        
+        let completedAction = list.filter { ($0.status?.uppercased() == "COMPLETED") && ($0.genres?.contains("Action") ?? false) }
+        XCTAssertEqual(completedAction.count, 1)
+        XCTAssertEqual(completedAction.first?.title, "Solo Leveling")
+    }
+    
+    @MainActor
+    func testReadingHistoryManagement() {
+        let appState = AppState()
+        appState.clearHistory()
+        XCTAssertTrue(appState.history.isEmpty)
+        
+        appState.recordHistory(
+            mangaId: 10,
+            mangaTitle: "Tower of God",
+            coverUrl: nil,
+            chapterId: 101,
+            chapterIndex: 5,
+            chapterFileName: "ch_005.cbz",
+            pageIndex: 12,
+            totalPages: 30
+        )
+        
+        XCTAssertEqual(appState.history.count, 1)
+        XCTAssertEqual(appState.history[0].mangaTitle, "Tower of God")
+        XCTAssertEqual(appState.history[0].chapterIndex, 5)
+        XCTAssertEqual(appState.history[0].pageIndex, 12)
+        
+        // Actualizar el mismo capítulo en otra página no debe duplicar la entrada
+        appState.recordHistory(
+            mangaId: 10,
+            mangaTitle: "Tower of God",
+            coverUrl: nil,
+            chapterId: 101,
+            chapterIndex: 5,
+            chapterFileName: "ch_005.cbz",
+            pageIndex: 20,
+            totalPages: 30
+        )
+        XCTAssertEqual(appState.history.count, 1)
+        XCTAssertEqual(appState.history[0].pageIndex, 20)
+        
+        // Borrar entrada
+        let entryId = appState.history[0].id
+        appState.deleteHistoryEntry(id: entryId)
+        XCTAssertTrue(appState.history.isEmpty)
+    }
 }

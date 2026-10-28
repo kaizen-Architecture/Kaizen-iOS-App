@@ -37,6 +37,10 @@ public struct LoginView: View {
                         }
                         .font(.caption2)
                         .foregroundStyle(.secondary)
+                        
+                        Text("Kaizen iOS v1.1.0 (Build 2)")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary.opacity(0.6))
                     }
                     .frame(maxWidth: 440)
                     .padding(.horizontal, 24)
