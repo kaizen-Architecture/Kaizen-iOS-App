@@ -299,6 +299,14 @@ public enum ReaderMode: String, CaseIterable, Identifiable, Codable, Sendable {
     
     public var id: String { rawValue }
     
+    public func label(language: String) -> String {
+        switch self {
+        case .webtoon: return language == "en" ? "Webtoon (Vertical scroll)" : "Webtoon (Cascada)"
+        case .horizontalLTR: return language == "en" ? "Left to Right (Comic)" : "Páginas (Izquierda a Derecha)"
+        case .horizontalRTL: return language == "en" ? "Right to Left (Manga)" : "Manga (Derecha a Izquierda)"
+        }
+    }
+    
     public var iconName: String {
         switch self {
         case .webtoon: return "arrow.up.and.down"
@@ -306,6 +314,13 @@ public enum ReaderMode: String, CaseIterable, Identifiable, Codable, Sendable {
         case .horizontalRTL: return "arrow.left"
         }
     }
+}
+
+public typealias ReadingDirection = ReaderMode
+
+public extension ReaderMode {
+    static var rightToLeft: ReaderMode { .horizontalRTL }
+    static var leftToRight: ReaderMode { .horizontalLTR }
 }
 
 /// Temas de fondo para el lector

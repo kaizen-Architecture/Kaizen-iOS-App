@@ -172,9 +172,9 @@ public struct UserSettingsView: View {
                 
                 // Preferencias del Lector
                 Section(isEn ? "Reader Preferences" : "Preferencias del Lector") {
-                    Picker(isEn ? "Reading direction" : "Dirección de lectura", selection: $store.defaultReadingDirection) {
-                        ForEach(ReadingDirection.allCases) { dir in
-                            Text(dir.rawValue).tag(dir)
+                    Picker(isEn ? "Reading mode" : "Modo de lectura", selection: $store.defaultReadingDirection) {
+                        ForEach(ReaderMode.allCases) { mode in
+                            Text(mode.label(language: appState.currentLanguage)).tag(mode)
                         }
                     }
                 }
