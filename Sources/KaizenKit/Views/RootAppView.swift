@@ -170,8 +170,6 @@ struct iPadRootLayout: View {
                             }
                             Spacer()
                             
-                            InAppLanguageToggle(apiClient: apiClient)
-                            
                             Button(action: { appState.logout() }) {
                                 Image(systemName: "rectangle.portrait.and.arrow.right")
                                     .foregroundStyle(.red)

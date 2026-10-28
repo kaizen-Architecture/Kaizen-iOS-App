@@ -1,19 +1,67 @@
 import SwiftUI
 
+public enum AdminSection: String, CaseIterable, Identifiable {
+    case operations = "operations"
+    case failures = "failures"
+    case sources = "sources"
+    case queues = "queues"
+    
+    public var id: String { rawValue }
+    
+    public func label(isEn: Bool, failureCount: Int, sourceCount: Int) -> String {
+        switch self {
+        case .operations:
+            return isEn ? "Operations" : "Operaciones"
+        case .failures:
+            return isEn ? "Failures (\(failureCount))" : "Fallos (\(failureCount))"
+        case .sources:
+            return isEn ? "Sources (\(sourceCount))" : "Fuentes (\(sourceCount))"
+        case .queues:
+            return isEn ? "Queues" : "Colas"
+        }
+    }
+}
+
+public enum SourceFilter: String, CaseIterable, Identifiable {
+    case all = "all"
+    case active = "active"
+    case failed = "failed"
+    
+    public var id: String { rawValue }
+    
+    public func label(isEn: Bool) -> String {
+        switch self {
+        case .all: return isEn ? "All" : "Todas"
+        case .active: return isEn ? "Active" : "Activas"
+        case .failed: return isEn ? "Blocked / Failed" : "Bloqueadas"
+        }
+    }
+}
+
 @MainActor
 @Observable
 public final class AdminStore {
     public var queuesResponse: QueuesResponse?
     public var sources: [KaizenSourceItem] = []
+    public var failedJobs: [FailedDownloadJob] = []
+    
+    public var selectedSection: AdminSection = .operations
+    public var sourceFilter: SourceFilter = .all
+    public var sourceSearchText: String = ""
+    
     public var isLoading: Bool = false
     public var isLoadingSources: Bool = false
+    public var isLoadingFailedJobs: Bool = false
     public var activeAction: String?
     public var isTogglingSource: String?
     public var errorMessage: String?
     public var successMessage: String?
-    public var sourceSearchText: String = ""
     
     public init() {}
+    
+    public var totalFailuresCount: Int {
+        failedJobs.count + sources.filter { $0.isFailed }.count
+    }
     
     public func loadMetrics(apiClient: KaizenAPIClient, session: UserSession?) async {
         guard let session else { return }
@@ -34,6 +82,40 @@ public final class AdminStore {
         defer { isLoadingSources = false }
         do {
             sources = try await apiClient.fetchSourcesList(serverUrl: session.serverUrl, token: session.apiToken)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+    
+    public func loadFailedJobs(apiClient: KaizenAPIClient, session: UserSession?) async {
+        guard let session else { return }
+        isLoadingFailedJobs = true
+        defer { isLoadingFailedJobs = false }
+        do {
+            failedJobs = try await apiClient.fetchFailedJobs(serverUrl: session.serverUrl, token: session.apiToken)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+    
+    public func refreshAllData(apiClient: KaizenAPIClient, session: UserSession?) async {
+        async let m: () = loadMetrics(apiClient: apiClient, session: session)
+        async let s: () = loadSources(apiClient: apiClient, session: session)
+        async let f: () = loadFailedJobs(apiClient: apiClient, session: session)
+        _ = await (m, s, f)
+    }
+    
+    public func syncSources(apiClient: KaizenAPIClient, session: UserSession?, isEn: Bool) async {
+        guard let session else { return }
+        activeAction = "syncSources"
+        errorMessage = nil
+        successMessage = nil
+        defer { activeAction = nil }
+        
+        do {
+            try await apiClient.syncScrapers(serverUrl: session.serverUrl, token: session.apiToken)
+            successMessage = isEn ? "Sources synchronized successfully from GitHub!" : "¡Fuentes sincronizadas exitosamente desde GitHub!"
+            await loadSources(apiClient: apiClient, session: session)
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -80,6 +162,28 @@ public final class AdminStore {
         }
     }
     
+    public func retryFailedJob(jobId: String, apiClient: KaizenAPIClient, session: UserSession?) async {
+        guard let session else { return }
+        do {
+            try await apiClient.retryJob(serverUrl: session.serverUrl, token: session.apiToken, jobId: jobId)
+            await loadFailedJobs(apiClient: apiClient, session: session)
+            await loadMetrics(apiClient: apiClient, session: session)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+    
+    public func cancelFailedJob(jobId: String, apiClient: KaizenAPIClient, session: UserSession?) async {
+        guard let session else { return }
+        do {
+            try await apiClient.cancelJob(serverUrl: session.serverUrl, token: session.apiToken, jobId: jobId)
+            await loadFailedJobs(apiClient: apiClient, session: session)
+            await loadMetrics(apiClient: apiClient, session: session)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+    
     public func executeAction(
         name: String,
         apiClient: KaizenAPIClient,
@@ -119,11 +223,18 @@ public struct AdminDashboardView: View {
     }
     
     private var filteredSources: [KaizenSourceItem] {
-        if store.sourceSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return store.sources
+        var list = store.sources
+        switch store.sourceFilter {
+        case .all: break
+        case .active: list = list.filter { $0.isActive }
+        case .failed: list = list.filter { $0.isFailed }
         }
-        let q = store.sourceSearchText.localizedLowercase
-        return store.sources.filter { $0.name.localizedLowercase.contains(q) }
+        
+        let q = store.sourceSearchText.trimmingCharacters(in: .whitespacesAndNewlines).localizedLowercase
+        if !q.isEmpty {
+            list = list.filter { $0.name.localizedLowercase.contains(q) }
+        }
+        return list
     }
     
     public var body: some View {
@@ -158,40 +269,50 @@ public struct AdminDashboardView: View {
                 AddMangaRemoteSheet(apiClient: apiClient)
             }
             .task {
-                async let m: () = store.loadMetrics(apiClient: apiClient, session: appState.session)
-                async let s: () = store.loadSources(apiClient: apiClient, session: appState.session)
-                _ = await (m, s)
+                await store.refreshAllData(apiClient: apiClient, session: appState.session)
             }
         }
     }
     
     private var mainContentView: some View {
         ScrollView {
-            VStack(spacing: 20) {
+            VStack(spacing: 16) {
                 // Header de Conexión del Servidor
                 serverConnectionHeader
                 
                 // Mensajes de estado
                 statusMessagesView
                 
-                // Sección 1: Operaciones y Acciones Remotas del Servidor
-                serverOperationsSection
+                // Selector de Sección Segmentado
+                Picker("Sección", selection: $store.selectedSection) {
+                    ForEach(AdminSection.allCases) { section in
+                        Text(section.label(
+                            isEn: isEn,
+                            failureCount: store.totalFailuresCount,
+                            sourceCount: store.sources.count
+                        ))
+                        .tag(section)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal)
                 
-                // Sección 2: Gestión de Fuentes y Scrapers (Bloqueos de La Liga / ISP)
-                sourcesManagementSection
-                
-                // Sección 3: Control Remoto de Colas BullMQ
-                queueControllerSection
-                
-                // Sección 4: Desglose de las 10 Colas del Sistema
-                queueListSection
+                // Vista según la sección elegida
+                switch store.selectedSection {
+                case .operations:
+                    serverOperationsSection
+                case .failures:
+                    failuresAndErrorsSection
+                case .sources:
+                    sourcesManagementSection
+                case .queues:
+                    queuesAndMetricsSection
+                }
             }
             .padding(.vertical, 16)
         }
         .refreshable {
-            async let m: () = store.loadMetrics(apiClient: apiClient, session: appState.session)
-            async let s: () = store.loadSources(apiClient: apiClient, session: appState.session)
-            _ = await (m, s)
+            await store.refreshAllData(apiClient: apiClient, session: appState.session)
         }
     }
     
@@ -262,6 +383,8 @@ public struct AdminDashboardView: View {
         }
     }
     
+    // MARK: - Sección 1: Operaciones del Servidor
+    
     private var serverOperationsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(isEn ? "Remote Server Operations" : "Operaciones Remotas del Servidor")
@@ -285,6 +408,16 @@ public struct AdminDashboardView: View {
                     ) { client, session in
                         try await client.syncAllMangas(serverUrl: session.serverUrl, token: session.apiToken)
                     }
+                }
+                
+                actionButton(
+                    title: isEn ? "Sync Sources" : "Sincronizar Fuentes",
+                    subtitle: isEn ? "Pull scrapers from GitHub" : "Actualiza scrapers desde GitHub",
+                    icon: "arrow.down.doc.fill",
+                    color: .teal,
+                    actionKey: "syncSources"
+                ) {
+                    await store.syncSources(apiClient: apiClient, session: appState.session, isEn: isEn)
                 }
                 
                 actionButton(
@@ -356,19 +489,19 @@ public struct AdminDashboardView: View {
                 }
                 
                 actionButton(
-                    title: isEn ? "Sync Scrapers" : "Sincronizar Scrapers",
-                    subtitle: isEn ? "Update Mangal repositories" : "Actualiza repositorios Mangal",
-                    icon: "arrow.down.doc.fill",
-                    color: .teal,
-                    actionKey: "syncScrapers"
+                    title: isEn ? "Sync AniList" : "Sincronizar AniList",
+                    subtitle: isEn ? "Push reading progress" : "Envía progreso de lectura",
+                    icon: "arrow.triangle.swap",
+                    color: .indigo,
+                    actionKey: "syncAniList"
                 ) {
                     await store.executeAction(
-                        name: "syncScrapers",
+                        name: "syncAniList",
                         apiClient: apiClient,
                         session: appState.session,
-                        successText: isEn ? "Scraper repos synchronized!" : "¡Repositorios de scrapers sincronizados!"
+                        successText: isEn ? "AniList progress synchronized!" : "¡Progreso de AniList sincronizado!"
                     ) { client, session in
-                        try await client.syncScrapers(serverUrl: session.serverUrl, token: session.apiToken)
+                        try await client.syncAniList(serverUrl: session.serverUrl, token: session.apiToken)
                     }
                 }
             }
@@ -376,20 +509,221 @@ public struct AdminDashboardView: View {
         }
     }
     
-    // MARK: - Gestión de Fuentes y Desbloqueo (La Liga / ISPs)
+    // MARK: - Sección 2: Fallos y Errores (Mangas y Fuentes)
+    
+    private var failuresAndErrorsSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            // Fuentes Bloqueadas / Fallidas
+            let blockedSources = store.sources.filter { $0.isFailed }
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Label(
+                        isEn ? "Blocked Sources (\(blockedSources.count))" : "Fuentes Bloqueadas (\(blockedSources.count))",
+                        systemImage: "shield.lefthalf.filled.trianglebadge.exclamationmark"
+                    )
+                    .font(.headline)
+                    .foregroundStyle(blockedSources.isEmpty ? .secondary : .red)
+                    
+                    Spacer()
+                    
+                    if !blockedSources.isEmpty {
+                        Button {
+                            Task { await store.reactivateAllFailedSources(apiClient: apiClient, session: appState.session, isEn: isEn) }
+                        } label: {
+                            Text(isEn ? "Unblock All" : "Desbloquear Todas")
+                                .font(.caption.weight(.bold))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(Color.red, in: Capsule())
+                                .foregroundStyle(.white)
+                        }
+                    }
+                }
+                .padding(.horizontal)
+                
+                if blockedSources.isEmpty {
+                    HStack {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                        Text(isEn ? "All scrapers operational. No blocked sources." : "Todos los scrapers están operativos. Sin bloqueos de red.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.green.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
+                    .padding(.horizontal)
+                } else {
+                    VStack(spacing: 6) {
+                        ForEach(blockedSources) { src in
+                            HStack {
+                                Circle().fill(Color.red).frame(width: 8, height: 8)
+                                Text(src.name)
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.white)
+                                Spacer()
+                                Button(isEn ? "Reactivate" : "Reactivar") {
+                                    Task { await store.toggleSource(source: src, apiClient: apiClient, session: appState.session) }
+                                }
+                                .font(.caption.weight(.bold))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 4)
+                                .background(Color.red.opacity(0.2), in: Capsule())
+                                .foregroundStyle(.red)
+                            }
+                            .padding(10)
+                            .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
+                        }
+                    }
+                    .padding(.horizontal)
+                }
+            }
+            
+            // Mangas y Capítulos Fallidos en Descarga
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Label(
+                        isEn ? "Failed Downloads (\(store.failedJobs.count))" : "Descargas Fallidas (\(store.failedJobs.count))",
+                        systemImage: "xmark.octagon.fill"
+                    )
+                    .font(.headline)
+                    .foregroundStyle(store.failedJobs.isEmpty ? .secondary : .orange)
+                    
+                    Spacer()
+                    
+                    if !store.failedJobs.isEmpty {
+                        Button {
+                            Task {
+                                await store.executeAction(
+                                    name: "retryAllFailed",
+                                    apiClient: apiClient,
+                                    session: appState.session,
+                                    successText: isEn ? "All failed downloads sent to retry!" : "¡Reintentando todas las descargas fallidas!"
+                                ) { client, session in
+                                    try await client.retryAllFailedJobs(serverUrl: session.serverUrl, token: session.apiToken)
+                                }
+                                await store.loadFailedJobs(apiClient: apiClient, session: appState.session)
+                            }
+                        } label: {
+                            Text(isEn ? "Retry All" : "Reintentar Todas")
+                                .font(.caption.weight(.bold))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(Color.orange, in: Capsule())
+                                .foregroundStyle(.black)
+                        }
+                    }
+                }
+                .padding(.horizontal)
+                
+                if store.isLoadingFailedJobs && store.failedJobs.isEmpty {
+                    ProgressView().padding(.horizontal)
+                } else if store.failedJobs.isEmpty {
+                    HStack {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                        Text(isEn ? "No failed chapter downloads." : "No hay descargas de capítulos fallidas.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
+                    .padding(.horizontal)
+                } else {
+                    VStack(spacing: 8) {
+                        ForEach(store.failedJobs) { job in
+                            VStack(alignment: .leading, spacing: 6) {
+                                HStack {
+                                    Text(job.mangaTitle)
+                                        .font(.subheadline.weight(.bold))
+                                        .foregroundStyle(.white)
+                                    Spacer()
+                                    Text((isEn ? "Ch. " : "Cap. ") + String(format: "%g", job.chapterIndex))
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(.cyan)
+                                }
+                                
+                                HStack(spacing: 8) {
+                                    Text(job.source)
+                                        .font(.caption2.weight(.medium))
+                                        .foregroundStyle(.secondary)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(Color.white.opacity(0.08), in: Capsule())
+                                    
+                                    if job.isPaused {
+                                        Text(isEn ? "Paused by Breaker" : "Pausado por Disyuntor")
+                                            .font(.caption2.weight(.bold))
+                                            .foregroundStyle(.orange)
+                                    }
+                                    
+                                    Spacer()
+                                    
+                                    Button {
+                                        Task { await store.retryFailedJob(jobId: job.id, apiClient: apiClient, session: appState.session) }
+                                    } label: {
+                                        HStack(spacing: 3) {
+                                            Image(systemName: "arrow.clockwise")
+                                            Text(isEn ? "Retry" : "Reintentar")
+                                        }
+                                        .font(.caption2.weight(.bold))
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(Color.cyan.opacity(0.2), in: Capsule())
+                                        .foregroundStyle(.cyan)
+                                    }
+                                    
+                                    Button {
+                                        Task { await store.cancelFailedJob(jobId: job.id, apiClient: apiClient, session: appState.session) }
+                                    } label: {
+                                        Image(systemName: "trash")
+                                            .font(.caption2)
+                                            .foregroundStyle(.red)
+                                    }
+                                }
+                                
+                                if let reason = job.failedReason, !reason.isEmpty {
+                                    Text(reason)
+                                        .font(.caption2)
+                                        .foregroundStyle(.red.opacity(0.8))
+                                        .lineLimit(2)
+                                }
+                            }
+                            .padding(10)
+                            .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
+                        }
+                    }
+                    .padding(.horizontal)
+                }
+            }
+        }
+    }
+    
+    // MARK: - Sección 3: Fuentes y Scrapers (Pestaña propia limpia)
     
     private var sourcesManagementSection: some View {
         VStack(alignment: .leading, spacing: 12) {
+            // Acciones superiores de fuentes
             HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(isEn ? "Sources & Scrapers Control" : "Control de Fuentes y Scrapers")
-                        .font(.headline)
-                        .foregroundStyle(.white)
-                    Text(isEn ? "Manage active scrapers & unblock after ISP/LaLiga match blocks" : "Gestiona fuentes activas y desbloquea tras bloqueos por partidos")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                Button {
+                    Task { await store.syncSources(apiClient: apiClient, session: appState.session, isEn: isEn) }
+                } label: {
+                    HStack(spacing: 4) {
+                        if store.activeAction == "syncSources" {
+                            ProgressView().tint(.white).scaleEffect(0.7)
+                        } else {
+                            Image(systemName: "arrow.down.doc.fill")
+                        }
+                        Text(isEn ? "Sync Sources" : "Sincronizar Fuentes")
+                    }
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.black)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(Color.cyan, in: Capsule())
                 }
-                Spacer()
+                .disabled(store.activeAction != nil)
                 
                 Button {
                     Task { await store.reactivateAllFailedSources(apiClient: apiClient, session: appState.session, isEn: isEn) }
@@ -400,44 +734,59 @@ public struct AdminDashboardView: View {
                         } else {
                             Image(systemName: "bolt.fill")
                         }
-                        Text(isEn ? "Reactivate All" : "Reactivar Todas")
+                        Text(isEn ? "Reactivate Blocked" : "Reactivar Bloqueadas")
                     }
                     .font(.caption.weight(.bold))
                     .foregroundStyle(.white)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
                     .background(Color.orange.opacity(0.85), in: Capsule())
                 }
                 .disabled(store.activeAction != nil)
+                
+                Spacer()
             }
             .padding(.horizontal)
             
-            // Buscador de fuentes
-            HStack {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
-                TextField(isEn ? "Filter sources (e.g. mangadex, olympus)..." : "Filtrar fuentes (ej: mangadex, olympus)...", text: $store.sourceSearchText)
-                    .textFieldStyle(.plain)
-                    .font(.caption)
+            // Filtro por Estado y Buscador
+            HStack(spacing: 8) {
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.secondary)
+                    TextField(isEn ? "Search sources..." : "Buscar fuente...", text: $store.sourceSearchText)
+                        .textFieldStyle(.plain)
+                        .font(.caption)
+                }
+                .padding(8)
+                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+                
+                Picker("Filtro", selection: $store.sourceFilter) {
+                    ForEach(SourceFilter.allCases) { f in
+                        Text(f.label(isEn: isEn)).tag(f)
+                    }
+                }
+                .pickerStyle(.menu)
+                .tint(.cyan)
+                .padding(.horizontal, 6)
+                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
             }
-            .padding(8)
-            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
             .padding(.horizontal)
             
+            // Lista compacta y navegable
             if store.isLoadingSources && store.sources.isEmpty {
                 HStack {
                     Spacer()
                     ProgressView().tint(.cyan)
                     Spacer()
                 }
-                .padding(.vertical, 14)
+                .padding(.vertical, 20)
             } else if filteredSources.isEmpty {
-                Text(isEn ? "No sources matching filter." : "No se encontraron fuentes con ese filtro.")
+                Text(isEn ? "No sources matching filter." : "No se encontraron fuentes.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal)
             } else {
-                VStack(spacing: 6) {
+                LazyVStack(spacing: 6) {
                     ForEach(filteredSources) { source in
                         HStack(spacing: 12) {
                             Circle()
@@ -487,7 +836,9 @@ public struct AdminDashboardView: View {
         }
     }
     
-    private var queueControllerSection: some View {
+    // MARK: - Sección 4: Colas BullMQ
+    
+    private var queuesAndMetricsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(isEn ? "Queue Remote Controller (BullMQ)" : "Control Remoto de Colas (BullMQ)")
                 .font(.headline)
@@ -504,7 +855,6 @@ public struct AdminDashboardView: View {
                 .padding(.horizontal)
             }
             
-            // Botones de acción directa sobre colas
             HStack(spacing: 8) {
                 Button {
                     Task {
@@ -564,24 +914,8 @@ public struct AdminDashboardView: View {
                 .disabled(store.activeAction != nil)
             }
             .padding(.horizontal)
-        }
-    }
-    
-    private var queueListSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(isEn ? "System Queues Breakdown" : "Desglose de Colas del Sistema")
-                .font(.headline)
-                .foregroundStyle(.white)
-                .padding(.horizontal)
             
-            if store.isLoading && store.queuesResponse == nil {
-                HStack {
-                    Spacer()
-                    ProgressView().tint(.cyan)
-                    Spacer()
-                }
-                .padding(.vertical, 20)
-            } else if let queues = store.queuesResponse?.queues {
+            if let queues = store.queuesResponse?.queues {
                 VStack(spacing: 8) {
                     ForEach(queues) { queue in
                         HStack {
@@ -597,7 +931,7 @@ public struct AdminDashboardView: View {
                             
                             HStack(spacing: 6) {
                                 if queue.active > 0 {
-                                    badge(count: queue.active, color: .cyan, label: isEn ? "act" : "act")
+                                    badge(count: queue.active, color: .cyan, label: "act")
                                 }
                                 if queue.waiting > 0 {
                                     badge(count: queue.waiting, color: .blue, label: isEn ? "wait" : "esp")

@@ -201,5 +201,42 @@ final class AuthRoleXCTests: XCTestCase {
         XCTAssertFalse(s2.isActive)
         XCTAssertTrue(s2.isFailed)
     }
+    
+    func testFailedDownloadJobModel() {
+        let job = FailedDownloadJob(
+            id: "job-101",
+            mangaId: 5,
+            mangaTitle: "Chainsaw Man",
+            chapterIndex: 120.0,
+            source: "olympus",
+            failedReason: "Cloudflare blocked request",
+            attempts: 3,
+            isPaused: false
+        )
+        XCTAssertEqual(job.id, "job-101")
+        XCTAssertEqual(job.mangaId, 5)
+        XCTAssertEqual(job.mangaTitle, "Chainsaw Man")
+        XCTAssertEqual(job.chapterIndex, 120.0)
+        XCTAssertEqual(job.source, "olympus")
+        XCTAssertEqual(job.failedReason, "Cloudflare blocked request")
+        XCTAssertEqual(job.attempts, 3)
+        XCTAssertFalse(job.isPaused)
+    }
+    
+    @MainActor
+    func testSessionRememberDisabled() {
+        let appState = AppState()
+        guard let url = URL(string: "http://192.168.20.28:3333") else { return }
+        let session = UserSession(id: 1, username: "admin", role: .superadmin, language: "es", apiToken: "tok", serverUrl: url)
+        
+        // When remember is false, it should set session in memory and record the disabled preference
+        appState.setSession(session, remember: false)
+        XCTAssertEqual(appState.currentSession?.username, "admin")
+        XCTAssertTrue(UserDefaults.standard.bool(forKey: "kaizen_remember_login_disabled"))
+        
+        // When remember is true, it clears the disabled preference
+        appState.setSession(session, remember: true)
+        XCTAssertFalse(UserDefaults.standard.bool(forKey: "kaizen_remember_login_disabled"))
+    }
 }
 

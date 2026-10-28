@@ -368,3 +368,36 @@ public struct KaizenSourceItem: Identifiable, Codable, Sendable, Equatable {
     }
 }
 
+/// Trabajo de descarga fallido en Kaizen
+public struct FailedDownloadJob: Identifiable, Codable, Sendable, Equatable {
+    public let id: String
+    public let mangaId: Int
+    public let mangaTitle: String
+    public let chapterIndex: Double
+    public let source: String
+    public let failedReason: String?
+    public let attempts: Int
+    public let isPaused: Bool
+    
+    public init(
+        id: String,
+        mangaId: Int,
+        mangaTitle: String,
+        chapterIndex: Double,
+        source: String,
+        failedReason: String? = nil,
+        attempts: Int = 1,
+        isPaused: Bool = false
+    ) {
+        self.id = id
+        self.mangaId = mangaId
+        self.mangaTitle = mangaTitle
+        self.chapterIndex = chapterIndex
+        self.source = source
+        self.failedReason = failedReason
+        self.attempts = attempts
+        self.isPaused = isPaused
+    }
+}
+
+

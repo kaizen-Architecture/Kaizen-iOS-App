@@ -40,8 +40,9 @@ public final class AppState {
         if let savedLang = UserDefaults.standard.string(forKey: "kaizen_user_language") {
             self.currentLanguage = savedLang
         }
-        // Intentar restaurar sesión guardada de forma segura en Keychain
-        if let savedSession = try? KeychainService.shared.loadSession() {
+        // Intentar restaurar sesión guardada de forma segura en Keychain si no se desactivó 'recordar'
+        let rememberDisabled = UserDefaults.standard.bool(forKey: "kaizen_remember_login_disabled")
+        if !rememberDisabled, let savedSession = try? KeychainService.shared.loadSession() {
             self.session = savedSession
             if UserDefaults.standard.string(forKey: "kaizen_user_language") == nil {
                 self.currentLanguage = savedSession.language
@@ -52,7 +53,7 @@ public final class AppState {
         loadReaderPreferences()
     }
     
-    public func setSession(_ session: UserSession) {
+    public func setSession(_ session: UserSession, remember: Bool = true) {
         var mutableSession = session
         if let chosenLang = UserDefaults.standard.string(forKey: "kaizen_user_language") {
             self.currentLanguage = chosenLang
@@ -61,7 +62,13 @@ public final class AppState {
             self.currentLanguage = session.language
         }
         self.session = mutableSession
-        try? KeychainService.shared.saveSession(mutableSession)
+        if remember {
+            UserDefaults.standard.set(false, forKey: "kaizen_remember_login_disabled")
+            try? KeychainService.shared.saveSession(mutableSession)
+        } else {
+            UserDefaults.standard.set(true, forKey: "kaizen_remember_login_disabled")
+            KeychainService.shared.clearSession()
+        }
         loadShelves()
         loadHistory()
         loadReaderPreferences()

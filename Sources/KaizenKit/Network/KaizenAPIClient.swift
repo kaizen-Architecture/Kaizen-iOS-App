@@ -262,6 +262,56 @@ public actor KaizenAPIClient {
         guard (200...299).contains(http.statusCode) else { throw KaizenError.server(status: http.statusCode) }
     }
     
+    public func fetchFailedJobs(serverUrl: URL, token: String) async throws -> [FailedDownloadJob] {
+        let req = request(try trpcQueryURL(serverUrl, procedure: "manga.failedJobs", input: [:]), token: token)
+        let (data, http) = try await send(req)
+        guard (200...299).contains(http.statusCode) else { throw KaizenError.server(status: http.statusCode) }
+        guard let list = trpcRawData(data) as? [[String: Any]] else { return [] }
+        
+        return list.compactMap { dict in
+            guard let idVal = dict["id"],
+                  let mangaId = dict["mangaId"] as? Int,
+                  let mangaTitle = dict["mangaTitle"] as? String else { return nil }
+            let id = String(describing: idVal)
+            let chapterIndex: Double
+            if let ci = dict["chapterIndex"] as? Double {
+                chapterIndex = ci
+            } else if let ci = dict["chapterIndex"] as? Int {
+                chapterIndex = Double(ci)
+            } else if let ci = dict["chapterIndex"] as? String {
+                chapterIndex = Double(ci.replacingOccurrences(of: "@", with: "")) ?? 0.0
+            } else {
+                chapterIndex = 0.0
+            }
+            let source = (dict["source"] as? String) ?? "Unknown"
+            let failedReason = dict["failedReason"] as? String
+            let attempts = (dict["attempts"] as? Int) ?? 1
+            let isPaused = (dict["isPaused"] as? Bool) ?? false
+            return FailedDownloadJob(
+                id: id,
+                mangaId: mangaId,
+                mangaTitle: mangaTitle,
+                chapterIndex: chapterIndex,
+                source: source,
+                failedReason: failedReason,
+                attempts: attempts,
+                isPaused: isPaused
+            )
+        }
+    }
+    
+    public func retryJob(serverUrl: URL, token: String, jobId: String) async throws {
+        let req = try request(try endpoint(serverUrl, path: "/api/trpc/manga.retryJob"), method: "POST", token: token, json: ["json": ["jobId": jobId]])
+        let (_, http) = try await send(req)
+        guard (200...299).contains(http.statusCode) else { throw KaizenError.server(status: http.statusCode) }
+    }
+    
+    public func cancelJob(serverUrl: URL, token: String, jobId: String) async throws {
+        let req = try request(try endpoint(serverUrl, path: "/api/trpc/manga.cancelJob"), method: "POST", token: token, json: ["json": ["jobId": jobId]])
+        let (_, http) = try await send(req)
+        guard (200...299).contains(http.statusCode) else { throw KaizenError.server(status: http.statusCode) }
+    }
+    
     public func updateRequestStatus(serverUrl: URL, token: String, requestId: Int, status: String) async throws {
         let req = try request(try endpoint(serverUrl, path: "/api/trpc/mangaRequest.updateStatus"), method: "POST", token: token, json: ["json": ["id": requestId, "status": status]])
         let (_, http) = try await send(req)

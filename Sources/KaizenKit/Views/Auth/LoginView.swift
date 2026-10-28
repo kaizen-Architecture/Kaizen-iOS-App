@@ -9,6 +9,7 @@ public struct LoginView: View {
     let apiClient: KaizenAPIClient
     
     @AppStorage("kaizen.serverURL") private var serverUrlString: String = "http://192.168.20.28:3333"
+    @AppStorage("kaizen_remember_login") private var rememberLogin: Bool = true
     @State private var username: String = ""
     @State private var password: String = ""
     @State private var apiToken: String = ""
@@ -92,6 +93,19 @@ public struct LoginView: View {
                     .textInputAutocapitalization(.never)
                     .onSubmit(loginAction)
             }
+            
+            Toggle(isOn: $rememberLogin) {
+                Label {
+                    Text(appState.currentLanguage == "en" ? "Remember login on this device" : "Recordar sesión en este dispositivo")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } icon: {
+                    Image(systemName: "checkmark.shield")
+                        .foregroundStyle(.cyan)
+                }
+            }
+            .tint(.cyan)
+            .padding(.vertical, 2)
             
             if let errorMessage {
                 Label {
@@ -205,7 +219,7 @@ public struct LoginView: View {
             defer { isAuthenticating = false }
             do {
                 let session = try await apiClient.login(serverUrl: url, username: user, password: pass, apiToken: token)
-                appState.setSession(session)
+                appState.setSession(session, remember: rememberLogin)
             } catch let error as KaizenError {
                 errorMessage = error.userMessage(language: appState.currentLanguage)
             } catch {
