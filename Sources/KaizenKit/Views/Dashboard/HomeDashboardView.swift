@@ -10,6 +10,13 @@ public struct HomeDashboardView: View {
     @State private var newShelfName = ""
     @State private var newShelfIcon = "books.vertical.fill"
     
+    // Gestión y edición de librerías de lectura (shelves)
+    @State private var shelfToRename: UserShelf?
+    @State private var renameText: String = ""
+    @State private var showRenameAlert = false
+    @State private var shelfToDelete: UserShelf?
+    @State private var showDeleteAlert = false
+    
     // Secciones expandidas en modo cuadrícula adaptativa (recordadas en preferencias)
     @State private var expandedSections: Set<String> = {
         if let saved = UserDefaults.standard.stringArray(forKey: "kaizen_home_expanded_sections") {
@@ -85,21 +92,7 @@ public struct HomeDashboardView: View {
                                 )
                             }
                             
-                            // SECCIÓN 2: Bibliotecas del Servidor (si existen y tienen mangas)
-                            ForEach(appState.libraries) { lib in
-                                let libMangas = appState.mangas.filter { $0.libraryId == lib.id }
-                                if !libMangas.isEmpty {
-                                    shelfSection(
-                                        id: "server_lib_\(lib.id)",
-                                        title: lib.displayTitle,
-                                        icon: "books.vertical.fill",
-                                        iconColor: .indigo,
-                                        mangas: libMangas
-                                    )
-                                }
-                            }
-                            
-                            // SECCIÓN 3: Estanterías Lógicas Personalizadas (Solo las creadas que tengan mangas)
+                            // SECCIÓN 2: Librerías de Lectura Personalizadas (un manga puede estar en varias)
                             ForEach(appState.shelves) { shelf in
                                 let shelfMangas = appState.mangas.filter { shelf.mangaIds.contains($0.id) }
                                 if !shelfMangas.isEmpty {
@@ -108,12 +101,13 @@ public struct HomeDashboardView: View {
                                         title: shelf.name,
                                         icon: shelf.icon,
                                         iconColor: .yellow,
-                                        mangas: shelfMangas
+                                        mangas: shelfMangas,
+                                        shelf: shelf
                                     )
                                 }
                             }
                             
-                            // SECCIÓN 4: Favoritos
+                            // SECCIÓN 3: Favoritos
                             if !favoriteMangas.isEmpty {
                                 shelfSection(
                                     id: "favorites",
@@ -124,7 +118,7 @@ public struct HomeDashboardView: View {
                                 )
                             }
                             
-                            // SECCIÓN 5: Recién Añadidos
+                            // SECCIÓN 4: Recién Añadidos
                             if !recentlyAddedMangas.isEmpty {
                                 shelfSection(
                                     id: "recently_added",
@@ -149,7 +143,7 @@ public struct HomeDashboardView: View {
                         newShelfName = ""
                         showCreateShelfSheet = true
                     } label: {
-                        Label(isEn ? "New Shelf" : "Nueva Estantería", systemImage: "plus.rectangle.on.folder")
+                        Label(isEn ? "New Library" : "Nueva Librería", systemImage: "plus.rectangle.on.folder")
                             .foregroundStyle(.cyan)
                     }
                 }
@@ -162,14 +156,33 @@ public struct HomeDashboardView: View {
             .sheet(item: $selectedManga) { manga in
                 MangaDetailSheet(manga: manga, apiClient: apiClient)
             }
-            .alert(isEn ? "New Shelf" : "Nueva Estantería", isPresented: $showCreateShelfSheet) {
-                TextField(isEn ? "e.g. Shonen, Top Picks, Re-reading..." : "Ej: Shonen, Selección, Para releer...", text: $newShelfName)
+            .alert(isEn ? "New Reading Library" : "Nueva Librería de Lectura", isPresented: $showCreateShelfSheet) {
+                TextField(isEn ? "e.g. Manhwa Top, Re-reading, Favorites..." : "Ej: Manhwa Top, Para releer, Favoritos...", text: $newShelfName)
                 Button(isEn ? "Create" : "Crear") {
                     appState.createShelf(name: newShelfName)
                 }
                 Button(isEn ? "Cancel" : "Cancelar", role: .cancel) {}
             } message: {
-                Text(isEn ? "Organize your mangas into custom shelves." : "Organiza tus mangas a tu gusto con tus propias estanterías personales.")
+                Text(isEn ? "Create a reading library to organize your series. A manga can be in multiple libraries." : "Crea una librería para organizar tus series. Un manga puede estar en varias librerías a la vez.")
+            }
+            .alert(isEn ? "Rename Library" : "Renombrar Librería", isPresented: $showRenameAlert) {
+                TextField(isEn ? "Library name" : "Nombre de la librería", text: $renameText)
+                Button(isEn ? "Save" : "Guardar") {
+                    if let s = shelfToRename {
+                        appState.renameShelf(id: s.id, newName: renameText)
+                    }
+                }
+                Button(isEn ? "Cancel" : "Cancelar", role: .cancel) {}
+            }
+            .alert(isEn ? "Delete Library" : "Borrar Librería", isPresented: $showDeleteAlert) {
+                Button(isEn ? "Delete" : "Borrar", role: .destructive) {
+                    if let s = shelfToDelete {
+                        appState.deleteShelf(id: s.id)
+                    }
+                }
+                Button(isEn ? "Cancel" : "Cancelar", role: .cancel) {}
+            } message: {
+                Text(isEn ? "Are you sure you want to delete this reading library? Your mangas won't be deleted." : "¿Seguro que quieres borrar esta librería de lectura? Tus mangas no se eliminarán de Kaizen.")
             }
         }
     }
@@ -186,7 +199,14 @@ public struct HomeDashboardView: View {
     }
     
     @ViewBuilder
-    private func shelfSection(id: String, title: String, icon: String, iconColor: Color, mangas: [Manga]) -> some View {
+    private func shelfSection(
+        id: String,
+        title: String,
+        icon: String,
+        iconColor: Color,
+        mangas: [Manga],
+        shelf: UserShelf? = nil
+    ) -> some View {
         let isExpanded = expandedSections.contains(id)
         
         VStack(alignment: .leading, spacing: 14) {
@@ -199,6 +219,32 @@ public struct HomeDashboardView: View {
                 Text("(\(mangas.count))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                
+                // Si es una librería personalizable, menú con opciones para renombrar o borrar
+                if let shelf {
+                    Menu {
+                        Button {
+                            shelfToRename = shelf
+                            renameText = shelf.name
+                            showRenameAlert = true
+                        } label: {
+                            Label(isEn ? "Rename Library" : "Renombrar librería", systemImage: "pencil")
+                        }
+                        
+                        Button(role: .destructive) {
+                            shelfToDelete = shelf
+                            showDeleteAlert = true
+                        } label: {
+                            Label(isEn ? "Delete Library" : "Borrar librería", systemImage: "trash")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 4)
+                    }
+                    .buttonStyle(.plain)
+                }
                 
                 Spacer()
                 

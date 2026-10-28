@@ -120,6 +120,17 @@ public final class AppState {
         saveShelves()
     }
     
+    public func renameShelf(id: UUID, newName: String, newIcon: String? = nil) {
+        guard let idx = shelves.firstIndex(where: { $0.id == id }) else { return }
+        let clean = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return }
+        shelves[idx].name = clean
+        if let newIcon {
+            shelves[idx].icon = newIcon
+        }
+        saveShelves()
+    }
+    
     public func toggleMangaInShelf(shelfId: UUID, mangaId: Int) {
         guard let idx = shelves.firstIndex(where: { $0.id == shelfId }) else { return }
         if shelves[idx].mangaIds.contains(mangaId) {

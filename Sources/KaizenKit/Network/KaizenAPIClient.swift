@@ -212,6 +212,18 @@ public actor KaizenAPIClient {
         guard (200...299).contains(http.statusCode) else { throw KaizenError.server(status: http.statusCode) }
     }
     
+    /// Comprueba y encola la descarga de nuevos capítulos para un manga concreto en el servidor Kaizen.
+    public func syncManga(serverUrl: URL, token: String, mangaId: Int) async throws {
+        let req = try request(
+            try endpoint(serverUrl, path: "/api/trpc/manga.sync"),
+            method: "POST",
+            token: token,
+            json: ["json": ["id": mangaId]]
+        )
+        let (_, http) = try await send(req)
+        guard (200...299).contains(http.statusCode) else { throw KaizenError.server(status: http.statusCode) }
+    }
+    
     // MARK: - Control Remoto del Servidor Kaizen (tRPC)
     
     public func refreshAllMetadata(serverUrl: URL, token: String) async throws {

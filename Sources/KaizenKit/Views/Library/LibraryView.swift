@@ -422,6 +422,8 @@ public struct MangaDetailSheet: View {
     @State private var errorMessage: String?
     @State private var showCreateShelfAlert: Bool = false
     @State private var newShelfName: String = ""
+    @State private var isCheckingNewChapters: Bool = false
+    @State private var checkChaptersFeedback: (isSuccess: Bool, message: String)?
     
     public init(manga: Manga, apiClient: KaizenAPIClient) {
         self.manga = manga
@@ -506,7 +508,7 @@ public struct MangaDetailSheet: View {
                                         .tint(.cyan)
                                 }
                                 
-                                // Botones de Favorito y Librerías de Lectura
+                                // Botones de Favorito, Librerías de Lectura y Comprobar Nuevos Capítulos
                                 HStack(spacing: 8) {
                                     Button {
                                         Task {
@@ -548,18 +550,85 @@ public struct MangaDetailSheet: View {
                                         HStack(spacing: 6) {
                                             Image(systemName: "books.vertical.fill")
                                                 .foregroundStyle(.yellow)
-                                            Text(isEn ? "Reading Library" : "Librería de lectura")
+                                            Text(isEn ? "Libraries" : "Librerías")
                                                 .font(.caption.weight(.semibold))
                                         }
                                         .padding(.horizontal, 10)
                                         .padding(.vertical, 6)
                                         .background(Color.white.opacity(0.1), in: Capsule())
                                     }
+                                    .buttonStyle(.plain)
+                                    
+                                    // Botón para refrescar y comprobar nuevos capítulos en el servidor Kaizen
+                                    Button {
+                                        Task { await checkForNewChapters() }
+                                    } label: {
+                                        HStack(spacing: 6) {
+                                            if isCheckingNewChapters {
+                                                ProgressView().scaleEffect(0.65).tint(.cyan)
+                                            } else {
+                                                Image(systemName: "arrow.triangle.2.circlepath")
+                                            }
+                                            Text(isEn ? "Check Chapters" : "Comprobar")
+                                                .font(.caption.weight(.semibold))
+                                        }
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 6)
+                                        .background(Color.cyan.opacity(0.15), in: Capsule())
+                                        .overlay(Capsule().stroke(Color.cyan.opacity(0.4), lineWidth: 1))
+                                        .foregroundStyle(Color.cyan)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .disabled(isCheckingNewChapters)
+                                }
+                                
+                                // Indicador de librerías en las que está este manga
+                                let memberShelves = appState.shelves.filter { $0.mangaIds.contains(currentManga.id) }
+                                if !memberShelves.isEmpty {
+                                    ScrollView(.horizontal, showsIndicators: false) {
+                                        HStack(spacing: 6) {
+                                            Text(isEn ? "In:" : "En:")
+                                                .font(.caption2)
+                                                .foregroundStyle(.secondary)
+                                            ForEach(memberShelves) { s in
+                                                HStack(spacing: 4) {
+                                                    Image(systemName: s.icon)
+                                                        .font(.system(size: 9))
+                                                    Text(s.name)
+                                                        .font(.caption2.weight(.medium))
+                                                }
+                                                .foregroundStyle(.yellow)
+                                                .padding(.horizontal, 8)
+                                                .padding(.vertical, 3)
+                                                .background(Color.yellow.opacity(0.15), in: Capsule())
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
                         .padding(.horizontal, 16)
                         .padding(.top, 16)
+                        
+                        // Banner informativo de resultado al comprobar capítulos
+                        if let feedback = checkChaptersFeedback {
+                            HStack(spacing: 8) {
+                                Image(systemName: feedback.isSuccess ? "checkmark.circle.fill" : "info.circle.fill")
+                                    .font(.subheadline)
+                                Text(feedback.message)
+                                    .font(.caption.weight(.medium))
+                            }
+                            .foregroundStyle(feedback.isSuccess ? Color.green : Color.cyan)
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background((feedback.isSuccess ? Color.green : Color.cyan).opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke((feedback.isSuccess ? Color.green : Color.cyan).opacity(0.3), lineWidth: 1)
+                            )
+                            .padding(.horizontal, 16)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                        }
                         
                         // Botón de acción principal: Continuar Lectura / Todo Leído
                         if isCaughtUp {
@@ -764,6 +833,50 @@ public struct MangaDetailSheet: View {
             appState.updateMangaInState(detail)
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+    
+    private func checkForNewChapters() async {
+        guard let session = appState.session else { return }
+        isCheckingNewChapters = true
+        checkChaptersFeedback = nil
+        defer { isCheckingNewChapters = false }
+        
+        let initialCount = currentManga.totalChapters
+        
+        do {
+            // 1. Enviar orden de búsqueda de capítulos a Kaizen
+            try await apiClient.syncManga(serverUrl: session.serverUrl, token: session.apiToken, mangaId: currentManga.id)
+            
+            // 2. Esperar 3.5 segundos para dar tiempo al scraper y crawler de BullMQ a procesar
+            try? await Task.sleep(nanoseconds: 3_500_000_000)
+            
+            // 3. Obtener detalle actualizado
+            let updated = try await apiClient.fetchMangaDetail(serverUrl: session.serverUrl, token: session.apiToken, mangaId: currentManga.id)
+            self.detailedManga = updated
+            appState.updateMangaInState(updated)
+            
+            let diff = updated.totalChapters - initialCount
+            if diff > 0 {
+                checkChaptersFeedback = (
+                    isSuccess: true,
+                    message: isEn
+                        ? "🎉 Found \(diff) new chapter(s)! Queued and downloading on Kaizen server."
+                        : "🎉 ¡Se han encontrado \(diff) capítulo(s) nuevo(s)! Están encolados y descargándose en el servidor."
+                )
+            } else {
+                checkChaptersFeedback = (
+                    isSuccess: true,
+                    message: isEn
+                        ? "You're all caught up! No new chapters found right now."
+                        : "¡Estás al día! No hay capítulos nuevos disponibles en este momento."
+                )
+            }
+        } catch {
+            checkChaptersFeedback = (
+                isSuccess: false,
+                message: error.localizedDescription
+            )
         }
     }
     

@@ -73,6 +73,9 @@ final class AuthRoleXCTests: XCTestCase {
         appState.toggleMangaInShelf(shelfId: shelf.id, mangaId: 42)
         XCTAssertFalse(appState.isMangaInShelf(shelfId: shelf.id, mangaId: 42))
         
+        appState.renameShelf(id: shelf.id, newName: "Top Tier Manhwas")
+        XCTAssertEqual(appState.shelves.first(where: { $0.id == shelf.id })?.name, "Top Tier Manhwas")
+        
         appState.deleteShelf(id: shelf.id)
         XCTAssertEqual(appState.shelves.count, initialShelvesCount)
     }
