@@ -329,7 +329,8 @@ public actor KaizenAPIClient {
     }
     
     public func searchMangaRemote(serverUrl: URL, token: String, keyword: String, source: String) async throws -> [RemoteSearchResult] {
-        let req = request(try trpcQueryURL(serverUrl, procedure: "manga.search", input: ["keyword": keyword, "source": source]), token: token)
+        var req = request(try trpcQueryURL(serverUrl, procedure: "manga.search", input: ["keyword": keyword, "source": source]), token: token)
+        req.timeoutInterval = 60 // Permite búsquedas globales en múltiples fuentes sin timeout prematuro
         let (data, http) = try await send(req)
         guard (200...299).contains(http.statusCode) else { throw KaizenError.server(status: http.statusCode) }
         guard let items = trpcRawData(data) as? [[String: Any]] else { return [] }

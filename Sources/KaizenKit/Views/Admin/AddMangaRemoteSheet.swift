@@ -8,7 +8,7 @@ public struct AddMangaRemoteSheet: View {
     var onAdded: (() -> Void)?
     
     @State private var availableSources: [String] = []
-    @State private var selectedSource: String = ""
+    @State private var selectedSource: String = "all"
     @State private var searchText: String = ""
     @State private var searchResults: [RemoteSearchResult] = []
     
@@ -73,9 +73,13 @@ public struct AddMangaRemoteSheet: View {
                     // Contenido: Lista de resultados o configuración del manga seleccionado
                     if isSearching {
                         Spacer()
-                        ProgressView(isEn ? "Searching sources on Kaizen..." : "Buscando en fuentes de Kaizen...")
-                            .tint(.cyan)
-                            .foregroundStyle(.secondary)
+                        ProgressView(
+                            selectedSource == "all"
+                                ? (isEn ? "Searching all sources on Kaizen..." : "Buscando en todas las fuentes de Kaizen...")
+                                : (isEn ? "Searching on \(selectedSource.capitalized)..." : "Buscando en \(selectedSource.capitalized)...")
+                        )
+                        .tint(.cyan)
+                        .foregroundStyle(.secondary)
                         Spacer()
                     } else if let result = selectedResult {
                         configuredMangaView(result: result)
@@ -113,12 +117,13 @@ public struct AddMangaRemoteSheet: View {
                 
                 if isLoadingSources {
                     ProgressView().scaleEffect(0.7)
-                } else if availableSources.isEmpty {
-                    Text(isEn ? "No sources detected" : "Sin fuentes detectadas")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 } else {
-                    Picker("Fuente", selection: $selectedSource) {
+                    Picker(isEn ? "Source" : "Fuente", selection: $selectedSource) {
+                        Text(isEn ? "🌐 All Sources (Global)" : "🌐 Todas las fuentes (Global)")
+                            .tag("all")
+                        
+                        Divider()
+                        
                         ForEach(availableSources, id: \.self) { src in
                             Text(src.capitalized).tag(src)
                         }
@@ -161,17 +166,21 @@ public struct AddMangaRemoteSheet: View {
     private var emptyStateView: some View {
         VStack(spacing: 12) {
             Spacer()
-            Image(systemName: "books.vertical.circle")
+            Image(systemName: selectedSource == "all" ? "globe.americas.fill" : "books.vertical.circle")
                 .font(.system(size: 48))
-                .foregroundStyle(.cyan.opacity(0.6))
+                .foregroundStyle(.cyan.opacity(0.7))
             Text(isEn ? "Search and Add New Series" : "Buscar y Añadir Nueva Serie")
                 .font(.headline)
                 .foregroundStyle(.white)
-            Text(isEn ? "Search across Kaizen scrapers and configure automatic downloads." : "Busca en los scrapers configurados en Kaizen y añade series para su descarga automática.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 32)
+            Text(
+                selectedSource == "all"
+                    ? (isEn ? "Global Search: queries all available scrapers on Kaizen simultaneously." : "Búsqueda Global: consulta todos los scrapers disponibles en Kaizen simultáneamente.")
+                    : (isEn ? "Searching in \(selectedSource.capitalized). You can also switch to 'All Sources (Global)'." : "Buscando en \(selectedSource.capitalized). También puedes cambiar a 'Todas las fuentes (Global)'.")
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 32)
             Spacer()
         }
     }
@@ -334,8 +343,8 @@ public struct AddMangaRemoteSheet: View {
         do {
             let sources = try await apiClient.fetchAvailableSources(serverUrl: session.serverUrl, token: session.apiToken)
             self.availableSources = sources
-            if let first = sources.first {
-                self.selectedSource = first
+            if self.selectedSource.isEmpty {
+                self.selectedSource = "all"
             }
         } catch {
             errorMessage = error.localizedDescription

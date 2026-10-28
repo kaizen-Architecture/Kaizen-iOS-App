@@ -522,7 +522,7 @@ public struct AdminDashboardView: View {
                         systemImage: "shield.lefthalf.filled.trianglebadge.exclamationmark"
                     )
                     .font(.headline)
-                    .foregroundStyle(blockedSources.isEmpty ? .secondary : .red)
+                    .foregroundStyle(blockedSources.isEmpty ? Color.secondary : Color.red)
                     
                     Spacer()
                     
@@ -587,7 +587,7 @@ public struct AdminDashboardView: View {
                         systemImage: "xmark.octagon.fill"
                     )
                     .font(.headline)
-                    .foregroundStyle(store.failedJobs.isEmpty ? .secondary : .orange)
+                    .foregroundStyle(store.failedJobs.isEmpty ? Color.secondary : Color.orange)
                     
                     Spacer()
                     
@@ -801,7 +801,7 @@ public struct AdminDashboardView: View {
                                 HStack(spacing: 6) {
                                     Text(source.isActive ? (isEn ? "Active" : "Activa") : (source.isFailed ? (isEn ? "Blocked / Failed" : "Bloqueada / Fallida") : (isEn ? "Disabled" : "Deshabilitada")))
                                         .font(.caption2)
-                                        .foregroundStyle(source.isActive ? .green : (source.isFailed ? .red : .secondary))
+                                        .foregroundStyle(source.isActive ? Color.green : (source.isFailed ? Color.red : Color.secondary))
                                     
                                     if let origin = source.origin {
                                         Text("• \(origin)")
