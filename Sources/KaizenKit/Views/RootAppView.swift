@@ -1,4 +1,4 @@
-﻿import SwiftUI
+import SwiftUI
 
 /// Vista raíz adaptativa para iPhone y iPad conectando todas las pantallas reales
 public struct RootAppView: View {
@@ -36,7 +36,7 @@ struct iPhoneRootLayout: View {
     
     var body: some View {
         TabView {
-            LibraryView(apiClient: apiClient)
+            HomeDashboardView(apiClient: apiClient)
                 .tabItem {
                     Label(String(localized: "tab_home"), systemImage: "house.fill")
                 }
@@ -76,7 +76,7 @@ struct iPhoneRootLayout: View {
 struct iPadRootLayout: View {
     @Environment(AppState.self) private var appState
     let apiClient: KaizenAPIClient
-    @State private var selectedTab: String? = "library"
+    @State private var selectedTab: String? = "home"
     
     var body: some View {
         NavigationSplitView {
@@ -125,7 +125,9 @@ struct iPadRootLayout: View {
             }
         } detail: {
             switch selectedTab {
-            case "library", "home":
+            case "home":
+                HomeDashboardView(apiClient: apiClient)
+            case "library":
                 LibraryView(apiClient: apiClient)
             case "requests":
                 MangaRequestsView(apiClient: apiClient)
@@ -136,7 +138,7 @@ struct iPadRootLayout: View {
             case "settings":
                 UserSettingsView(apiClient: apiClient)
             default:
-                LibraryView(apiClient: apiClient)
+                HomeDashboardView(apiClient: apiClient)
             }
         }
     }

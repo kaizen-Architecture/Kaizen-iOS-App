@@ -1,4 +1,4 @@
-﻿import SwiftUI
+import SwiftUI
 
 @MainActor
 @Observable
@@ -13,50 +13,50 @@ public final class MangaRequestsStore {
     
     public init() {}
     
-    public func loadRequests(session: UserSession?) async {
-        guard session != nil else { return }
+    public func loadRequests(apiClient: KaizenAPIClient, session: UserSession?) async {
+        guard let session else { return }
         isLoading = true
+        errorMessage = nil
         defer { isLoading = false }
         
-        // Simulación inicial mientras conectamos el router de trpc.mangaRequest.list
-        // Si hay peticiones reales se cargarán desde el endpoint tRPC
-        if requests.isEmpty {
-            requests = [
-                MangaRequestItem(id: 1, title: "Solo Leveling", startChapter: 1, status: .approved, requestedBy: "Alex R."),
-                MangaRequestItem(id: 2, title: "One Piece", startChapter: 1100, status: .downloading, requestedBy: "Maria L.", downloadProgress: 0.45),
-                MangaRequestItem(id: 3, title: "Spy x Family", startChapter: 90, status: .available, requestedBy: "Kevin T.")
-            ]
+        do {
+            requests = try await apiClient.fetchRequests(serverUrl: session.serverUrl, token: session.apiToken)
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
     
-    public func submitRequest(session: UserSession?) async {
-        guard let session, !titleInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+    public func submitRequest(apiClient: KaizenAPIClient, session: UserSession?) async {
+        let cleanTitle = titleInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let session, !cleanTitle.isEmpty else {
             errorMessage = "Introduce el título del manga"
             return
         }
         
         isSubmitting = true
+        errorMessage = nil
         defer { isSubmitting = false }
         
-        let newReq = MangaRequestItem(
-            id: Int.random(in: 100...9999),
-            title: titleInput.trimmingCharacters(in: .whitespacesAndNewlines),
-            startChapter: startChapterInput,
-            status: .pending,
-            requestedBy: session.username
-        )
-        
-        requests.insert(newReq, at: 0)
-        titleInput = ""
-        startChapterInput = 1
-        successMessage = "¡Solicitud registrada correctamente!"
+        do {
+            try await apiClient.createRequest(
+                serverUrl: session.serverUrl,
+                token: session.apiToken,
+                title: cleanTitle,
+                startChapter: startChapterInput
+            )
+            titleInput = ""
+            startChapterInput = 1
+            successMessage = "¡Solicitud registrada correctamente!"
+            await loadRequests(apiClient: apiClient, session: session)
+        } catch {
+            errorMessage = "Error al registrar la solicitud: \(error.localizedDescription)"
+        }
     }
 }
 
 public struct MangaRequestsView: View {
     @Environment(AppState.self) private var appState
     @State private var store = MangaRequestsStore()
-    @State private var showCreateSheet: Bool = false
     let apiClient: KaizenAPIClient
     
     public init(apiClient: KaizenAPIClient) {
@@ -71,7 +71,7 @@ public struct MangaRequestsView: View {
                 VStack(spacing: 16) {
                     // Tarjeta superior para solicitar nueva serie
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Solicitar nueva serie")
+                        Text("Solicitar nueva serie a Kaizen")
                             .font(.headline)
                             .foregroundStyle(.white)
                         
@@ -91,7 +91,7 @@ public struct MangaRequestsView: View {
                             Spacer()
                             
                             Button {
-                                Task { await store.submitRequest(session: appState.session) }
+                                Task { await store.submitRequest(apiClient: apiClient, session: appState.session) }
                             } label: {
                                 if store.isSubmitting {
                                     ProgressView().tint(.black)
@@ -106,6 +106,16 @@ public struct MangaRequestsView: View {
                             .foregroundStyle(.black)
                             .disabled(store.titleInput.isEmpty || store.isSubmitting)
                         }
+                        
+                        if let error = store.errorMessage {
+                            Text(error)
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                        } else if let success = store.successMessage {
+                            Text(success)
+                                .font(.caption)
+                                .foregroundStyle(.green)
+                        }
                     }
                     .padding(16)
                     .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 16))
@@ -113,69 +123,88 @@ public struct MangaRequestsView: View {
                     .padding(.horizontal)
                     .padding(.top, 8)
                     
-                    // Listado de peticiones
-                    List {
-                        Section("Peticiones en Curso") {
-                            ForEach(store.requests) { req in
-                                HStack(spacing: 12) {
-                                    Image(systemName: "book.closed.fill")
-                                        .font(.title2)
-                                        .foregroundStyle(.cyan)
-                                    
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(req.title)
-                                            .font(.headline)
-                                            .foregroundStyle(.white)
+                    // Listado de peticiones reales
+                    if store.isLoading && store.requests.isEmpty {
+                        Spacer()
+                        ProgressView().tint(.cyan)
+                        Spacer()
+                    } else if store.requests.isEmpty {
+                        Spacer()
+                        ContentUnavailableView(
+                            "Sin peticiones registradas",
+                            systemImage: "tray",
+                            description: Text("Cuando solicites series o las soliciten otros usuarios en Kaizen, aparecerán aquí con su estado en vivo.")
+                        )
+                        Spacer()
+                    } else {
+                        List {
+                            Section("Peticiones en Curso (\(store.requests.count))") {
+                                ForEach(store.requests) { req in
+                                    HStack(spacing: 12) {
+                                        Image(systemName: "book.closed.fill")
+                                            .font(.title2)
+                                            .foregroundStyle(.cyan)
                                         
-                                        HStack(spacing: 6) {
-                                            Text("Desde Cap. \(req.startChapter)")
-                                                .font(.caption2)
-                                                .foregroundStyle(.secondary)
-                                            Text("•")
-                                                .font(.caption2)
-                                                .foregroundStyle(.secondary)
-                                            Text(req.requestedBy)
-                                                .font(.caption2)
-                                                .foregroundStyle(.secondary)
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(req.title)
+                                                .font(.headline)
+                                                .foregroundStyle(.white)
+                                            
+                                            HStack(spacing: 6) {
+                                                Text("Desde Cap. \(req.startChapter)")
+                                                    .font(.caption2)
+                                                    .foregroundStyle(.secondary)
+                                                if let username = req.username {
+                                                    Text("•")
+                                                        .font(.caption2)
+                                                        .foregroundStyle(.secondary)
+                                                    Text(username)
+                                                        .font(.caption2)
+                                                        .foregroundStyle(.secondary)
+                                                }
+                                            }
                                         }
+                                        
+                                        Spacer()
+                                        
+                                        statusBadge(for: req.status)
                                     }
-                                    
-                                    Spacer()
-                                    
-                                    statusBadge(for: req.status)
+                                    .padding(.vertical, 4)
                                 }
-                                .padding(.vertical, 4)
                             }
                         }
+                        .scrollContentBackground(.hidden)
+                        .refreshable {
+                            await store.loadRequests(apiClient: apiClient, session: appState.session)
+                        }
                     }
-                    .scrollContentBackground(.hidden)
                 }
             }
             .navigationTitle(String(localized: "tab_requests"))
             .task {
-                await store.loadRequests(session: appState.session)
+                await store.loadRequests(apiClient: apiClient, session: appState.session)
             }
         }
     }
     
     @ViewBuilder
-    private func statusBadge(for status: RequestStatus) -> some View {
-        switch status {
-        case .pending:
+    private func statusBadge(for status: String) -> some View {
+        switch status.uppercased() {
+        case "PENDING":
             Text("Pendiente")
                 .font(.caption2.weight(.bold))
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
                 .background(Color.orange.opacity(0.2), in: Capsule())
                 .foregroundStyle(.orange)
-        case .approved:
+        case "APPROVED":
             Text("Aprobado")
                 .font(.caption2.weight(.bold))
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
                 .background(Color.green.opacity(0.2), in: Capsule())
                 .foregroundStyle(.green)
-        case .downloading:
+        case "DOWNLOADING":
             HStack(spacing: 4) {
                 ProgressView().tint(.cyan).scaleEffect(0.7)
                 Text("Descargando")
@@ -185,15 +214,15 @@ public struct MangaRequestsView: View {
             .padding(.vertical, 4)
             .background(Color.cyan.opacity(0.2), in: Capsule())
             .foregroundStyle(.cyan)
-        case .available:
+        case "AVAILABLE":
             Text("Disponible")
                 .font(.caption2.weight(.bold))
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
                 .background(Color.blue.opacity(0.2), in: Capsule())
                 .foregroundStyle(.blue)
-        case .rejected:
-            Text("Rechazado")
+        default:
+            Text(status)
                 .font(.caption2.weight(.bold))
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)

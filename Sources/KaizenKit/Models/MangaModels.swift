@@ -1,9 +1,6 @@
 import Foundation
 
-/// Manga de la biblioteca de Kaizen, decodificado desde `GET /api/v1/mangas`.
-///
-/// El servidor devuelve `id` numérico, los datos descriptivos dentro de `metadata`
-/// y el progreso dentro de `readingStatus`; aquí se aplanan.
+/// Manga de la biblioteca de Kaizen, decodificado desde `GET /api/v1/mangas` o `GET /api/v1/mangas/:id`.
 public struct Manga: Identifiable, Decodable, Sendable, Equatable {
     public let id: Int
     public let title: String
@@ -13,10 +10,12 @@ public struct Manga: Identifiable, Decodable, Sendable, Equatable {
     public let authors: [String]?
     public let genres: [String]?
     public let status: String?
+    public let libraryId: Int?
     public let totalChapters: Int
     public let unreadCount: Int
     public let readingPercentage: Double
-    public let isFavorite: Bool
+    public var isFavorite: Bool
+    public var chapters: [Chapter]?
     
     public init(
         id: Int,
@@ -27,10 +26,12 @@ public struct Manga: Identifiable, Decodable, Sendable, Equatable {
         authors: [String]? = nil,
         genres: [String]? = nil,
         status: String? = nil,
+        libraryId: Int? = nil,
         totalChapters: Int = 0,
         unreadCount: Int = 0,
         readingPercentage: Double = 0.0,
-        isFavorite: Bool = false
+        isFavorite: Bool = false,
+        chapters: [Chapter]? = nil
     ) {
         self.id = id
         self.title = title
@@ -40,21 +41,31 @@ public struct Manga: Identifiable, Decodable, Sendable, Equatable {
         self.authors = authors
         self.genres = genres
         self.status = status
+        self.libraryId = libraryId
         self.totalChapters = totalChapters
         self.unreadCount = unreadCount
         self.readingPercentage = readingPercentage
         self.isFavorite = isFavorite
+        self.chapters = chapters
     }
     
-    private enum Keys: String, CodingKey { case id, title, isFavorite, metadata, readingStatus }
-    private enum MetadataKeys: String, CodingKey { case cover, summary, authors, genres, status, synonyms }
-    private enum ProgressKeys: String, CodingKey { case totalChapters, unreadChapters, percentageComplete }
+    private enum Keys: String, CodingKey {
+        case id, title, isFavorite, libraryId, metadata, readingStatus, chapters
+    }
+    private enum MetadataKeys: String, CodingKey {
+        case cover, summary, authors, genres, status, synonyms
+    }
+    private enum ProgressKeys: String, CodingKey {
+        case totalChapters, unreadChapters, percentageComplete
+    }
     
     public init(from decoder: Decoder) throws {
         let root = try decoder.container(keyedBy: Keys.self)
         id = try root.decode(Int.self, forKey: .id)
         title = try root.decode(String.self, forKey: .title)
         isFavorite = try root.decodeIfPresent(Bool.self, forKey: .isFavorite) ?? false
+        libraryId = try root.decodeIfPresent(Int.self, forKey: .libraryId)
+        chapters = try root.decodeIfPresent([Chapter].self, forKey: .chapters)
         
         let meta = try? root.nestedContainer(keyedBy: MetadataKeys.self, forKey: .metadata)
         let cover = try meta?.decodeIfPresent(String.self, forKey: .cover)
@@ -67,78 +78,172 @@ public struct Manga: Identifiable, Decodable, Sendable, Equatable {
         altTitles = try meta?.decodeIfPresent([String].self, forKey: .synonyms)
         
         let progress = try? root.nestedContainer(keyedBy: ProgressKeys.self, forKey: .readingStatus)
-        totalChapters = try progress?.decodeIfPresent(Int.self, forKey: .totalChapters) ?? 0
-        unreadCount = try progress?.decodeIfPresent(Int.self, forKey: .unreadChapters) ?? 0
-        readingPercentage = try progress?.decodeIfPresent(Double.self, forKey: .percentageComplete) ?? 0
+        let total = try progress?.decodeIfPresent(Int.self, forKey: .totalChapters)
+        let unread = try progress?.decodeIfPresent(Int.self, forKey: .unreadChapters)
+        let pct = try progress?.decodeIfPresent(Double.self, forKey: .percentageComplete)
+        
+        totalChapters = total ?? (chapters?.count ?? 0)
+        unreadCount = unread ?? (chapters?.filter { !$0.isRead }.count ?? 0)
+        readingPercentage = pct ?? (totalChapters > 0 ? Double(totalChapters - unreadCount) / Double(totalChapters) * 100.0 : 0.0)
     }
 }
 
-/// Modelo de capítulo
+/// Capítulo real de un manga en Kaizen
 public struct Chapter: Identifiable, Codable, Sendable, Equatable {
-    public let id: String
-    public let mangaId: String
-    public let title: String
-    public let chapterNumber: Double
-    public let isRead: Bool
-    public let lastReadPage: Int?
-    public let totalPages: Int?
-    public let releaseDate: Date?
+    public let id: Int
+    public let mangaId: Int?
+    public let index: Int
+    public let fileName: String?
+    public var isFavorite: Bool
+    public var isRead: Bool
+    public var lastReadPage: Int
+    public let lastReadAt: String?
     
     public init(
-        id: String,
-        mangaId: String,
-        title: String,
-        chapterNumber: Double,
+        id: Int,
+        mangaId: Int? = nil,
+        index: Int,
+        fileName: String? = nil,
+        isFavorite: Bool = false,
         isRead: Bool = false,
-        lastReadPage: Int? = nil,
-        totalPages: Int? = nil,
-        releaseDate: Date? = nil
+        lastReadPage: Int = 0,
+        lastReadAt: String? = nil
     ) {
         self.id = id
         self.mangaId = mangaId
-        self.title = title
-        self.chapterNumber = chapterNumber
+        self.index = index
+        self.fileName = fileName
+        self.isFavorite = isFavorite
         self.isRead = isRead
         self.lastReadPage = lastReadPage
-        self.totalPages = totalPages
-        self.releaseDate = releaseDate
+        self.lastReadAt = lastReadAt
+    }
+    
+    public var displayName: String {
+        "Capítulo \(index)"
     }
 }
 
-/// Estado de solicitud de manga
-public enum RequestStatus: String, Codable, Sendable {
-    case pending = "PENDING"
-    case approved = "APPROVED"
-    case downloading = "DOWNLOADING"
-    case available = "AVAILABLE"
-    case rejected = "REJECTED"
+/// Biblioteca en el servidor Kaizen
+public struct KaizenLibrary: Identifiable, Codable, Sendable, Equatable {
+    public let id: Int
+    public let path: String
+    public let name: String?
+    public let description: String?
+    
+    public init(id: Int, path: String, name: String? = nil, description: String? = nil) {
+        self.id = id
+        self.path = path
+        self.name = name
+        self.description = description
+    }
+    
+    public var displayTitle: String {
+        if let name, !name.isEmpty { return name }
+        return URL(fileURLWithPath: path).lastPathComponent
+    }
 }
 
-/// Solicitud de manga creada por un usuario
-public struct MangaRequestItem: Identifiable, Codable, Sendable {
+/// Solicitud de manga en Kaizen
+public struct MangaRequestItem: Identifiable, Codable, Sendable, Equatable {
     public let id: Int
     public let title: String
     public let startChapter: Int
-    public let status: RequestStatus
-    public let requestedBy: String
-    public let requestedAt: Date
-    public let downloadProgress: Double?
+    public let status: String
+    public let userId: Int?
+    public let username: String?
+    public let createdAt: String?
     
     public init(
         id: Int,
         title: String,
         startChapter: Int = 1,
-        status: RequestStatus = .pending,
-        requestedBy: String,
-        requestedAt: Date = Date(),
-        downloadProgress: Double? = nil
+        status: String = "PENDING",
+        userId: Int? = nil,
+        username: String? = nil,
+        createdAt: String? = nil
     ) {
         self.id = id
         self.title = title
         self.startChapter = startChapter
         self.status = status
-        self.requestedBy = requestedBy
-        self.requestedAt = requestedAt
-        self.downloadProgress = downloadProgress
+        self.userId = userId
+        self.username = username
+        self.createdAt = createdAt
+    }
+    
+    public var statusBadgeColor: String {
+        switch status.uppercased() {
+        case "AVAILABLE": return "green"
+        case "APPROVED": return "blue"
+        case "DOWNLOADING": return "orange"
+        case "CANCELLED", "REJECTED": return "red"
+        default: return "yellow"
+        }
+    }
+}
+
+/// Métricas de una cola BullMQ de Kaizen
+public struct QueueMetric: Identifiable, Codable, Sendable, Equatable {
+    public let id: String
+    public let name: String
+    public let label: String
+    public let active: Int
+    public let waiting: Int
+    public let delayed: Int
+    public let failed: Int
+    public let completed: Int
+    public let total: Int
+    public let isPaused: Bool
+}
+
+/// Resumen global de colas
+public struct QueueMetricsSummary: Codable, Sendable, Equatable {
+    public let totalActive: Int
+    public let totalWaiting: Int
+    public let totalDelayed: Int
+    public let totalFailed: Int
+}
+
+public struct QueuesResponse: Codable, Sendable, Equatable {
+    public let summary: QueueMetricsSummary
+    public let queues: [QueueMetric]
+}
+
+/// Configuración del servidor Kaizen (AniList, etc.)
+public struct KaizenServerSettings: Codable, Sendable, Equatable {
+    public let anilistEnabled: Bool
+    public let anilistUsername: String?
+    public let anilistAutoSync: Bool
+    public let discordEnabled: Bool
+    public let whatsappEnabled: Bool
+    
+    public init(
+        anilistEnabled: Bool = false,
+        anilistUsername: String? = nil,
+        anilistAutoSync: Bool = false,
+        discordEnabled: Bool = false,
+        whatsappEnabled: Bool = false
+    ) {
+        self.anilistEnabled = anilistEnabled
+        self.anilistUsername = anilistUsername
+        self.anilistAutoSync = anilistAutoSync
+        self.discordEnabled = discordEnabled
+        self.whatsappEnabled = whatsappEnabled
+    }
+}
+
+/// Estantería o colección lógica personalizada por el lector (independiente de carpetas del servidor)
+public struct UserShelf: Identifiable, Codable, Sendable, Equatable {
+    public let id: UUID
+    public var name: String
+    public var icon: String
+    public var mangaIds: [Int]
+    
+    public init(id: UUID = UUID(), name: String, icon: String = "books.vertical.fill", mangaIds: [Int] = []) {
+        self.id = id
+        self.name = name
+        self.icon = icon
+        self.mangaIds = mangaIds
     }
 }

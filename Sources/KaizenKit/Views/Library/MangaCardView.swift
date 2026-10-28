@@ -13,15 +13,27 @@ public struct MangaCardView: View {
         VStack(alignment: .leading, spacing: 6) {
             ZStack(alignment: .topTrailing) {
                 // Portada
-                Group {
-                    RemoteImage(
-                        url: manga.coverUrl.flatMap { URL(string: $0) },
-                        token: appState.session?.apiToken
-                    )
-                }
+                RemoteImage(
+                    url: manga.coverUrl.flatMap { URL(string: $0) },
+                    token: appState.session?.apiToken
+                )
                 .aspectRatio(2/3, contentMode: .fit)
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .shadow(color: .black.opacity(0.3), radius: 6, y: 4)
+                .overlay(alignment: .bottom) {
+                    if manga.readingPercentage > 0 {
+                        GeometryReader { geo in
+                            ZStack(alignment: .leading) {
+                                Color.black.opacity(0.6)
+                                Color.cyan.frame(width: geo.size.width * CGFloat(min(max(manga.readingPercentage / 100.0, 0), 1)))
+                            }
+                        }
+                        .frame(height: 3)
+                        .clipShape(RoundedRectangle(cornerRadius: 1.5))
+                        .padding(.horizontal, 4)
+                        .padding(.bottom, 4)
+                    }
+                }
                 
                 // Badge de capítulos no leídos
                 if manga.unreadCount > 0 {
@@ -39,6 +51,17 @@ public struct MangaCardView: View {
                             in: Capsule()
                         )
                         .padding(8)
+                }
+                
+                // Indicador de favorito
+                if manga.isFavorite {
+                    Image(systemName: "heart.fill")
+                        .font(.caption2)
+                        .foregroundStyle(.pink)
+                        .padding(6)
+                        .background(Color.black.opacity(0.6), in: Circle())
+                        .padding(8)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 }
             }
             

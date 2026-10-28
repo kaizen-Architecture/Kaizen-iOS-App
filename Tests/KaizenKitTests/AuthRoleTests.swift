@@ -35,33 +35,46 @@ final class AuthRoleXCTests: XCTestCase {
     }
     
     @MainActor
-    func testLibraryStoreFiltering() {
-        let store = LibraryStore()
+    func testLibraryFiltering() {
         let manga1 = Manga(id: 1, title: "Jujutsu Kaisen", readingPercentage: 50.0, isFavorite: true)
         let manga2 = Manga(id: 2, title: "One Piece", readingPercentage: 100.0, isFavorite: false)
         let manga3 = Manga(id: 3, title: "Chainsaw Man", readingPercentage: 0.0, isFavorite: false)
+        let mangas = [manga1, manga2, manga3]
         
-        store.mangas = [manga1, manga2, manga3]
+        let reading = mangas.filter { $0.readingPercentage > 0 && $0.readingPercentage < 100 }
+        XCTAssertEqual(reading.count, 1)
+        XCTAssertEqual(reading.first?.title, "Jujutsu Kaisen")
         
-        store.selectedFilter = .all
-        XCTAssertEqual(store.filteredMangas.count, 3)
+        let caughtUp = mangas.filter { $0.readingPercentage >= 100 }
+        XCTAssertEqual(caughtUp.count, 1)
+        XCTAssertEqual(caughtUp.first?.title, "One Piece")
         
-        store.selectedFilter = .reading
-        XCTAssertEqual(store.filteredMangas.count, 1)
-        XCTAssertEqual(store.filteredMangas.first?.title, "Jujutsu Kaisen")
+        let favorites = mangas.filter { $0.isFavorite }
+        XCTAssertEqual(favorites.count, 1)
+        XCTAssertEqual(favorites.first?.title, "Jujutsu Kaisen")
+    }
+    
+    @MainActor
+    func testUserShelfManagement() {
+        let appState = AppState()
+        let initialShelvesCount = appState.shelves.count
         
-        store.selectedFilter = .completed
-        XCTAssertEqual(store.filteredMangas.count, 1)
-        XCTAssertEqual(store.filteredMangas.first?.title, "One Piece")
+        appState.createShelf(name: "Joyas Especiales", icon: "sparkles")
+        XCTAssertEqual(appState.shelves.count, initialShelvesCount + 1)
+        guard let shelf = appState.shelves.last else {
+            XCTFail("Shelf no encontrada")
+            return
+        }
+        XCTAssertEqual(shelf.name, "Joyas Especiales")
         
-        store.selectedFilter = .favorites
-        XCTAssertEqual(store.filteredMangas.count, 1)
-        XCTAssertEqual(store.filteredMangas.first?.title, "Jujutsu Kaisen")
+        XCTAssertFalse(appState.isMangaInShelf(shelfId: shelf.id, mangaId: 42))
+        appState.toggleMangaInShelf(shelfId: shelf.id, mangaId: 42)
+        XCTAssertTrue(appState.isMangaInShelf(shelfId: shelf.id, mangaId: 42))
+        appState.toggleMangaInShelf(shelfId: shelf.id, mangaId: 42)
+        XCTAssertFalse(appState.isMangaInShelf(shelfId: shelf.id, mangaId: 42))
         
-        store.selectedFilter = .all
-        store.searchText = "chain"
-        XCTAssertEqual(store.filteredMangas.count, 1)
-        XCTAssertEqual(store.filteredMangas.first?.title, "Chainsaw Man")
+        appState.deleteShelf(id: shelf.id)
+        XCTAssertEqual(appState.shelves.count, initialShelvesCount)
     }
     
     /// Forma real de `GET /api/v1/mangas` en el servidor Kaizen (id numérico, metadata y readingStatus anidados).

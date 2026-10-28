@@ -3,27 +3,39 @@ import SwiftUI
 public enum LibraryFilter: String, CaseIterable, Identifiable {
     case all = "Todos"
     case reading = "Leyendo"
-    case completed = "Completados"
+    case caughtUp = "Al día"
     case favorites = "Favoritos"
     
     public var id: String { rawValue }
 }
 
-@MainActor
-@Observable
-public final class LibraryStore {
-    public var mangas: [Manga] = []
-    public var selectedFilter: LibraryFilter = .all
-    public var searchText: String = ""
-    public var isLoading: Bool = false
-    public var errorMessage: String?
+public struct LibraryView: View {
+    @Environment(AppState.self) private var appState
+    let apiClient: KaizenAPIClient
     
-    public init() {}
+    @State private var selectedFilter: LibraryFilter = .all
+    @State private var selectedLibraryId: Int? = nil
+    @State private var searchText: String = ""
+    @State private var selectedManga: Manga?
+    @State private var showCreateLibraryAlert = false
+    @State private var newLibraryPath = ""
+    @State private var creationError: String?
     
-    public var filteredMangas: [Manga] {
-        mangas.filter { manga in
+    private let columns = [
+        GridItem(.adaptive(minimum: 125, maximum: 180), spacing: 16)
+    ]
+    
+    public init(apiClient: KaizenAPIClient) {
+        self.apiClient = apiClient
+    }
+    
+    private var filteredMangas: [Manga] {
+        appState.mangas.filter { manga in
             let matchesSearch = searchText.isEmpty ||
-                manga.title.localizedCaseInsensitiveContains(searchText)
+                manga.title.localizedCaseInsensitiveContains(searchText) ||
+                (manga.authors?.contains { $0.localizedCaseInsensitiveContains(searchText) } ?? false)
+            
+            let matchesLibrary = selectedLibraryId == nil || manga.libraryId == selectedLibraryId
             
             let matchesFilter: Bool
             switch selectedFilter {
@@ -31,48 +43,14 @@ public final class LibraryStore {
                 matchesFilter = true
             case .reading:
                 matchesFilter = manga.readingPercentage > 0 && manga.readingPercentage < 100
-            case .completed:
+            case .caughtUp:
                 matchesFilter = manga.readingPercentage >= 100
             case .favorites:
                 matchesFilter = manga.isFavorite
             }
             
-            return matchesSearch && matchesFilter
+            return matchesSearch && matchesLibrary && matchesFilter
         }
-    }
-    
-    public func loadLibrary(apiClient: KaizenAPIClient, session: UserSession?, language: String = "es") async {
-        guard let session else { return }
-        isLoading = true
-        errorMessage = nil
-        defer { isLoading = false }
-        
-        do {
-            mangas = try await apiClient.fetchLibrary(
-                serverUrl: session.serverUrl,
-                token: session.apiToken
-            )
-        } catch let error as KaizenError {
-            errorMessage = error.userMessage(language: language)
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-}
-
-public struct LibraryView: View {
-    @Environment(AppState.self) private var appState
-    @State private var store = LibraryStore()
-    @State private var selectedManga: Manga?
-    let apiClient: KaizenAPIClient
-    
-    // Grid adaptativo para iPhone (2-3 columnas) y iPad (4-6 columnas)
-    private let columns = [
-        GridItem(.adaptive(minimum: 120, maximum: 180), spacing: 16)
-    ]
-    
-    public init(apiClient: KaizenAPIClient) {
-        self.apiClient = apiClient
     }
     
     public var body: some View {
@@ -81,38 +59,67 @@ public struct LibraryView: View {
                 Color.black.ignoresSafeArea()
                 
                 VStack(spacing: 0) {
-                    // Barra de Filtros horizontales
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(LibraryFilter.allCases) { filter in
-                                Button(filter.rawValue) {
-                                    store.selectedFilter = filter
+                    // Barra superior con filtros y selector de biblioteca
+                    HStack {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(LibraryFilter.allCases) { filter in
+                                    Button(filter.rawValue) {
+                                        selectedFilter = filter
+                                    }
+                                    .font(.subheadline.weight(.medium))
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 8)
+                                    .background(
+                                        selectedFilter == filter ?
+                                        Color.cyan : Color.white.opacity(0.08),
+                                        in: Capsule()
+                                    )
+                                    .foregroundStyle(
+                                        selectedFilter == filter ? Color.black : Color.white
+                                    )
                                 }
-                                .font(.subheadline.weight(.medium))
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 8)
-                                .background(
-                                    store.selectedFilter == filter ?
-                                    Color.cyan : Color.white.opacity(0.08),
-                                    in: Capsule()
-                                )
-                                .foregroundStyle(
-                                    store.selectedFilter == filter ? Color.black : Color.white
-                                )
                             }
                         }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
+                        
+                        // Menú de Bibliotecas de Kaizen
+                        if !appState.libraries.isEmpty {
+                            Menu {
+                                Button("Todas las bibliotecas") {
+                                    selectedLibraryId = nil
+                                }
+                                Divider()
+                                ForEach(appState.libraries) { lib in
+                                    Button(lib.displayTitle) {
+                                        selectedLibraryId = lib.id
+                                    }
+                                }
+                                Divider()
+                                Button("Añadir biblioteca...") {
+                                    newLibraryPath = ""
+                                    creationError = nil
+                                    showCreateLibraryAlert = true
+                                }
+                            } label: {
+                                Image(systemName: "folder.badge.gearshape")
+                                    .font(.headline)
+                                    .foregroundStyle(.cyan)
+                                    .padding(8)
+                                    .background(Color.white.opacity(0.08), in: Circle())
+                            }
+                        }
                     }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
                     
-                    // Contenido: Grid de mangas o estado vacío
-                    if store.isLoading && store.mangas.isEmpty {
+                    // Contenido
+                    if appState.isLoadingLibrary && appState.mangas.isEmpty {
                         Spacer()
                         ProgressView().tint(.cyan)
                         Spacer()
-                    } else if store.filteredMangas.isEmpty {
+                    } else if filteredMangas.isEmpty {
                         Spacer()
-                        if let error = store.errorMessage {
+                        if let error = appState.libraryErrorMessage {
                             VStack(spacing: 14) {
                                 ContentUnavailableView(
                                     "No se pudo cargar la biblioteca",
@@ -121,32 +128,50 @@ public struct LibraryView: View {
                                 )
                                 Button("Reintentar") {
                                     Task {
-                                        await store.loadLibrary(apiClient: apiClient, session: appState.session, language: appState.currentLanguage)
+                                        await appState.loadLibrary(client: apiClient, force: true)
                                     }
                                 }
                                 .buttonStyle(.borderedProminent)
-                                Button("Cerrar sesión", role: .destructive) {
-                                    appState.logout()
-                                }
                             }
                         } else {
                             ContentUnavailableView(
                                 "No hay mangas",
                                 systemImage: "books.vertical",
-                                description: Text(store.searchText.isEmpty ? "Tu biblioteca está vacía" : "Ningún título coincide con la búsqueda")
+                                description: Text(searchText.isEmpty ? (selectedFilter == .favorites ? "No tienes mangas marcados como favoritos" : "Tu biblioteca está vacía") : "Ningún título coincide con la búsqueda")
                             )
                         }
                         Spacer()
                     } else {
                         ScrollView {
                             LazyVGrid(columns: columns, spacing: 20) {
-                                ForEach(store.filteredMangas) { manga in
+                                ForEach(filteredMangas) { manga in
                                     Button {
                                         selectedManga = manga
                                     } label: {
                                         MangaCardView(manga: manga)
                                     }
                                     .buttonStyle(.plain)
+                                    .contextMenu {
+                                        Button {
+                                            Task { await appState.toggleFavorite(mangaId: manga.id, client: apiClient) }
+                                        } label: {
+                                            Label(
+                                                manga.isFavorite ? "Quitar de favoritos" : "Añadir a favoritos",
+                                                systemImage: manga.isFavorite ? "heart.slash" : "heart.fill"
+                                            )
+                                        }
+                                        
+                                        Menu("Estanterías") {
+                                            ForEach(appState.shelves) { shelf in
+                                                Button {
+                                                    appState.toggleMangaInShelf(shelfId: shelf.id, mangaId: manga.id)
+                                                } label: {
+                                                    let inShelf = appState.isMangaInShelf(shelfId: shelf.id, mangaId: manga.id)
+                                                    Label(shelf.name, systemImage: inShelf ? "checkmark.circle.fill" : "circle")
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                             .padding(.horizontal, 16)
@@ -154,108 +179,362 @@ public struct LibraryView: View {
                             .padding(.bottom, 24)
                         }
                         .refreshable {
-                            await store.loadLibrary(apiClient: apiClient, session: appState.session, language: appState.currentLanguage)
+                            await appState.loadLibrary(client: apiClient, force: true)
                         }
                     }
                 }
             }
             .navigationTitle(String(localized: "tab_library"))
-            .searchable(text: $store.searchText, prompt: "Buscar en tu catálogo")
+            .searchable(text: $searchText, prompt: "Buscar en tu catálogo")
             .task {
-                if store.mangas.isEmpty {
-                    await store.loadLibrary(apiClient: apiClient, session: appState.session, language: appState.currentLanguage)
+                if appState.mangas.isEmpty {
+                    await appState.loadLibrary(client: apiClient, force: false)
                 }
             }
             .sheet(item: $selectedManga) { manga in
                 MangaDetailSheet(manga: manga, apiClient: apiClient)
             }
+            .alert("Nueva Biblioteca", isPresented: $showCreateLibraryAlert) {
+                TextField("Ruta en servidor (ej: /manga/manhwa)", text: $newLibraryPath)
+                Button("Crear") {
+                    guard let session = appState.session, !newLibraryPath.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+                    Task {
+                        do {
+                            let newLib = try await apiClient.createLibrary(serverUrl: session.serverUrl, token: session.apiToken, path: newLibraryPath.trimmingCharacters(in: .whitespaces))
+                            appState.libraries.append(newLib)
+                        } catch {
+                            creationError = error.localizedDescription
+                        }
+                    }
+                }
+                Button("Cancelar", role: .cancel) {}
+            } message: {
+                Text("Introduce la ruta absoluta en el disco del servidor donde se alojarán los mangas.")
+            }
         }
     }
 }
 
-/// Ficha rápida de Manga
+/// Ficha completa e interactiva de Manga con listado de capítulos y lector real
 public struct MangaDetailSheet: View {
     let manga: Manga
     let apiClient: KaizenAPIClient
     @Environment(\.dismiss) private var dismiss
+    @Environment(AppState.self) private var appState
+    
+    @State private var detailedManga: Manga?
+    @State private var isLoadingChapters: Bool = false
+    @State private var readingChapter: Chapter?
+    @State private var errorMessage: String?
     
     public init(manga: Manga, apiClient: KaizenAPIClient) {
         self.manga = manga
         self.apiClient = apiClient
     }
     
+    private var currentManga: Manga {
+        detailedManga ?? manga
+    }
+    
+    private var chapters: [Chapter] {
+        currentManga.chapters ?? []
+    }
+    
+    private var firstUnreadChapter: Chapter? {
+        chapters.sorted { $0.index < $1.index }.first { !$0.isRead } ?? chapters.sorted { $0.index < $1.index }.first
+    }
+    
     public var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack(alignment: .top, spacing: 16) {
-                        MangaCardView(manga: manga)
-                            .frame(width: 140)
-                        
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(manga.title)
-                                .font(.title3.weight(.bold))
-                                .foregroundStyle(.white)
+            ZStack {
+                Color.black.ignoresSafeArea()
+                
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) {
+                        // Cabecera con portada e información básica
+                        HStack(alignment: .top, spacing: 18) {
+                            MangaCardView(manga: currentManga)
+                                .frame(width: 140)
                             
-                            if let authors = manga.authors, !authors.isEmpty {
-                                Text(authors.joined(separator: ", "))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            
-                            if let genres = manga.genres, !genres.isEmpty {
-                                FlowLayout(spacing: 4) {
-                                    ForEach(genres, id: \.self) { genre in
-                                        Text(genre)
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text(currentManga.title)
+                                    .font(.title3.weight(.bold))
+                                    .foregroundStyle(.white)
+                                
+                                if let authors = currentManga.authors, !authors.isEmpty {
+                                    Text(authors.joined(separator: ", "))
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                }
+                                
+                                // Estado de publicación
+                                HStack(spacing: 8) {
+                                    Text(currentManga.status == "COMPLETED" ? "Finalizado" : "En emisión")
+                                        .font(.caption2.weight(.bold))
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(currentManga.status == "COMPLETED" ? Color.purple.opacity(0.2) : Color.green.opacity(0.2), in: Capsule())
+                                        .foregroundStyle(currentManga.status == "COMPLETED" ? Color.purple : Color.green)
+                                    
+                                    if currentManga.readingPercentage >= 100 {
+                                        Text("Al día")
+                                            .font(.caption2.weight(.bold))
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 4)
+                                            .background(Color.cyan.opacity(0.2), in: Capsule())
+                                            .foregroundStyle(.cyan)
+                                    }
+                                }
+                                
+                                // Porcentaje de lectura
+                                VStack(alignment: .leading, spacing: 4) {
+                                    HStack {
+                                        Text("Progreso: \(Int(currentManga.readingPercentage))%")
+                                            .font(.caption.weight(.semibold))
+                                            .foregroundStyle(.secondary)
+                                        Spacer()
+                                        Text("\(currentManga.totalChapters - currentManga.unreadCount)/\(currentManga.totalChapters) cap.")
                                             .font(.caption2)
-                                            .padding(.horizontal, 6)
-                                            .padding(.vertical, 3)
-                                            .background(Color.white.opacity(0.1), in: Capsule())
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    ProgressView(value: min(max(currentManga.readingPercentage / 100.0, 0), 1))
+                                        .tint(.cyan)
+                                }
+                                
+                                // Botones de Favorito y Estanterías Lógicas
+                                HStack(spacing: 8) {
+                                    Button {
+                                        Task {
+                                            await appState.toggleFavorite(mangaId: currentManga.id, client: apiClient)
+                                            detailedManga?.isFavorite.toggle()
+                                        }
+                                    } label: {
+                                        HStack(spacing: 6) {
+                                            Image(systemName: currentManga.isFavorite ? "heart.fill" : "heart")
+                                                .foregroundStyle(currentManga.isFavorite ? .pink : .white)
+                                            Text(currentManga.isFavorite ? "Favorito" : "Favorito")
+                                                .font(.caption.weight(.semibold))
+                                        }
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 6)
+                                        .background(Color.white.opacity(0.1), in: Capsule())
+                                    }
+                                    .buttonStyle(.plain)
+                                    
+                                    Menu {
+                                        ForEach(appState.shelves) { shelf in
+                                            Button {
+                                                appState.toggleMangaInShelf(shelfId: shelf.id, mangaId: currentManga.id)
+                                            } label: {
+                                                let inShelf = appState.isMangaInShelf(shelfId: shelf.id, mangaId: currentManga.id)
+                                                Label(shelf.name, systemImage: inShelf ? "checkmark.circle.fill" : "circle")
+                                            }
+                                        }
+                                    } label: {
+                                        HStack(spacing: 6) {
+                                            Image(systemName: "books.vertical.fill")
+                                                .foregroundStyle(.yellow)
+                                            Text("Estanterías")
+                                                .font(.caption.weight(.semibold))
+                                        }
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 6)
+                                        .background(Color.white.opacity(0.1), in: Capsule())
+                                    }
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.top, 16)
+                        
+                        // Botón de acción principal: Continuar Lectura
+                        if let next = firstUnreadChapter {
+                            Button {
+                                readingChapter = next
+                            } label: {
+                                HStack {
+                                    Image(systemName: "book.fill")
+                                    Text(next.lastReadPage > 0 ? "Continuar Cap. \(next.index) (pág. \(next.lastReadPage))" : "Leer Cap. \(next.index)")
+                                        .font(.headline)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
+                                .background(Color.cyan, in: RoundedRectangle(cornerRadius: 12))
+                                .foregroundStyle(.black)
+                            }
+                            .padding(.horizontal, 16)
+                        }
+                        
+                        // Sinopsis
+                        if let synopsis = currentManga.synopsis, !synopsis.isEmpty {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Sinopsis")
+                                    .font(.headline)
+                                    .foregroundStyle(.white)
+                                Text(synopsis)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(5)
+                            }
+                            .padding(.horizontal, 16)
+                        }
+                        
+                        // Listado de Capítulos
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack {
+                                Text("Capítulos (\(chapters.count))")
+                                    .font(.title3.weight(.bold))
+                                    .foregroundStyle(.white)
+                                
+                                Spacer()
+                                
+                                if !chapters.isEmpty {
+                                    Button("Marcar todo leído") {
+                                        markAllAsRead()
+                                    }
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.cyan)
+                                }
+                            }
+                            .padding(.horizontal, 16)
+                            
+                            if isLoadingChapters && chapters.isEmpty {
+                                HStack {
+                                    Spacer()
+                                    ProgressView().tint(.cyan)
+                                    Spacer()
+                                }
+                                .padding(.vertical, 30)
+                            } else if chapters.isEmpty {
+                                Text("No hay capítulos disponibles en el servidor")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                    .padding(.horizontal, 16)
+                            } else {
+                                LazyVStack(spacing: 8) {
+                                    ForEach(chapters.sorted(by: { $0.index > $1.index })) { chapter in
+                                        HStack {
+                                            Button {
+                                                readingChapter = chapter
+                                            } label: {
+                                                HStack(spacing: 12) {
+                                                    ZStack {
+                                                        Circle()
+                                                            .fill(chapter.isRead ? Color.cyan.opacity(0.15) : Color.white.opacity(0.08))
+                                                            .frame(width: 36, height: 36)
+                                                        Text("\(chapter.index)")
+                                                            .font(.caption.weight(.bold))
+                                                            .foregroundStyle(chapter.isRead ? Color.cyan : Color.white)
+                                                    }
+                                                    
+                                                    VStack(alignment: .leading, spacing: 2) {
+                                                        Text(chapter.displayName)
+                                                            .font(.subheadline.weight(.semibold))
+                                                            .foregroundStyle(.white)
+                                                        if chapter.lastReadPage > 0 && !chapter.isRead {
+                                                            Text("Página \(chapter.lastReadPage)")
+                                                                .font(.caption2)
+                                                                .foregroundStyle(.cyan)
+                                                        }
+                                                    }
+                                                    Spacer()
+                                                }
+                                            }
+                                            .buttonStyle(.plain)
+                                            
+                                            // Botón de marcar leído/no leído
+                                            Button {
+                                                toggleChapterRead(chapter)
+                                            } label: {
+                                                Image(systemName: chapter.isRead ? "checkmark.circle.fill" : "circle")
+                                                    .font(.title3)
+                                                    .foregroundStyle(chapter.isRead ? Color.cyan : Color.secondary)
+                                                    .padding(8)
+                                            }
+                                        }
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 8)
+                                        .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
+                                        .padding(.horizontal, 16)
                                     }
                                 }
                             }
                         }
                     }
-                    .padding()
-                    
-                    if let synopsis = manga.synopsis {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Sinopsis")
-                                .font(.headline)
-                                .foregroundStyle(.white)
-                            Text(synopsis)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                        }
-                        .padding(.horizontal)
-                    }
+                    .padding(.bottom, 30)
                 }
             }
-            .navigationTitle(manga.title)
+            .navigationTitle(currentManga.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cerrar") { dismiss() }
                 }
             }
+            .task {
+                await loadDetail()
+            }
+            .fullScreenCover(item: $readingChapter) { chapter in
+                ReaderView(
+                    mangaId: currentManga.id,
+                    chapterId: chapter.id,
+                    chapterIndex: chapter.index,
+                    initialPage: chapter.lastReadPage > 0 ? chapter.lastReadPage : 1,
+                    apiClient: apiClient
+                )
+                .onDisappear {
+                    Task { await loadDetail() }
+                }
+            }
         }
     }
-}
-
-/// Helper para tags
-struct FlowLayout: Layout {
-    var spacing: CGFloat
     
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        return CGSize(width: proposal.width ?? 0, height: 40)
+    private func loadDetail() async {
+        guard let session = appState.session else { return }
+        isLoadingChapters = true
+        defer { isLoadingChapters = false }
+        do {
+            let detail = try await apiClient.fetchMangaDetail(serverUrl: session.serverUrl, token: session.apiToken, mangaId: currentManga.id)
+            self.detailedManga = detail
+            appState.updateMangaInState(detail)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
     
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        var x = bounds.minX
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            subview.place(at: CGPoint(x: x, y: bounds.minY), proposal: .unspecified)
-            x += size.width + spacing
+    private func toggleChapterRead(_ chapter: Chapter) {
+        guard let session = appState.session else { return }
+        let newRead = !chapter.isRead
+        if let idx = detailedManga?.chapters?.firstIndex(where: { $0.id == chapter.id }) {
+            detailedManga?.chapters?[idx].isRead = newRead
+        }
+        Task {
+            try? await apiClient.toggleChapterRead(
+                serverUrl: session.serverUrl,
+                token: session.apiToken,
+                mangaId: currentManga.id,
+                chapterId: chapter.id,
+                isRead: newRead
+            )
+            await loadDetail()
+        }
+    }
+    
+    private func markAllAsRead() {
+        guard let session = appState.session else { return }
+        detailedManga?.chapters = detailedManga?.chapters?.map {
+            var ch = $0
+            ch.isRead = true
+            return ch
+        }
+        Task {
+            try? await apiClient.markAllChaptersRead(
+                serverUrl: session.serverUrl,
+                token: session.apiToken,
+                mangaId: currentManga.id,
+                isRead: true
+            )
+            await loadDetail()
         }
     }
 }

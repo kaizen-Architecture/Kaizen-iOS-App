@@ -1,4 +1,4 @@
-﻿import SwiftUI
+import SwiftUI
 
 public enum ReadingDirection: String, CaseIterable, Identifiable {
     case rightToLeft = "Manga (RTL)"
@@ -11,18 +11,21 @@ public enum ReadingDirection: String, CaseIterable, Identifiable {
 @MainActor
 @Observable
 public final class ReaderStore {
-    public let mangaId: String
-    public let chapterId: String
+    public let mangaId: Int
+    public let chapterId: Int
+    public let chapterIndex: Int
     public var pages: [String] = []
     public var currentPage: Int = 1
-    public var readingDirection: ReadingDirection = .rightToLeft
+    public var readingDirection: ReadingDirection = .verticalCascade
     public var isHUDVisible: Bool = true
     public var isLoading: Bool = false
     public var errorMessage: String?
     
-    public init(mangaId: String, chapterId: String) {
+    public init(mangaId: Int, chapterId: Int, chapterIndex: Int = 1, initialPage: Int = 1) {
         self.mangaId = mangaId
         self.chapterId = chapterId
+        self.chapterIndex = chapterIndex
+        self.currentPage = max(initialPage, 1)
     }
     
     public func loadPages(apiClient: KaizenAPIClient, session: UserSession?) async {
@@ -38,19 +41,24 @@ public final class ReaderStore {
                 mangaId: mangaId,
                 chapterId: chapterId
             )
+            if currentPage > pages.count && !pages.isEmpty {
+                currentPage = 1
+            }
         } catch {
             errorMessage = "Error cargando páginas: \(error.localizedDescription)"
         }
     }
     
     public func saveProgress(apiClient: KaizenAPIClient, session: UserSession?) async {
-        guard let session else { return }
+        guard let session, !pages.isEmpty else { return }
+        let isFullyRead = currentPage >= pages.count
         try? await apiClient.updateReadingProgress(
             serverUrl: session.serverUrl,
             token: session.apiToken,
             mangaId: mangaId,
             chapterId: chapterId,
-            page: currentPage
+            page: currentPage,
+            isRead: isFullyRead ? true : nil
         )
     }
 }
@@ -62,8 +70,8 @@ public struct ReaderView: View {
     @State private var store: ReaderStore
     let apiClient: KaizenAPIClient
     
-    public init(mangaId: String, chapterId: String, apiClient: KaizenAPIClient) {
-        _store = State(initialValue: ReaderStore(mangaId: mangaId, chapterId: chapterId))
+    public init(mangaId: Int, chapterId: Int, chapterIndex: Int = 1, initialPage: Int = 1, apiClient: KaizenAPIClient) {
+        _store = State(initialValue: ReaderStore(mangaId: mangaId, chapterId: chapterId, chapterIndex: chapterIndex, initialPage: initialPage))
         self.apiClient = apiClient
     }
     
@@ -74,35 +82,29 @@ public struct ReaderView: View {
             // Área de visualización de páginas
             Group {
                 if store.isLoading && store.pages.isEmpty {
-                    ProgressView().tint(.cyan)
+                    VStack(spacing: 12) {
+                        ProgressView().tint(.cyan)
+                        Text("Extrayendo páginas del servidor...")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 } else if store.pages.isEmpty {
                     ContentUnavailableView(
                         "No se encontraron páginas",
                         systemImage: "photo.badge.exclamationmark",
-                        description: Text("No se han podido extraer las páginas de este capítulo.")
+                        description: Text(store.errorMessage ?? "No se han podido extraer las páginas de este capítulo.")
                     )
                 } else {
                     switch store.readingDirection {
                     case .rightToLeft, .leftToRight:
                         TabView(selection: $store.currentPage) {
                             ForEach(Array(store.pages.enumerated()), id: \.offset) { index, urlString in
-                                AsyncImage(url: URL(string: urlString)) { phase in
-                                    switch phase {
-                                    case .success(let image):
-                                        image
-                                            .resizable()
-                                            .scaledToFit()
-                                            .tag(index + 1)
-                                    case .failure:
-                                        Image(systemName: "exclamationmark.triangle")
-                                            .font(.largeTitle)
-                                            .foregroundStyle(.secondary)
-                                    case .empty:
-                                        ProgressView().tint(.cyan)
-                                    @unknown default:
-                                        EmptyView()
-                                    }
-                                }
+                                RemoteImage(
+                                    url: URL(string: urlString),
+                                    token: appState.session?.apiToken,
+                                    contentMode: .fit
+                                )
+                                .tag(index + 1)
                             }
                         }
                         .tabViewStyle(.page(indexDisplayMode: .never))
@@ -111,14 +113,13 @@ public struct ReaderView: View {
                     case .verticalCascade:
                         ScrollView(.vertical, showsIndicators: false) {
                             LazyVStack(spacing: 0) {
-                                ForEach(store.pages, id: \.self) { urlString in
-                                    AsyncImage(url: URL(string: urlString)) { image in
-                                        image
-                                            .resizable()
-                                            .scaledToFit()
-                                    } placeholder: {
-                                        ProgressView().frame(height: 300)
-                                    }
+                                ForEach(Array(store.pages.enumerated()), id: \.offset) { index, urlString in
+                                    RemoteImage(
+                                        url: URL(string: urlString),
+                                        token: appState.session?.apiToken,
+                                        contentMode: .fit
+                                    )
+                                    .id(index + 1)
                                 }
                             }
                         }
@@ -149,12 +150,12 @@ public struct ReaderView: View {
                         Spacer()
                         
                         VStack(spacing: 2) {
-                            Text("Capítulo")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                            Text("Pág. \(store.currentPage) / \(max(store.pages.count, 1))")
-                                .font(.caption.monospacedDigit().weight(.semibold))
+                            Text("Capítulo \(store.chapterIndex)")
+                                .font(.caption.weight(.bold))
                                 .foregroundStyle(.white)
+                            Text("Pág. \(store.currentPage) / \(max(store.pages.count, 1))")
+                                .font(.caption2.monospacedDigit())
+                                .foregroundStyle(.secondary)
                         }
                         
                         Spacer()
@@ -166,7 +167,7 @@ public struct ReaderView: View {
                                 }
                             }
                         } label: {
-                            Image(systemName: "gearshape.fill")
+                            Image(systemName: "slider.horizontal.3")
                                 .font(.headline)
                                 .foregroundStyle(.white)
                                 .padding(10)
@@ -175,7 +176,7 @@ public struct ReaderView: View {
                     }
                     .padding(.horizontal, 20)
                     .padding(.vertical, 8)
-                    .background(Color.black.opacity(0.65), in: Capsule())
+                    .background(Color.black.opacity(0.75), in: Capsule())
                     .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 1))
                     .padding(.horizontal, 20)
                     .padding(.top, 12)
@@ -207,7 +208,7 @@ public struct ReaderView: View {
                         }
                         .padding(.horizontal, 20)
                         .padding(.vertical, 12)
-                        .background(Color.black.opacity(0.65), in: Capsule())
+                        .background(Color.black.opacity(0.75), in: Capsule())
                         .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 1))
                         .padding(.horizontal, 24)
                         .padding(.bottom, 20)

@@ -49,7 +49,7 @@ public actor KaizenAPIClient {
     }
 
     // MARK: - Biblioteca
-
+    
     public func fetchLibrary(serverUrl: URL, token: String) async throws -> [Manga] {
         let req = request(try endpoint(serverUrl, path: "/api/v1/mangas"), token: token)
         let (data, http) = try await send(req)
@@ -60,11 +60,29 @@ public actor KaizenAPIClient {
             throw KaizenError.unexpectedResponse
         }
     }
+    
+    public func fetchMangaDetail(serverUrl: URL, token: String, mangaId: Int) async throws -> Manga {
+        let req = request(try endpoint(serverUrl, path: "/api/v1/mangas/\(mangaId)"), token: token)
+        let (data, http) = try await send(req)
+        try checkREST(http)
+        do {
+            return try decoder.decode(Manga.self, from: data)
+        } catch {
+            throw KaizenError.unexpectedResponse
+        }
+    }
+    
+    public func toggleMangaFavorite(serverUrl: URL, token: String, mangaId: Int, isFavorite: Bool) async throws {
+        let body: [String: Any] = ["json": ["id": mangaId, "isFavorite": isFavorite]]
+        let req = try request(try endpoint(serverUrl, path: "/api/trpc/manga.toggleMangaFavorite"), method: "POST", token: token, json: body)
+        let (_, http) = try await send(req)
+        try checkREST(http)
+    }
 
     // MARK: - Capítulos y páginas
 
     /// Devuelve las URLs absolutas de las páginas de un capítulo.
-    public func fetchChapterPages(serverUrl: URL, token: String, mangaId: String, chapterId: String) async throws -> [String] {
+    public func fetchChapterPages(serverUrl: URL, token: String, mangaId: Int, chapterId: Int) async throws -> [String] {
         let req = request(try endpoint(serverUrl, path: "/api/v1/mangas/\(mangaId)/chapters/\(chapterId)/pages"), token: token)
         let (data, http) = try await send(req)
         try checkREST(http)
@@ -75,12 +93,27 @@ public actor KaizenAPIClient {
         }
         var base = serverUrl.absoluteString
         while base.hasSuffix("/") { base.removeLast() }
-        return pages.compactMap { ($0["url"] as? String).map { base + $0 } }
+        return pages.compactMap { pageDict -> String? in
+            guard let url = pageDict["url"] as? String else { return nil }
+            return url.hasPrefix("http") ? url : base + url
+        }
     }
 
-    public func updateReadingProgress(serverUrl: URL, token: String, mangaId: String, chapterId: String, page: Int) async throws {
+    public func updateReadingProgress(serverUrl: URL, token: String, mangaId: Int, chapterId: Int, page: Int, isRead: Bool? = nil) async throws {
+        var chDict: [String: Any] = ["id": chapterId, "lastReadPage": page]
+        if let isRead { chDict["isRead"] = isRead }
+        let payload: [String: Any] = ["chapters": [chDict]]
+        let req = try request(
+            try endpoint(serverUrl, path: "/api/v1/mangas/\(mangaId)"),
+            method: "PATCH", token: token, json: payload
+        )
+        let (_, http) = try await send(req)
+        try checkREST(http)
+    }
+    
+    public func toggleChapterRead(serverUrl: URL, token: String, mangaId: Int, chapterId: Int, isRead: Bool) async throws {
         let payload: [String: Any] = [
-            "chapters": [["id": chapterId, "isRead": true, "lastReadPage": page]]
+            "chapters": [["id": chapterId, "isRead": isRead]]
         ]
         let req = try request(
             try endpoint(serverUrl, path: "/api/v1/mangas/\(mangaId)"),
@@ -88,6 +121,95 @@ public actor KaizenAPIClient {
         )
         let (_, http) = try await send(req)
         try checkREST(http)
+    }
+    
+    public func markAllChaptersRead(serverUrl: URL, token: String, mangaId: Int, isRead: Bool) async throws {
+        let payload: [String: Any] = ["isRead": isRead]
+        let req = try request(
+            try endpoint(serverUrl, path: "/api/v1/mangas/\(mangaId)"),
+            method: "PATCH", token: token, json: payload
+        )
+        let (_, http) = try await send(req)
+        try checkREST(http)
+    }
+    
+    // MARK: - Peticiones (mangaRequest)
+    
+    public func fetchRequests(serverUrl: URL, token: String) async throws -> [MangaRequestItem] {
+        let req = request(try trpcQueryURL(serverUrl, procedure: "mangaRequest.list", input: [:]), token: token)
+        let (data, http) = try await send(req)
+        guard (200...299).contains(http.statusCode) else { throw KaizenError.server(status: http.statusCode) }
+        guard let list = trpcRawData(data) as? [[String: Any]] else { return [] }
+        
+        return list.compactMap { item in
+            guard let id = item["id"] as? Int,
+                  let title = item["title"] as? String else { return nil }
+            let start = item["startChapter"] as? Int ?? 1
+            let status = item["status"] as? String ?? "PENDING"
+            let userId = item["userId"] as? Int
+            let user = item["user"] as? [String: Any]
+            let username = user?["username"] as? String
+            let createdAt = item["createdAt"] as? String
+            return MangaRequestItem(id: id, title: title, startChapter: start, status: status, userId: userId, username: username, createdAt: createdAt)
+        }
+    }
+    
+    public func createRequest(serverUrl: URL, token: String, title: String, startChapter: Int) async throws {
+        let body: [String: Any] = ["json": ["title": title, "startChapter": startChapter]]
+        let req = try request(try endpoint(serverUrl, path: "/api/trpc/mangaRequest.create"), method: "POST", token: token, json: body)
+        let (_, http) = try await send(req)
+        guard (200...299).contains(http.statusCode) else { throw KaizenError.server(status: http.statusCode) }
+    }
+    
+    // MARK: - Bibliotecas
+    
+    public func fetchLibraries(serverUrl: URL, token: String) async throws -> [KaizenLibrary] {
+        let req = request(try trpcQueryURL(serverUrl, procedure: "library.list", input: [:]), token: token)
+        let (data, http) = try await send(req)
+        guard (200...299).contains(http.statusCode) else { throw KaizenError.server(status: http.statusCode) }
+        guard let raw = trpcRawData(data) else { return [] }
+        let bytes = try JSONSerialization.data(withJSONObject: raw)
+        return (try? decoder.decode([KaizenLibrary].self, from: bytes)) ?? []
+    }
+    
+    public func createLibrary(serverUrl: URL, token: String, path: String) async throws -> KaizenLibrary {
+        let body: [String: Any] = ["json": ["path": path]]
+        let req = try request(try endpoint(serverUrl, path: "/api/trpc/library.create"), method: "POST", token: token, json: body)
+        let (data, http) = try await send(req)
+        guard (200...299).contains(http.statusCode) else { throw KaizenError.server(status: http.statusCode) }
+        guard let payload = trpcPayload(data) else { throw KaizenError.unexpectedResponse }
+        let bytes = try JSONSerialization.data(withJSONObject: payload)
+        return try decoder.decode(KaizenLibrary.self, from: bytes)
+    }
+
+    // MARK: - Administración y Ajustes
+    
+    public func fetchServerSettings(serverUrl: URL, token: String) async throws -> KaizenServerSettings {
+        let req = request(try trpcQueryURL(serverUrl, procedure: "settings.query", input: [:]), token: token)
+        let (data, http) = try await send(req)
+        guard (200...299).contains(http.statusCode) else { throw KaizenError.server(status: http.statusCode) }
+        guard let payload = trpcPayload(data),
+              let appConfig = payload["appConfig"] as? [String: Any] else {
+            return KaizenServerSettings()
+        }
+        let raw = try JSONSerialization.data(withJSONObject: appConfig)
+        return (try? decoder.decode(KaizenServerSettings.self, from: raw)) ?? KaizenServerSettings()
+    }
+    
+    public func fetchQueueMetrics(serverUrl: URL, token: String) async throws -> QueuesResponse? {
+        let req = request(try trpcQueryURL(serverUrl, procedure: "queues.getMetrics", input: [:]), token: token)
+        let (data, http) = try await send(req)
+        guard (200...299).contains(http.statusCode) else { throw KaizenError.server(status: http.statusCode) }
+        guard let payload = trpcPayload(data) else { return nil }
+        let raw = try JSONSerialization.data(withJSONObject: payload)
+        return try? decoder.decode(QueuesResponse.self, from: raw)
+    }
+    
+    public func syncAllMangas(serverUrl: URL, token: String) async throws {
+        let body: [String: Any] = ["json": [:]]
+        let req = try request(try endpoint(serverUrl, path: "/api/trpc/manga.syncAll"), method: "POST", token: token, json: body)
+        let (_, http) = try await send(req)
+        guard (200...299).contains(http.statusCode) else { throw KaizenError.server(status: http.statusCode) }
     }
 
     // MARK: - Ajustes de usuario remotos (tRPC)
@@ -183,12 +305,17 @@ public actor KaizenAPIClient {
         }
     }
 
-    /// Extrae `result.data.json` de una respuesta tRPC (superjson).
-    private func trpcPayload(_ data: Data) -> [String: Any]? {
+    /// Extrae `result.data.json` o `result.data` de una respuesta tRPC (superjson), sea objeto o array.
+    private func trpcRawData(_ data: Data) -> Any? {
         guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let result = root["result"] as? [String: Any],
               let payload = result["data"] as? [String: Any] else { return nil }
-        return (payload["json"] as? [String: Any]) ?? payload
+        return payload["json"] ?? payload
+    }
+
+    /// Extrae `result.data.json` de una respuesta tRPC cuando es diccionario.
+    private func trpcPayload(_ data: Data) -> [String: Any]? {
+        trpcRawData(data) as? [String: Any]
     }
 
     /// El login no devuelve el idioma; se consulta aparte y, si falla, se usa español.
