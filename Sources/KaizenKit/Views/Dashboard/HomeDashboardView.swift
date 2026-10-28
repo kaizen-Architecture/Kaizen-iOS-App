@@ -10,6 +10,19 @@ public struct HomeDashboardView: View {
     @State private var newShelfName = ""
     @State private var newShelfIcon = "books.vertical.fill"
     
+    // Secciones expandidas en modo cuadrícula adaptativa (recordadas en preferencias)
+    @State private var expandedSections: Set<String> = {
+        if let saved = UserDefaults.standard.stringArray(forKey: "kaizen_home_expanded_sections") {
+            return Set(saved)
+        }
+        return []
+    }()
+    
+    // Columnas adaptativas para el modo cuadrícula expandida (en iPad caben 5-6 columnas, ~15 mangas por pantalla)
+    private let adaptiveGridColumns = [
+        GridItem(.adaptive(minimum: 125, maximum: 175), spacing: 16)
+    ]
+    
     public init(apiClient: KaizenAPIClient) {
         self.apiClient = apiClient
     }
@@ -64,6 +77,7 @@ public struct HomeDashboardView: View {
                             // SECCIÓN 1: Continuar Leyendo
                             if !inProgressMangas.isEmpty {
                                 shelfSection(
+                                    id: "continue_reading",
                                     title: isEn ? "Continue Reading" : "Continuar leyendo",
                                     icon: "play.circle.fill",
                                     iconColor: .cyan,
@@ -71,11 +85,26 @@ public struct HomeDashboardView: View {
                                 )
                             }
                             
-                            // SECCIÓN 2: Estanterías Lógicas Personalizadas (Solo las creadas que tengan mangas)
+                            // SECCIÓN 2: Bibliotecas del Servidor (si existen y tienen mangas)
+                            ForEach(appState.libraries) { lib in
+                                let libMangas = appState.mangas.filter { $0.libraryId == lib.id }
+                                if !libMangas.isEmpty {
+                                    shelfSection(
+                                        id: "server_lib_\(lib.id)",
+                                        title: lib.displayTitle,
+                                        icon: "books.vertical.fill",
+                                        iconColor: .indigo,
+                                        mangas: libMangas
+                                    )
+                                }
+                            }
+                            
+                            // SECCIÓN 3: Estanterías Lógicas Personalizadas (Solo las creadas que tengan mangas)
                             ForEach(appState.shelves) { shelf in
                                 let shelfMangas = appState.mangas.filter { shelf.mangaIds.contains($0.id) }
                                 if !shelfMangas.isEmpty {
                                     shelfSection(
+                                        id: "shelf_\(shelf.id.uuidString)",
                                         title: shelf.name,
                                         icon: shelf.icon,
                                         iconColor: .yellow,
@@ -84,9 +113,10 @@ public struct HomeDashboardView: View {
                                 }
                             }
                             
-                            // SECCIÓN 3: Favoritos
+                            // SECCIÓN 4: Favoritos
                             if !favoriteMangas.isEmpty {
                                 shelfSection(
+                                    id: "favorites",
                                     title: isEn ? "Your Favorites" : "Tus Favoritos",
                                     icon: "heart.fill",
                                     iconColor: .pink,
@@ -94,9 +124,10 @@ public struct HomeDashboardView: View {
                                 )
                             }
                             
-                            // SECCIÓN 4: Recién Añadidos
+                            // SECCIÓN 5: Recién Añadidos
                             if !recentlyAddedMangas.isEmpty {
                                 shelfSection(
+                                    id: "recently_added",
                                     title: isEn ? "Recently Added" : "Recién añadidos",
                                     icon: "sparkles",
                                     iconColor: .purple,
@@ -143,9 +174,22 @@ public struct HomeDashboardView: View {
         }
     }
     
+    private func toggleSection(_ id: String) {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+            if expandedSections.contains(id) {
+                expandedSections.remove(id)
+            } else {
+                expandedSections.insert(id)
+            }
+            UserDefaults.standard.set(Array(expandedSections), forKey: "kaizen_home_expanded_sections")
+        }
+    }
+    
     @ViewBuilder
-    private func shelfSection(title: String, icon: String, iconColor: Color, mangas: [Manga]) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+    private func shelfSection(id: String, title: String, icon: String, iconColor: Color, mangas: [Manga]) -> some View {
+        let isExpanded = expandedSections.contains(id)
+        
+        VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 8) {
                 Image(systemName: icon)
                     .foregroundStyle(iconColor)
@@ -155,11 +199,53 @@ public struct HomeDashboardView: View {
                 Text("(\(mangas.count))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                
                 Spacer()
+                
+                // Botón Expandir / Contraer a la derecha
+                Button {
+                    toggleSection(id)
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: isExpanded ? "rectangle.compress.vertical" : "rectangle.expand.vertical")
+                            .font(.caption2.weight(.bold))
+                        Text(isExpanded ? (isEn ? "Collapse" : "Contraer") : (isEn ? "Expand" : "Expandir"))
+                            .font(.caption.weight(.semibold))
+                    }
+                    .foregroundStyle(isExpanded ? Color.cyan : Color.white.opacity(0.85))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(
+                        Capsule()
+                            .fill(isExpanded ? Color.cyan.opacity(0.18) : Color.white.opacity(0.08))
+                    )
+                    .overlay(
+                        Capsule()
+                            .stroke(isExpanded ? Color.cyan.opacity(0.4) : Color.white.opacity(0.12), lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
             }
             .padding(.horizontal, 16)
             
-            horizontalMangaList(mangas: mangas)
+            if isExpanded {
+                // Modo Cuadrícula Adaptativa (en iPad muestra ~15 mangas de un vistazo con scroll vertical)
+                LazyVGrid(columns: adaptiveGridColumns, spacing: 16) {
+                    ForEach(mangas) { manga in
+                        Button {
+                            selectedManga = manga
+                        } label: {
+                            MangaCardView(manga: manga)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            } else {
+                // Modo Horizontal de una sola línea
+                horizontalMangaList(mangas: mangas)
+            }
         }
     }
     

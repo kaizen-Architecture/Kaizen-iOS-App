@@ -12,14 +12,19 @@ public struct MangaCardView: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             ZStack(alignment: .topTrailing) {
-                // Portada
-                RemoteImage(
-                    url: manga.coverUrl.flatMap { URL(string: $0) },
-                    token: appState.session?.apiToken
-                )
-                .aspectRatio(2/3, contentMode: .fit)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .shadow(color: .black.opacity(0.3), radius: 6, y: 4)
+                // Portada con relación de aspecto 2:3 fija garantizada para todas las series
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color.white.opacity(0.06))
+                    .aspectRatio(2/3, contentMode: .fit)
+                    .overlay {
+                        RemoteImage(
+                            url: manga.coverUrl.flatMap { URL(string: $0) },
+                            token: appState.session?.apiToken,
+                            contentMode: .fill
+                        )
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .shadow(color: .black.opacity(0.3), radius: 6, y: 4)
                 .overlay(alignment: .bottom) {
                     if manga.readingPercentage > 0 {
                         GeometryReader { geo in

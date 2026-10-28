@@ -231,7 +231,7 @@ final class AuthRoleXCTests: XCTestCase {
         
         // When remember is false, it should set session in memory and record the disabled preference
         appState.setSession(session, remember: false)
-        XCTAssertEqual(appState.currentSession?.username, "admin")
+        XCTAssertEqual(appState.session?.username, "admin")
         XCTAssertTrue(UserDefaults.standard.bool(forKey: "kaizen_remember_login_disabled"))
         
         // When remember is true, it clears the disabled preference
