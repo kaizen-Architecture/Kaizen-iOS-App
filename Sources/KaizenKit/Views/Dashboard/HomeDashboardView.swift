@@ -139,19 +139,29 @@ public struct HomeDashboardView: View {
             .navigationTitle("Kaizen")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        newShelfName = ""
-                        showCreateShelfSheet = true
-                    } label: {
-                        Label(isEn ? "New Library" : "Nueva Librería", systemImage: "plus.rectangle.on.folder")
-                            .foregroundStyle(.cyan)
+                    HStack(spacing: 12) {
+                        Button {
+                            Task {
+                                await appState.loadLibrary(client: apiClient, force: true)
+                            }
+                        } label: {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                                .foregroundStyle(appState.isLoadingLibrary ? .cyan : .secondary)
+                        }
+                        .disabled(appState.isLoadingLibrary)
+                        
+                        Button {
+                            newShelfName = ""
+                            showCreateShelfSheet = true
+                        } label: {
+                            Label(isEn ? "New Library" : "Nueva Librería", systemImage: "plus.rectangle.on.folder")
+                                .foregroundStyle(.cyan)
+                        }
                     }
                 }
             }
             .task {
-                if appState.mangas.isEmpty {
-                    await appState.loadLibrary(client: apiClient, force: false)
-                }
+                await appState.loadLibrary(client: apiClient, force: false)
             }
             .sheet(item: $selectedManga) { manga in
                 MangaDetailSheet(manga: manga, apiClient: apiClient)

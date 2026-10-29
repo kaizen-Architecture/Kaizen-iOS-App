@@ -363,22 +363,32 @@ public struct LibraryView: View {
             .navigationTitle(isEn ? "Library" : "Biblioteca")
             .searchable(text: $searchText, prompt: isEn ? "Search your catalog..." : "Buscar en tu catálogo...")
             .toolbar {
-                if appState.isManagement {
-                    ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .topBarTrailing) {
+                    HStack(spacing: 12) {
                         Button {
-                            showAddMangaSheet = true
+                            Task {
+                                await appState.loadLibrary(client: apiClient, force: true)
+                            }
                         } label: {
-                            Label(isEn ? "Add Manga" : "Añadir Manga", systemImage: "plus.circle.fill")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.cyan)
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                                .foregroundStyle(appState.isLoadingLibrary ? .cyan : .secondary)
+                        }
+                        .disabled(appState.isLoadingLibrary)
+                        
+                        if appState.isManagement {
+                            Button {
+                                showAddMangaSheet = true
+                            } label: {
+                                Label(isEn ? "Add Manga" : "Añadir Manga", systemImage: "plus.circle.fill")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.cyan)
+                            }
                         }
                     }
                 }
             }
             .task {
-                if appState.mangas.isEmpty {
-                    await appState.loadLibrary(client: apiClient, force: false)
-                }
+                await appState.loadLibrary(client: apiClient, force: false)
             }
             .sheet(item: $selectedManga) { manga in
                 MangaDetailSheet(manga: manga, apiClient: apiClient)
@@ -442,9 +452,13 @@ public struct MangaDetailSheet: View {
         detailedManga?.chapters ?? currentManga.chapters ?? []
     }
     
+    private var displayChapters: [Chapter] {
+        chapters.sorted { $0.index > $1.index }
+    }
+    
     private var isCaughtUp: Bool {
         if chapters.isEmpty { return false }
-        return chapters.allSatisfy { $0.isRead } || currentManga.readingPercentage >= 100
+        return chapters.allSatisfy { $0.isRead } || currentManga.safeReadingPercentage >= 100
     }
     
     private var nextUnreadChapter: Chapter? {
@@ -630,6 +644,24 @@ public struct MangaDetailSheet: View {
                             .transition(.opacity.combined(with: .move(edge: .top)))
                         }
                         
+                        if let errorMsg = errorMessage {
+                            HStack(spacing: 8) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .font(.subheadline)
+                                Text(isEn ? "Error loading latest chapters: \(errorMsg)" : "Error al cargar capítulos actualizados: \(errorMsg)")
+                                    .font(.caption.weight(.medium))
+                            }
+                            .foregroundStyle(Color.red)
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color.red.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(Color.red.opacity(0.3), lineWidth: 1)
+                            )
+                            .padding(.horizontal, 16)
+                        }
+                        
                         // Botón de acción principal: Continuar Lectura / Todo Leído
                         if isCaughtUp {
                             VStack(spacing: 8) {
@@ -729,7 +761,7 @@ public struct MangaDetailSheet: View {
                                     .padding(.horizontal, 16)
                             } else {
                                 LazyVStack(spacing: 8) {
-                                    ForEach(chapters.sorted(by: { $0.index > $1.index })) { chapter in
+                                    ForEach(displayChapters, id: \.uniqueKey) { chapter in
                                         HStack {
                                             Button {
                                                 readingChapter = chapter
@@ -825,14 +857,18 @@ public struct MangaDetailSheet: View {
     
     private func loadDetail() async {
         guard let session = appState.session else { return }
+        KaizenLogger.shared.info("MangaDetail", "Cargando ficha de '\(currentManga.title)' (ID: \(currentManga.id))")
         isLoadingChapters = true
         defer { isLoadingChapters = false }
         do {
             let detail = try await apiClient.fetchMangaDetail(serverUrl: session.serverUrl, token: session.apiToken, mangaId: currentManga.id)
             self.detailedManga = detail
             appState.updateMangaInState(detail)
+            errorMessage = nil
+            KaizenLogger.shared.info("MangaDetail", "Ficha actualizada con éxito: '\(detail.title)' con \(detail.chapters?.count ?? 0) capítulos")
         } catch {
             errorMessage = error.localizedDescription
+            KaizenLogger.shared.error("MangaDetail", "Error al cargar capítulos de '\(currentManga.title)' (ID: \(currentManga.id))", details: error.localizedDescription)
         }
     }
     

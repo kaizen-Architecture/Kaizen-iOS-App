@@ -26,11 +26,11 @@ public struct MangaCardView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                     .shadow(color: .black.opacity(0.3), radius: 6, y: 4)
                 .overlay(alignment: .bottom) {
-                    if manga.readingPercentage > 0 {
+                    if manga.safeReadingPercentage > 0 {
                         GeometryReader { geo in
                             ZStack(alignment: .leading) {
                                 Color.black.opacity(0.6)
-                                Color.cyan.frame(width: geo.size.width * CGFloat(min(max(manga.readingPercentage / 100.0, 0), 1)))
+                                Color.cyan.frame(width: geo.size.width * CGFloat(min(max(manga.safeReadingPercentage / 100.0, 0), 1)))
                             }
                         }
                         .frame(height: 3)

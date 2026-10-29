@@ -65,7 +65,11 @@ public struct Manga: Identifiable, Decodable, Sendable, Equatable {
         title = try root.decode(String.self, forKey: .title)
         isFavorite = try root.decodeIfPresent(Bool.self, forKey: .isFavorite) ?? false
         libraryId = try root.decodeIfPresent(Int.self, forKey: .libraryId)
-        chapters = try root.decodeIfPresent([Chapter].self, forKey: .chapters)
+        if let lossyList = try? root.decodeIfPresent([LossyDecodable<Chapter>].self, forKey: .chapters) {
+            chapters = lossyList.compactMap(\.value)
+        } else {
+            chapters = nil
+        }
         
         let meta = try? root.nestedContainer(keyedBy: MetadataKeys.self, forKey: .metadata)
         let cover = try meta?.decodeIfPresent(String.self, forKey: .cover)
@@ -84,7 +88,26 @@ public struct Manga: Identifiable, Decodable, Sendable, Equatable {
         
         totalChapters = total ?? (chapters?.count ?? 0)
         unreadCount = unread ?? (chapters?.filter { !$0.isRead }.count ?? 0)
-        readingPercentage = pct ?? (totalChapters > 0 ? Double(totalChapters - unreadCount) / Double(totalChapters) * 100.0 : 0.0)
+        let rawPct = pct ?? (totalChapters > 0 ? Double(totalChapters - unreadCount) / Double(totalChapters) * 100.0 : 0.0)
+        if rawPct.isNaN || rawPct.isInfinite {
+            readingPercentage = 0.0
+        } else {
+            readingPercentage = min(max(rawPct, 0.0), 100.0)
+        }
+    }
+    
+    public var safeReadingPercentage: Double {
+        if readingPercentage.isNaN || readingPercentage.isInfinite { return 0.0 }
+        return min(max(readingPercentage, 0.0), 100.0)
+    }
+}
+
+/// Helper para decodificar colecciones de forma tolerante a fallos individuales
+private struct LossyDecodable<T: Decodable>: Decodable {
+    let value: T?
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        self.value = try? container.decode(T.self)
     }
 }
 
@@ -119,8 +142,37 @@ public struct Chapter: Identifiable, Codable, Sendable, Equatable {
         self.lastReadAt = lastReadAt
     }
     
+    private enum CodingKeys: String, CodingKey {
+        case id, mangaId, index, fileName, isFavorite, isRead, lastReadPage, lastReadAt
+    }
+    
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(Int.self, forKey: .id)
+        self.mangaId = try? container.decodeIfPresent(Int.self, forKey: .mangaId)
+        
+        // Soporte para index como Int o Double
+        if let intVal = try? container.decode(Int.self, forKey: .index) {
+            self.index = intVal
+        } else if let dblVal = try? container.decode(Double.self, forKey: .index) {
+            self.index = Int(dblVal)
+        } else {
+            self.index = 0
+        }
+        
+        self.fileName = try? container.decodeIfPresent(String.self, forKey: .fileName)
+        self.isFavorite = (try? container.decodeIfPresent(Bool.self, forKey: .isFavorite)) ?? false
+        self.isRead = (try? container.decodeIfPresent(Bool.self, forKey: .isRead)) ?? false
+        self.lastReadPage = (try? container.decodeIfPresent(Int.self, forKey: .lastReadPage)) ?? 0
+        self.lastReadAt = try? container.decodeIfPresent(String.self, forKey: .lastReadAt)
+    }
+    
     public var displayName: String {
         "Capítulo \(index)"
+    }
+    
+    public var uniqueKey: String {
+        "\(id)_\(index)"
     }
 }
 

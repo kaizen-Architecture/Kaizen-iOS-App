@@ -73,6 +73,7 @@ public struct UserSettingsView: View {
     @State private var store = UserSettingsStore()
     @State private var newShelfName = ""
     @State private var showNewShelfAlert = false
+    @State private var showDiagnosticsLogs = false
     let apiClient: KaizenAPIClient
     
     public init(apiClient: KaizenAPIClient) {
@@ -207,6 +208,31 @@ public struct UserSettingsView: View {
                     }
                 }
                 
+                // Diagnóstico y Registros del Sistema
+                Section(isEn ? "Diagnostics & Logs" : "Diagnóstico y Registros") {
+                    Button {
+                        showDiagnosticsLogs = true
+                    } label: {
+                        HStack {
+                            Label(isEn ? "View System Logs" : "Ver Registros del Sistema", systemImage: "doc.text.magnifyingglass")
+                            Spacer()
+                            let errCount = KaizenLogger.shared.entries.filter { $0.level == .error }.count
+                            if errCount > 0 {
+                                Text("\(errCount) " + (isEn ? "errors" : "errores"))
+                                    .font(.caption2.weight(.bold))
+                                    .foregroundStyle(.red)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.red.opacity(0.15), in: Capsule())
+                            }
+                            Image(systemName: "chevron.right")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .foregroundStyle(.white)
+                }
+                
                 // Versión de la Aplicación
                 Section(isEn ? "About Kaizen" : "Acerca de Kaizen") {
                     LabeledContent(isEn ? "Version" : "Versión", value: "1.1.0 (Build 2)")
@@ -222,6 +248,9 @@ public struct UserSettingsView: View {
             }
             .task {
                 await store.loadSettings(apiClient: apiClient, session: appState.session)
+            }
+            .sheet(isPresented: $showDiagnosticsLogs) {
+                DiagnosticsLogView()
             }
             .alert(isEn ? "New Shelf" : "Nueva Estantería", isPresented: $showNewShelfAlert) {
                 TextField(isEn ? "Shelf name..." : "Nombre de la estantería...", text: $newShelfName)

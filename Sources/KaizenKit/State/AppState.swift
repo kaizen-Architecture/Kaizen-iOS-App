@@ -16,6 +16,7 @@ public final class AppState {
     public var serverSettings: KaizenServerSettings?
     public var isLoadingLibrary: Bool = false
     public var libraryErrorMessage: String?
+    public private(set) var lastLibrarySyncTime: Date?
     
     // Estanterías y colecciones lógicas del lector
     public var shelves: [UserShelf] = []
@@ -259,9 +260,14 @@ public final class AppState {
     
     public func loadLibrary(client: KaizenAPIClient, force: Bool = false) async {
         guard let session else { return }
-        if !force && !mangas.isEmpty { return }
+        // Si no es forzado y ya hay mangas, permitir refresco si pasaron más de 60 segundos
+        if !force && !mangas.isEmpty {
+            if let last = lastLibrarySyncTime, Date().timeIntervalSince(last) < 60 {
+                return
+            }
+        }
         
-        isLoadingLibrary = true
+        isLoadingLibrary = mangas.isEmpty
         libraryErrorMessage = nil
         defer { isLoadingLibrary = false }
         
@@ -271,10 +277,14 @@ public final class AppState {
             let (m, libs) = try await (fetchedMangas, fetchedLibraries)
             self.mangas = m
             self.libraries = libs
+            self.lastLibrarySyncTime = Date()
+            KaizenLogger.shared.info("Library", "Sincronizada biblioteca: \(m.count) mangas y \(libs.count) carpetas en el servidor")
         } catch let error as KaizenError {
             libraryErrorMessage = error.userMessage(language: currentLanguage)
+            KaizenLogger.shared.error("Library", "Error sincronizando biblioteca: \(error.localizedDescription)")
         } catch {
             libraryErrorMessage = error.localizedDescription
+            KaizenLogger.shared.error("Library", "Error inesperado sincronizando biblioteca: \(error.localizedDescription)")
         }
     }
     

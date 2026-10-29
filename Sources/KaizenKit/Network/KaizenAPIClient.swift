@@ -55,8 +55,15 @@ public actor KaizenAPIClient {
         let (data, http) = try await send(req)
         try checkREST(http)
         do {
-            return try decoder.decode([Manga].self, from: data)
+            let mangas = try decoder.decode([Manga].self, from: data)
+            await KaizenLogger.shared.info("Library", "Biblioteca obtenida: \(mangas.count) mangas")
+            return mangas
+        } catch let error as DecodingError {
+            let reason = describeDecodingError(error)
+            await KaizenLogger.shared.error("Library", "Error decodificando biblioteca: \(reason)")
+            throw KaizenError.unexpectedResponse
         } catch {
+            await KaizenLogger.shared.error("Library", "Error decodificando biblioteca: \(error.localizedDescription)")
             throw KaizenError.unexpectedResponse
         }
     }
@@ -66,8 +73,16 @@ public actor KaizenAPIClient {
         let (data, http) = try await send(req)
         try checkREST(http)
         do {
-            return try decoder.decode(Manga.self, from: data)
+            let manga = try decoder.decode(Manga.self, from: data)
+            await KaizenLogger.shared.info("MangaDetail", "Manga ID \(mangaId) ('\(manga.title)') decodificado: \(manga.chapters?.count ?? 0) capítulos")
+            return manga
+        } catch let error as DecodingError {
+            let reason = describeDecodingError(error)
+            let snippet = String(data: data.prefix(500), encoding: .utf8) ?? ""
+            await KaizenLogger.shared.error("MangaDetail", "Error decodificando detalle manga \(mangaId): \(reason)", details: "Snippet JSON: \(snippet)")
+            throw KaizenError.unexpectedResponse
         } catch {
+            await KaizenLogger.shared.error("MangaDetail", "Error en manga \(mangaId): \(error.localizedDescription)")
             throw KaizenError.unexpectedResponse
         }
     }
@@ -484,17 +499,46 @@ public actor KaizenAPIClient {
     }
 
     private func send(_ req: URLRequest) async throws -> (Data, HTTPURLResponse) {
-        let host = req.url?.host ?? req.url?.absoluteString ?? "?"
+        let method = req.httpMethod ?? "GET"
+        let urlStr = req.url?.absoluteString ?? "?"
+        let host = req.url?.host ?? urlStr
         do {
             let (data, response) = try await session.data(for: req)
-            guard let http = response as? HTTPURLResponse else { throw KaizenError.unexpectedResponse }
+            guard let http = response as? HTTPURLResponse else {
+                await KaizenLogger.shared.error("Network", "\(method) \(urlStr) - Respuesta no HTTP")
+                throw KaizenError.unexpectedResponse
+            }
+            if (200...299).contains(http.statusCode) {
+                await KaizenLogger.shared.debug("Network", "\(method) \(http.statusCode) \(urlStr) (\(data.count) bytes)")
+            } else {
+                await KaizenLogger.shared.warning("Network", "\(method) \(http.statusCode) \(urlStr) (\(data.count) bytes)")
+            }
             return (data, http)
         } catch let error as URLError {
+            await KaizenLogger.shared.error("Network", "\(method) error de red: \(urlStr)", details: error.localizedDescription)
             switch error.code {
             case .cancelled: throw error
             case .timedOut: throw KaizenError.timedOut(host: host)
             default: throw KaizenError.cannotReachServer(host: host)
             }
+        } catch {
+            await KaizenLogger.shared.error("Network", "\(method) error inesperado: \(urlStr)", details: error.localizedDescription)
+            throw error
+        }
+    }
+    
+    private func describeDecodingError(_ error: DecodingError) -> String {
+        switch error {
+        case .keyNotFound(let key, let ctx):
+            return "Clave faltante '\(key.stringValue)' en ruta: \(ctx.codingPath.map(\.stringValue).joined(separator: "."))"
+        case .typeMismatch(let type, let ctx):
+            return "Tipo incorrecto para '\(type)' en ruta: \(ctx.codingPath.map(\.stringValue).joined(separator: "."))"
+        case .valueNotFound(let type, let ctx):
+            return "Valor nulo no esperado para '\(type)' en ruta: \(ctx.codingPath.map(\.stringValue).joined(separator: "."))"
+        case .dataCorrupted(let ctx):
+            return "Datos corruptos en ruta \(ctx.codingPath.map(\.stringValue).joined(separator: ".")): \(ctx.debugDescription)"
+        @unknown default:
+            return error.localizedDescription
         }
     }
 
