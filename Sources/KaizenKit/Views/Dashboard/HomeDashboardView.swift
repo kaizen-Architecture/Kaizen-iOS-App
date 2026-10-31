@@ -26,7 +26,7 @@ public struct HomeDashboardView: View {
     
     // Columnas adaptativas para el modo cuadrícula expandida (en iPad caben 5-6 columnas, ~15 mangas por pantalla)
     private let adaptiveGridColumns = [
-        GridItem(.adaptive(minimum: 125, maximum: 175), spacing: 16)
+        GridItem(.adaptive(minimum: 125, maximum: 175), spacing: 16, alignment: .top)
     ]
     
     public init(apiClient: KaizenAPIClient) {
@@ -326,7 +326,7 @@ public struct HomeDashboardView: View {
     @ViewBuilder
     private func horizontalMangaList(mangas: [Manga]) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            LazyHStack(spacing: 16) {
+            LazyHStack(alignment: .top, spacing: 16) {
                 ForEach(mangas) { manga in
                     NavigationLink(value: manga) {
                         MangaCardView(manga: manga)

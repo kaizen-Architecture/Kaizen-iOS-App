@@ -70,18 +70,21 @@ public struct MangaCardView: View {
                 }
             }
             
-            // Título
+            // Título (reserva siempre el espacio de 2 líneas y alinea arriba para que las carátulas no se desnivelen)
             Text(manga.title)
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(.white)
-                .lineLimit(2)
+                .lineLimit(2, reservesSpace: true)
                 .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
             
             // Subtítulo con capítulos
             Text(appState.currentLanguage == "en" ? "\(manga.totalChapters) chapters" : "\(manga.totalChapters) capítulos")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
+        .frame(maxHeight: .infinity, alignment: .top)
     }
     
     private var placeholderCover: some View {

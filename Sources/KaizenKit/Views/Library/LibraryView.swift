@@ -33,7 +33,7 @@ public struct LibraryView: View {
     @State private var creationError: String?
     
     private let columns = [
-        GridItem(.adaptive(minimum: 125, maximum: 180), spacing: 16)
+        GridItem(.adaptive(minimum: 125, maximum: 180), spacing: 16, alignment: .top)
     ]
     
     public init(apiClient: KaizenAPIClient) {
