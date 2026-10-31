@@ -416,8 +416,14 @@ public struct LibraryView: View {
     }
 }
 
-/// Ficha completa e interactiva de Manga adaptada a iPad y iPhone, con control de Admin
+/// Ficha completa e interactiva de Manga adaptada a iPad (Panel Ocultable/Ampliable y Admin Plegado) y iPhone
 public struct MangaDetailView: View {
+    private enum PadPanelMode {
+        case hidden
+        case split
+        case expanded
+    }
+    
     let manga: Manga
     let apiClient: KaizenAPIClient
     @Environment(\.dismiss) private var dismiss
@@ -432,6 +438,12 @@ public struct MangaDetailView: View {
     @State private var newShelfName: String = ""
     @State private var isCheckingNewChapters: Bool = false
     @State private var checkChaptersFeedback: (isSuccess: Bool, message: String)?
+    
+    // Estado del panel izquierdo en iPad y acordeones plegables (folded por defecto)
+    @State private var padPanelMode: PadPanelMode = .split
+    @State private var isSourcesFolded: Bool = true
+    @State private var isServerAdminFolded: Bool = true
+    @State private var isSynopsisExpanded: Bool = false
     
     // Búsqueda y ordenación de capítulos
     @State private var chapterSearchText: String = ""
@@ -497,59 +509,73 @@ public struct MangaDetailView: View {
         chapters.sorted { $0.index < $1.index }.first { !$0.isRead }
     }
     
-    // Columnas adaptativas para iPad: 2-3 columnas de capítulos cómodos
-    private let padGridColumns = [
-        GridItem(.adaptive(minimum: 280, maximum: 440), spacing: 12)
+    // Columnas de capítulos cuando el panel izquierdo está oculto (100% pantalla para capítulos)
+    private let fullWidthChapterColumns = [
+        GridItem(.adaptive(minimum: 320, maximum: 540), spacing: 12)
     ]
+    
+    private var leftPanelWidth: CGFloat {
+        switch padPanelMode {
+        case .hidden:
+            return 68
+        case .split:
+            return 390
+        case .expanded:
+            return 560
+        }
+    }
+    
+    private func togglePadExpand() {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+            padPanelMode = (padPanelMode == .expanded) ? .split : .expanded
+        }
+    }
+    
+    private func togglePadHidden() {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+            padPanelMode = (padPanelMode == .hidden) ? .split : .hidden
+        }
+    }
     
     public var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             
             if isPad {
-                // Modo Dividido en iPad: Izquierda Manga & Metadata (y opciones admin si es admin), Derecha Capítulos
                 HStack(alignment: .top, spacing: 0) {
-                    // Columna Izquierda: Portada, Metadata, Sinopsis y Admin si aplica
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 20) {
-                            headerHeroSection
-                            feedbackBanners
-                            primaryActionButton
-                            
-                            if let synopsis = currentManga.synopsis, !synopsis.isEmpty {
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text(isEn ? "Synopsis" : "Sinopsis")
-                                        .font(.headline)
-                                        .foregroundStyle(.white)
-                                    Text(synopsis)
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(14)
+                    if padPanelMode == .hidden {
+                        collapsedLeftDock
+                            .frame(width: 68)
+                    } else {
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 16) {
+                                headerHeroSection
+                                feedbackBanners
+                                primaryActionButton
+                                quickActionsRow
+                                synopsisCardSection
+                                
+                                if appState.isManagement {
+                                    sourcesInlineSection
+                                    serverControlSection
                                 }
                             }
-                            
-                            // Opciones de Administrador y Servidor (visibles únicamente si es Admin)
-                            if appState.isManagement {
-                                serverControlSection
-                                sourcesInlineSection
-                            }
+                            .padding(18)
+                            .padding(.bottom, 30)
                         }
-                        .padding(20)
-                        .padding(.bottom, 30)
+                        .frame(width: leftPanelWidth)
                     }
-                    .frame(width: 440)
                     
                     Rectangle()
                         .fill(Color.white.opacity(0.1))
                         .frame(width: 1)
                         .ignoresSafeArea()
                     
-                    // Columna Derecha: Listado completo de Capítulos con buscador y ordenación
                     ScrollView {
                         VStack(alignment: .leading, spacing: 16) {
                             chaptersSection
                         }
-                        .padding(20)
+                        .padding(18)
                         .padding(.bottom, 40)
                     }
                     .frame(maxWidth: .infinity)
@@ -557,32 +583,27 @@ public struct MangaDetailView: View {
             } else {
                 // Modo Vertical en iPhone
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 20) {
+                    VStack(alignment: .leading, spacing: 16) {
                         headerHeroSection
+                            .padding(.horizontal, 16)
+                            .padding(.top, 12)
                         feedbackBanners
                         primaryActionButton
-                        
-                        if let synopsis = currentManga.synopsis, !synopsis.isEmpty {
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text(isEn ? "Synopsis" : "Sinopsis")
-                                    .font(.headline)
-                                    .foregroundStyle(.white)
-                                Text(synopsis)
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(6)
-                            }
                             .padding(.horizontal, 16)
-                        }
+                        quickActionsRow
+                            .padding(.horizontal, 16)
+                        synopsisCardSection
+                            .padding(.horizontal, 16)
                         
-                        // Opciones de Administrador y Servidor (visibles únicamente si es Admin)
                         if appState.isManagement {
-                            serverControlSection
                             sourcesInlineSection
+                                .padding(.horizontal, 16)
+                            serverControlSection
+                                .padding(.horizontal, 16)
                         }
                         
-                        // Listado de Capítulos
                         chaptersSection
+                            .padding(.horizontal, 16)
                     }
                     .padding(.bottom, 40)
                 }
@@ -593,56 +614,42 @@ public struct MangaDetailView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 HStack(spacing: 8) {
-                    // Menú de Herramientas de Administrador
-                    if appState.isManagement {
-                        Menu {
-                            Section(isEn ? "Server Control" : "Control de Servidor") {
-                                Button {
-                                    showSourcesSheet = true
-                                } label: {
-                                    Label(isEn ? "Manga Sources..." : "Gestionar Fuentes...", systemImage: "antenna.radiowaves.left.and.right")
-                                }
-                                
-                                Button {
-                                    rangeStartChapter = "1"
-                                    rangeEndChapter = "\(max(chapters.count, 10))"
-                                    showRedownloadRangeAlert = true
-                                } label: {
-                                    Label(isEn ? "Redownload Chapter Range..." : "Redescargar Rango...", systemImage: "arrow.triangle.2.circlepath")
-                                }
-                                
-                                Button {
-                                    auditMangaIntegrity()
-                                } label: {
-                                    Label(isEn ? "Audit Files Integrity" : "Auditar Integridad", systemImage: "checkmark.shield")
-                                }
-                                
-                                Button {
-                                    toggleMangaLock()
-                                } label: {
-                                    Label(
-                                        currentManga.isLocked ? (isEn ? "Unlock Manga Updates" : "Desbloquear Actualizaciones") : (isEn ? "Lock Manga Updates" : "Bloquear Actualizaciones"),
-                                        systemImage: currentManga.isLocked ? "lock.open" : "lock"
-                                    )
-                                }
-                            }
-                            
-                            Divider()
-                            
-                            Section {
-                                Button(role: .destructive) {
-                                    showDeleteMangaAlert = true
-                                } label: {
-                                    Label(isEn ? "Delete Manga from Server..." : "Eliminar Manga del Servidor...", systemImage: "trash")
-                                }
-                            }
+                    if isPad {
+                        Button {
+                            togglePadHidden()
                         } label: {
-                            Image(systemName: "wrench.and.screwdriver.fill")
-                                .font(.subheadline)
-                                .foregroundStyle(.cyan)
-                                .padding(8)
-                                .background(Color.cyan.opacity(0.15), in: Circle())
+                            HStack(spacing: 5) {
+                                Image(systemName: "sidebar.left")
+                                Text(padPanelMode == .hidden ? (isEn ? "Show Info" : "Mostrar Ficha") : (isEn ? "Hide Info" : "Ocultar Ficha"))
+                            }
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Color.white.opacity(0.1), in: Capsule())
                         }
+                        .buttonStyle(.plain)
+                        
+                        if padPanelMode != .hidden {
+                            Button {
+                                togglePadExpand()
+                            } label: {
+                                HStack(spacing: 5) {
+                                    Image(systemName: padPanelMode == .expanded ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                                    Text(padPanelMode == .expanded ? (isEn ? "Reduce" : "Reducir") : (isEn ? "Expand" : "Agrandar"))
+                                }
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.cyan)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(Color.cyan.opacity(0.15), in: Capsule())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    
+                    if appState.isManagement {
+                        adminToolbarMenu
                     }
                 }
             }
@@ -719,192 +726,311 @@ public struct MangaDetailView: View {
         }
     }
     
-    // MARK: - Cabecera Hero Adaptativa
+    // MARK: - Menú Toolbar de Administrador
     
-    private var headerHeroSection: some View {
-        HStack(alignment: .top, spacing: isPad ? 24 : 16) {
-            // Portada con tamaño ampliado en iPad
-            MangaCardView(manga: currentManga)
-                .frame(width: isPad ? 210 : 135)
-                .shadow(color: Color.cyan.opacity(0.2), radius: 12, y: 6)
-            
-            VStack(alignment: .leading, spacing: isPad ? 12 : 8) {
-                Text(currentManga.title)
-                    .font(isPad ? .title.weight(.bold) : .title3.weight(.bold))
-                    .foregroundStyle(.white)
-                    .lineLimit(3)
-                
-                if let authors = currentManga.authors, !authors.isEmpty {
-                    Text(authors.joined(separator: ", "))
-                        .font(isPad ? .headline : .subheadline)
-                        .foregroundStyle(.secondary)
+    private var adminToolbarMenu: some View {
+        Menu {
+            Section(isEn ? "Server Control" : "Control de Servidor") {
+                Button {
+                    showSourcesSheet = true
+                } label: {
+                    Label(isEn ? "Manga Sources..." : "Gestionar Fuentes...", systemImage: "antenna.radiowaves.left.and.right")
                 }
                 
-                // Badges de Estado y Bloqueo
-                HStack(spacing: 8) {
-                    Text(currentManga.status == "COMPLETED" ? (isEn ? "Completed" : "Finalizado") : (isEn ? "Ongoing" : "En emisión"))
-                        .font(.caption2.weight(.bold))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(currentManga.status == "COMPLETED" ? Color.purple.opacity(0.2) : Color.green.opacity(0.2), in: Capsule())
-                        .foregroundStyle(currentManga.status == "COMPLETED" ? Color.purple : Color.green)
-                    
-                    if currentManga.isLocked {
-                        HStack(spacing: 4) {
-                            Image(systemName: "lock.fill")
-                                .font(.system(size: 9))
-                            Text(isEn ? "Locked" : "Bloqueado")
-                        }
-                        .font(.caption2.weight(.bold))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.orange.opacity(0.2), in: Capsule())
-                        .foregroundStyle(.orange)
-                    }
-                    
-                    if isCaughtUp {
-                        Text(isEn ? "Caught Up" : "Al día")
-                            .font(.caption2.weight(.bold))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Color.cyan.opacity(0.2), in: Capsule())
-                            .foregroundStyle(.cyan)
-                    }
+                Button {
+                    rangeStartChapter = "1"
+                    rangeEndChapter = "\(max(chapters.count, 10))"
+                    showRedownloadRangeAlert = true
+                } label: {
+                    Label(isEn ? "Redownload Chapter Range..." : "Redescargar Rango...", systemImage: "arrow.triangle.2.circlepath")
                 }
                 
-                // Porcentaje de lectura
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text(isEn ? "Progress: \(Int(currentManga.readingPercentage))%" : "Progreso: \(Int(currentManga.readingPercentage))%")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Text("\(currentManga.totalChapters - currentManga.unreadCount)/\(currentManga.totalChapters) " + (isEn ? "ch." : "cap."))
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                    ProgressView(value: min(max(currentManga.readingPercentage / 100.0, 0), 1))
-                        .tint(.cyan)
+                Button {
+                    auditMangaIntegrity()
+                } label: {
+                    Label(isEn ? "Audit Files Integrity" : "Auditar Integridad", systemImage: "checkmark.shield")
                 }
                 
-                // Botones Rápidos: Favorito, Librerías, Comprobar
-                HStack(spacing: 8) {
-                    Button {
-                        Task {
-                            await appState.toggleFavorite(mangaId: currentManga.id, client: apiClient)
-                            detailedManga?.isFavorite.toggle()
-                        }
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: currentManga.isFavorite ? "heart.fill" : "heart")
-                                .foregroundStyle(currentManga.isFavorite ? .pink : .white)
-                            Text(isEn ? "Favorite" : "Favorito")
-                                .font(.caption.weight(.semibold))
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(Color.white.opacity(0.1), in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    
-                    Menu {
-                        ForEach(appState.shelves) { shelf in
-                            Button {
-                                appState.toggleMangaInShelf(shelfId: shelf.id, mangaId: currentManga.id)
-                            } label: {
-                                let inShelf = appState.isMangaInShelf(shelfId: shelf.id, mangaId: currentManga.id)
-                                Label(shelf.name, systemImage: inShelf ? "checkmark.circle.fill" : "circle")
-                            }
-                        }
-                        
-                        Divider()
-                        
-                        Button {
-                            newShelfName = ""
-                            showCreateShelfAlert = true
-                        } label: {
-                            Label(isEn ? "+ New Reading Library..." : "+ Nueva librería de lectura...", systemImage: "plus")
-                        }
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "books.vertical.fill")
-                                .foregroundStyle(.yellow)
-                            Text(isEn ? "Libraries" : "Librerías")
-                                .font(.caption.weight(.semibold))
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(Color.white.opacity(0.1), in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    
-                    Button {
-                        Task { await checkForNewChapters() }
-                    } label: {
-                        HStack(spacing: 6) {
-                            if isCheckingNewChapters {
-                                ProgressView().scaleEffect(0.65).tint(.cyan)
-                            } else {
-                                Image(systemName: "arrow.triangle.2.circlepath")
-                            }
-                            Text(isEn ? "Check" : "Comprobar")
-                                .font(.caption.weight(.semibold))
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(Color.cyan.opacity(0.15), in: Capsule())
-                        .overlay(Capsule().stroke(Color.cyan.opacity(0.4), lineWidth: 1))
-                        .foregroundStyle(Color.cyan)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(isCheckingNewChapters)
+                Button {
+                    toggleMangaLock()
+                } label: {
+                    Label(
+                        currentManga.isLocked ? (isEn ? "Unlock Manga Updates" : "Desbloquear Actualizaciones") : (isEn ? "Lock Manga Updates" : "Bloquear Actualizaciones"),
+                        systemImage: currentManga.isLocked ? "lock.open" : "lock"
+                    )
                 }
             }
+            
+            Divider()
+            
+            Section {
+                Button(role: .destructive) {
+                    showDeleteMangaAlert = true
+                } label: {
+                    Label(isEn ? "Delete Manga from Server..." : "Eliminar Manga del Servidor...", systemImage: "trash")
+                }
+            }
+        } label: {
+            Image(systemName: "wrench.and.screwdriver.fill")
+                .font(.subheadline)
+                .foregroundStyle(.cyan)
+                .padding(8)
+                .background(Color.cyan.opacity(0.15), in: Circle())
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 16)
     }
     
-    // MARK: - Botón Principal de Continuación
+    // MARK: - Mini-Dock Lateral cuando la Ficha está Oculta en iPad
+    
+    private var collapsedLeftDock: some View {
+        VStack(spacing: 16) {
+            Button {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                    padPanelMode = .split
+                }
+            } label: {
+                VStack(spacing: 6) {
+                    coverThumbnail(width: 44, height: 66, cornerRadius: 8)
+                    Image(systemName: "chevron.right.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.cyan)
+                }
+            }
+            .buttonStyle(.plain)
+            .help(isEn ? "Show Manga Info" : "Mostrar ficha del manga")
+            
+            Divider()
+                .background(Color.white.opacity(0.15))
+                .padding(.horizontal, 12)
+            
+            Button {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                    padPanelMode = .expanded
+                }
+            } label: {
+                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 38, height: 38)
+                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+            }
+            .buttonStyle(.plain)
+            
+            Button {
+                Task {
+                    await appState.toggleFavorite(mangaId: currentManga.id, client: apiClient)
+                    detailedManga?.isFavorite.toggle()
+                }
+            } label: {
+                Image(systemName: currentManga.isFavorite ? "heart.fill" : "heart")
+                    .font(.subheadline)
+                    .foregroundStyle(currentManga.isFavorite ? .pink : .white)
+                    .frame(width: 38, height: 38)
+                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+            }
+            .buttonStyle(.plain)
+            
+            Button {
+                Task { await checkForNewChapters() }
+            } label: {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.subheadline)
+                    .foregroundStyle(.cyan)
+                    .frame(width: 38, height: 38)
+                    .background(Color.cyan.opacity(0.14), in: RoundedRectangle(cornerRadius: 10))
+            }
+            .buttonStyle(.plain)
+            .disabled(isCheckingNewChapters)
+            
+            Spacer()
+        }
+        .padding(.top, 18)
+        .frame(maxHeight: .infinity)
+        .background(Color.white.opacity(0.02))
+    }
+    
+    // MARK: - Portada Limpia (Sin duplicar título debajo)
+    
+    private func coverThumbnail(width: CGFloat, height: CGFloat, cornerRadius: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            .fill(Color.white.opacity(0.06))
+            .frame(width: width, height: height)
+            .overlay {
+                RemoteImage(
+                    url: currentManga.coverUrl.flatMap { URL(string: $0) },
+                    token: appState.session?.apiToken,
+                    contentMode: .fill
+                )
+            }
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(Color.white.opacity(0.15), lineWidth: 1)
+            )
+            .shadow(color: Color.cyan.opacity(0.18), radius: 10, y: 4)
+    }
+    
+    // MARK: - Cabecera Hero Rediseñada (Sin Textos Partidos ni Duplicados)
+    
+    private var headerHeroSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 16) {
+                // Portada limpia (al pulsar en iPad agranda/reduce el panel)
+                Button {
+                    if isPad { togglePadExpand() }
+                } label: {
+                    coverThumbnail(width: isPad ? 112 : 100, height: isPad ? 168 : 150, cornerRadius: 14)
+                }
+                .buttonStyle(.plain)
+                
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .top, spacing: 8) {
+                        Text(currentManga.title)
+                            .font(.title3.weight(.extrabold))
+                            .foregroundStyle(.white)
+                            .lineLimit(padPanelMode == .expanded ? 5 : 3)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .onTapGesture {
+                                if isPad { togglePadExpand() }
+                            }
+                        
+                        Spacer(minLength: 0)
+                        
+                        if isPad {
+                            Button {
+                                togglePadExpand()
+                            } label: {
+                                Image(systemName: padPanelMode == .expanded ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(.cyan)
+                                    .padding(7)
+                                    .background(Color.cyan.opacity(0.15), in: RoundedRectangle(cornerRadius: 8))
+                            }
+                            .buttonStyle(.plain)
+                            .help(padPanelMode == .expanded ? (isEn ? "Reduce panel" : "Reducir ficha") : (isEn ? "Expand panel" : "Agrandar ficha"))
+                        }
+                    }
+                    
+                    if let authors = currentManga.authors, !authors.isEmpty {
+                        Text(authors.joined(separator: ", "))
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                    
+                    // Badges con fixedSize horizontal para no partir palabras en sílabas
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 6) {
+                            statusBadge
+                            if isCaughtUp {
+                                caughtUpBadge
+                            }
+                        }
+                        if currentManga.isLocked {
+                            lockedBadge
+                        }
+                    }
+                    .padding(.top, 2)
+                }
+            }
+            
+            Divider()
+                .background(Color.white.opacity(0.1))
+            
+            // Barra de Progreso a ANCHO COMPLETO (100% legible)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text(isEn ? "Reading progress" : "Progreso de lectura")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    let readCount = max(currentManga.totalChapters - currentManga.unreadCount, 0)
+                    Text("\(Int(currentManga.safeReadingPercentage))% (\(readCount)/\(currentManga.totalChapters) " + (isEn ? "ch.)" : "cap.)"))
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.cyan)
+                }
+                ProgressView(value: min(max(currentManga.safeReadingPercentage / 100.0, 0), 1))
+                    .tint(.cyan)
+            }
+        }
+        .padding(16)
+        .background(Color.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.08), lineWidth: 1))
+    }
+    
+    private var statusBadge: some View {
+        let isCompleted = currentManga.status == "COMPLETED"
+        return HStack(spacing: 4) {
+            Circle()
+                .fill(isCompleted ? Color.purple : Color.green)
+                .frame(width: 6, height: 6)
+            Text(isCompleted ? (isEn ? "Completed" : "Finalizado") : (isEn ? "Ongoing" : "En emisión"))
+        }
+        .font(.caption2.weight(.bold))
+        .padding(.horizontal, 9)
+        .padding(.vertical, 4)
+        .background((isCompleted ? Color.purple : Color.green).opacity(0.18), in: Capsule())
+        .foregroundStyle(isCompleted ? Color.purple : Color.green)
+        .fixedSize(horizontal: true, vertical: false)
+    }
+    
+    private var lockedBadge: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "lock.fill")
+                .font(.system(size: 9))
+            Text(isEn ? "Updates Locked" : "Bloqueado")
+        }
+        .font(.caption2.weight(.bold))
+        .padding(.horizontal, 9)
+        .padding(.vertical, 4)
+        .background(Color.orange.opacity(0.18), in: Capsule())
+        .foregroundStyle(.orange)
+        .fixedSize(horizontal: true, vertical: false)
+    }
+    
+    private var caughtUpBadge: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "checkmark")
+                .font(.system(size: 9, weight: .bold))
+            Text(isEn ? "Caught Up" : "Al día")
+        }
+        .font(.caption2.weight(.bold))
+        .padding(.horizontal, 9)
+        .padding(.vertical, 4)
+        .background(Color.cyan.opacity(0.18), in: Capsule())
+        .foregroundStyle(.cyan)
+        .fixedSize(horizontal: true, vertical: false)
+    }
+    
+    // MARK: - Botón Principal y Fila de 3 Acciones Rápidas Equilibradas
     
     @ViewBuilder
     private var primaryActionButton: some View {
         if isCaughtUp {
-            VStack(spacing: 8) {
-                HStack(spacing: 8) {
-                    Image(systemName: "checkmark.seal.fill")
-                        .font(.title3)
-                    Text(isEn ? "All Caught Up • Everything Read" : "¡Al día! Todo leído")
-                        .font(.headline.weight(.bold))
-                }
-                .frame(maxWidth: .infinity)
-                .frame(height: 52)
-                .background(Color.green.opacity(0.18), in: RoundedRectangle(cornerRadius: 14))
-                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.green.opacity(0.4), lineWidth: 1))
-                .foregroundStyle(Color.green)
-                
-                if let firstCh = chapters.sorted(by: { $0.index < $1.index }).first {
-                    Button {
-                        readingChapter = firstCh
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "arrow.counterclockwise")
-                            Text(isEn ? "Re-read from Chapter 1" : "Volver a leer desde el inicio")
-                        }
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .padding(.vertical, 4)
+            if let firstCh = chapters.sorted(by: { $0.index < $1.index }).first {
+                Button {
+                    readingChapter = firstCh
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "book.fill")
+                        Text(isEn ? "Re-read from Chapter 1" : "Releer desde el Capítulo 1")
                     }
+                    .font(.subheadline.weight(.bold))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 46)
+                    .background(
+                        LinearGradient(colors: [Color.cyan, Color.blue], startPoint: .leading, endPoint: .trailing),
+                        in: RoundedRectangle(cornerRadius: 14)
+                    )
+                    .foregroundStyle(.black)
                 }
+                .buttonStyle(.plain)
             }
-            .padding(.horizontal, 16)
         } else if let next = nextUnreadChapter {
             Button {
                 readingChapter = next
             } label: {
                 HStack(spacing: 10) {
                     Image(systemName: "book.fill")
-                        .font(.headline)
                     let validPage = (next.lastReadPage > 0 && next.lastReadPage < 9000) ? next.lastReadPage : 1
                     if validPage > 1 {
                         Text(isEn ? "Continue Ch. \(next.index) (p. \(validPage))" : "Continuar Cap. \(next.index) (pág. \(validPage))")
@@ -912,14 +1038,141 @@ public struct MangaDetailView: View {
                         Text(isEn ? "Read Chapter \(next.index)" : "Leer Capítulo \(next.index)")
                     }
                 }
-                .font(.headline.weight(.bold))
+                .font(.subheadline.weight(.bold))
                 .frame(maxWidth: .infinity)
-                .frame(height: 54)
-                .background(Color.cyan, in: RoundedRectangle(cornerRadius: 14))
+                .frame(height: 48)
+                .background(
+                    LinearGradient(colors: [Color.cyan, Color.blue], startPoint: .leading, endPoint: .trailing),
+                    in: RoundedRectangle(cornerRadius: 14)
+                )
                 .foregroundStyle(.black)
-                .shadow(color: Color.cyan.opacity(0.35), radius: 8, y: 4)
+                .shadow(color: Color.cyan.opacity(0.3), radius: 8, y: 4)
             }
-            .padding(.horizontal, 16)
+            .buttonStyle(.plain)
+        }
+    }
+    
+    private var quickActionsRow: some View {
+        HStack(spacing: 8) {
+            Button {
+                Task {
+                    await appState.toggleFavorite(mangaId: currentManga.id, client: apiClient)
+                    detailedManga?.isFavorite.toggle()
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: currentManga.isFavorite ? "heart.fill" : "heart")
+                        .foregroundStyle(currentManga.isFavorite ? .pink : .white)
+                    Text(isEn ? "Favorite" : "Favorito")
+                        .lineLimit(1)
+                }
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .frame(height: 38)
+                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.08), lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            
+            Menu {
+                ForEach(appState.shelves) { shelf in
+                    Button {
+                        appState.toggleMangaInShelf(shelfId: shelf.id, mangaId: currentManga.id)
+                    } label: {
+                        let inShelf = appState.isMangaInShelf(shelfId: shelf.id, mangaId: currentManga.id)
+                        Label(shelf.name, systemImage: inShelf ? "checkmark.circle.fill" : "circle")
+                    }
+                }
+                
+                Divider()
+                
+                Button {
+                    newShelfName = ""
+                    showCreateShelfAlert = true
+                } label: {
+                    Label(isEn ? "+ New Reading Library..." : "+ Nueva librería de lectura...", systemImage: "plus")
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "books.vertical.fill")
+                        .foregroundStyle(.yellow)
+                    Text(isEn ? "Libraries" : "Librerías")
+                        .lineLimit(1)
+                }
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .frame(height: 38)
+                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.08), lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            
+            Button {
+                Task { await checkForNewChapters() }
+            } label: {
+                HStack(spacing: 6) {
+                    if isCheckingNewChapters {
+                        ProgressView().scaleEffect(0.65).tint(.cyan)
+                    } else {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                    }
+                    Text(isEn ? "Check" : "Comprobar")
+                        .lineLimit(1)
+                }
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.cyan)
+                .frame(maxWidth: .infinity)
+                .frame(height: 38)
+                .background(Color.cyan.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.cyan.opacity(0.3), lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .disabled(isCheckingNewChapters)
+        }
+    }
+    
+    // MARK: - Tarjeta de Sinopsis Expandible
+    
+    @ViewBuilder
+    private var synopsisCardSection: some View {
+        if let synopsis = currentManga.synopsis, !synopsis.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text(isEn ? "SYNOPSIS" : "SINOPSIS")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    if let source = currentManga.source {
+                        Text(source)
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                
+                Text(synopsis)
+                    .font(.subheadline)
+                    .foregroundStyle(Color.white.opacity(0.88))
+                    .lineSpacing(3)
+                    .lineLimit(isSynopsisExpanded || padPanelMode == .expanded ? nil : 5)
+                
+                if synopsis.count > 180 && padPanelMode != .expanded {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            isSynopsisExpanded.toggle()
+                        }
+                    } label: {
+                        Text(isSynopsisExpanded ? (isEn ? "Show less" : "Mostrar menos") : (isEn ? "Read more..." : "Leer más..."))
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.cyan)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(16)
+            .background(Color.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.07), lineWidth: 1))
         }
     }
     
@@ -942,7 +1195,6 @@ public struct MangaDetailView: View {
                 RoundedRectangle(cornerRadius: 12)
                     .stroke((feedback.isSuccess ? Color.green : Color.cyan).opacity(0.3), lineWidth: 1)
             )
-            .padding(.horizontal, 16)
             .transition(.opacity.combined(with: .move(edge: .top)))
         }
         
@@ -958,164 +1210,79 @@ public struct MangaDetailView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.cyan.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
             .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.cyan.opacity(0.3), lineWidth: 1))
-            .padding(.horizontal, 16)
         }
         
         if let errorMsg = errorMessage {
             HStack(spacing: 8) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(.subheadline)
-                Text(isEn ? "Error: \(errorMsg)" : "Error: \(errorMsg)")
+                Text("Error: \(errorMsg)")
                     .font(.caption.weight(.medium))
             }
             .foregroundStyle(Color.red)
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.red.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
-            .padding(.horizontal, 16)
         }
     }
     
-    // MARK: - Sección de Control de Servidor Kaizen (Paridad Web)
+    // MARK: - Acordeón 1: Fuentes de la Serie (Folded por defecto)
     
-    private var serverControlSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Label(isEn ? "Server Administration" : "Control del Servidor", systemImage: "server.rack")
+    private var sourcesSummarySubtitle: String {
+        if configuredSources.isEmpty {
+            return currentManga.source ?? (isEn ? "Default source" : "Fuente principal")
+        }
+        return configuredSources.map(\.source).joined(separator: " • ")
+    }
+    
+    private var sourcesFoldHeader: some View {
+        Button {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                isSourcesFolded.toggle()
+            }
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "antenna.radiowaves.left.and.right")
                     .font(.subheadline.weight(.bold))
-                    .foregroundStyle(.cyan)
+                    .foregroundStyle(.purple)
+                    .frame(width: 34, height: 34)
+                    .background(Color.purple.opacity(0.15), in: RoundedRectangle(cornerRadius: 10))
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(isEn ? "Configured Sources" : "Fuentes de la Serie")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(.white)
+                        Text("\(max(configuredSources.count, 1))")
+                            .font(.caption2.weight(.bold))
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 2)
+                            .background(Color.purple.opacity(0.25), in: Capsule())
+                            .foregroundStyle(.purple)
+                    }
+                    Text(sourcesSummarySubtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
                 
                 Spacer()
                 
-                if currentManga.isLocked {
-                    HStack(spacing: 4) {
-                        Image(systemName: "lock.fill")
-                            .font(.system(size: 9))
-                        Text(isEn ? "Updates Locked" : "Actualizaciones Bloqueadas")
-                    }
-                    .font(.caption2.weight(.bold))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Color.orange.opacity(0.2), in: Capsule())
-                    .foregroundStyle(.orange)
-                }
-            }
-            
-            // Botones de acción rápida en fila desplazable
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    // 1. Redescargar Rango
-                    Button {
-                        rangeStartChapter = "1"
-                        rangeEndChapter = "\(max(chapters.count, 10))"
-                        showRedownloadRangeAlert = true
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "arrow.triangle.2.circlepath")
-                            Text(isEn ? "Redownload Range" : "Redescargar Rango...")
-                        }
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.cyan)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(Color.cyan.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
-                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.cyan.opacity(0.25), lineWidth: 1))
-                    }
-                    .buttonStyle(.plain)
-                    
-                    // 2. Auditar Integridad de Archivos
-                    Button {
-                        auditMangaIntegrity()
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "checkmark.shield")
-                            Text(isEn ? "Audit Files" : "Auditar Integridad")
-                        }
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
-                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.12), lineWidth: 1))
-                    }
-                    .buttonStyle(.plain)
-                    
-                    // 3. Bloquear / Desbloquear Actualizaciones
-                    Button {
-                        toggleMangaLock()
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: currentManga.isLocked ? "lock.open" : "lock")
-                            Text(currentManga.isLocked ? (isEn ? "Unlock Updates" : "Desbloquear") : (isEn ? "Lock Updates" : "Bloquear"))
-                        }
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(currentManga.isLocked ? .orange : .white)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background((currentManga.isLocked ? Color.orange : Color.white).opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
-                        .overlay(RoundedRectangle(cornerRadius: 10).stroke((currentManga.isLocked ? Color.orange : Color.white).opacity(0.15), lineWidth: 1))
-                    }
-                    .buttonStyle(.plain)
-                    
-                    // 4. Eliminar Manga del Servidor
-                    Button {
-                        showDeleteMangaAlert = true
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "trash")
-                            Text(isEn ? "Delete Manga..." : "Eliminar del Servidor...")
-                        }
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.red)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(Color.red.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
-                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.red.opacity(0.25), lineWidth: 1))
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
-        .padding(14)
-        .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.06), lineWidth: 1))
-        .padding(.horizontal, 16)
-    }
-    
-    // MARK: - Sección de Fuentes (MangaSources - Paridad Web)
-    
-    private var sourcesHeader: some View {
-        HStack {
-            HStack(spacing: 6) {
-                Image(systemName: "antenna.radiowaves.left.and.right")
-                    .foregroundStyle(.purple)
-                Text(isEn ? "Configured Sources (\(max(configuredSources.count, 1)))" : "Fuentes de la Serie (\(max(configuredSources.count, 1)))")
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(.white)
-            }
-            
-            Spacer()
-            
-            Button {
-                showSourcesSheet = true
-            } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: "plus.circle.fill")
-                    Text(isEn ? "Add Source" : "Añadir Fuente")
+                HStack(spacing: 4) {
+                    Text(isSourcesFolded ? (isEn ? "Show" : "Mostrar") : (isEn ? "Hide" : "Plegar"))
+                    Image(systemName: isSourcesFolded ? "chevron.down" : "chevron.up")
                 }
                 .font(.caption.weight(.bold))
                 .foregroundStyle(.cyan)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(Color.cyan.opacity(0.15), in: Capsule())
             }
-            .buttonStyle(.plain)
+            .padding(14)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
     }
     
     private var sourcesEmptyPlaceholder: some View {
         HStack(spacing: 10) {
-            // Badge fuente inicial
             Text(currentManga.source ?? "Default")
                 .font(.caption2.weight(.bold))
                 .padding(.horizontal, 8)
@@ -1144,97 +1311,263 @@ public struct MangaDetailView: View {
     
     @ViewBuilder
     private func sourceRowItem(index: Int, src: MangaConfiguredSource) -> some View {
-        HStack(spacing: 10) {
-            // Badge de Scraper
-            Text(src.source)
-                .font(.caption2.weight(.bold))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(index == 0 ? Color.cyan.opacity(0.25) : Color.purple.opacity(0.25), in: Capsule())
-                .foregroundStyle(index == 0 ? Color.cyan : Color.purple)
-            
-            VStack(alignment: .leading, spacing: 2) {
-                Text(src.title)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Text(src.source)
+                    .font(.caption2.weight(.bold))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(index == 0 ? Color.cyan.opacity(0.22) : Color.purple.opacity(0.22), in: RoundedRectangle(cornerRadius: 7))
+                    .foregroundStyle(index == 0 ? Color.cyan : Color.purple)
                 
                 if index == 0 {
                     HStack(spacing: 3) {
                         Image(systemName: "star.fill")
-                            .font(.system(size: 8))
-                            .foregroundStyle(.yellow)
+                            .font(.system(size: 9))
                         Text(isEn ? "Primary" : "Principal")
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(.yellow)
                     }
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.yellow)
                 }
-            }
-            
-            Spacer()
-            
-            if index != 0 {
+                
+                Spacer()
+                
+                if index != 0 {
+                    Button {
+                        promoteToPrimarySource(src)
+                    } label: {
+                        Text(isEn ? "Set Primary" : "Hacer Principal")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.cyan)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.cyan.opacity(0.14), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+                
                 Button {
-                    promoteToPrimarySource(src)
+                    deleteSource(src)
                 } label: {
-                    Text(isEn ? "Set Primary" : "Hacer Principal")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.cyan)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.cyan.opacity(0.12), in: Capsule())
+                    Image(systemName: "trash")
+                        .font(.caption)
+                        .foregroundStyle(.red.opacity(0.85))
+                        .padding(5)
                 }
                 .buttonStyle(.plain)
             }
             
-            Button {
-                deleteSource(src)
-            } label: {
-                Image(systemName: "trash")
-                    .font(.caption)
-                    .foregroundStyle(.red.opacity(0.75))
-                    .padding(6)
-            }
-            .buttonStyle(.plain)
+            Text(src.title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.white)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
+        .padding(12)
         .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(index == 0 ? Color.cyan.opacity(0.25) : Color.white.opacity(0.06), lineWidth: 1)
+        )
     }
     
     private var sourcesInlineSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            sourcesHeader
+        VStack(alignment: .leading, spacing: 0) {
+            sourcesFoldHeader
             
-            if configuredSources.isEmpty {
-                sourcesEmptyPlaceholder
-            } else {
-                VStack(spacing: 8) {
-                    ForEach(Array(configuredSources.enumerated()), id: \.element.id) { index, src in
-                        sourceRowItem(index: index, src: src)
+            if !isSourcesFolded {
+                Divider()
+                    .background(Color.white.opacity(0.08))
+                
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Text(isEn ? "Linked server scrapers" : "Scrapers vinculados en el servidor")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button {
+                            showSourcesSheet = true
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "plus.circle.fill")
+                                Text(isEn ? "Add Source" : "Añadir Fuente")
+                            }
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.cyan)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(Color.cyan.opacity(0.15), in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    
+                    if configuredSources.isEmpty {
+                        sourcesEmptyPlaceholder
+                    } else {
+                        VStack(spacing: 8) {
+                            ForEach(Array(configuredSources.enumerated()), id: \.element.id) { index, src in
+                                sourceRowItem(index: index, src: src)
+                            }
+                        }
                     }
                 }
+                .padding(14)
             }
         }
-        .padding(14)
-        .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.06), lineWidth: 1))
-        .padding(.horizontal, 16)
+        .background(Color.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.purple.opacity(0.22), lineWidth: 1))
     }
     
-    // MARK: - Sección de Capítulos con Búsqueda y Grid Adaptativo para iPad
+    // MARK: - Acordeón 2: Opciones de Servidor Admin (Folded por defecto)
     
-    private var chaptersSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            // Barra de Título, Filtro y Ordenación
+    private var serverFoldHeader: some View {
+        Button {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                isServerAdminFolded.toggle()
+            }
+        } label: {
             HStack(spacing: 12) {
-                Text((isEn ? "Chapters (" : "Capítulos (") + "\(filteredChapters.count)/\(chapters.count))")
-                    .font(.title3.weight(.bold))
-                    .foregroundStyle(.white)
+                Image(systemName: "server.rack")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.cyan)
+                    .frame(width: 34, height: 34)
+                    .background(Color.cyan.opacity(0.15), in: RoundedRectangle(cornerRadius: 10))
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(isEn ? "Server Options (Admin)" : "Opciones de Servidor (Admin)")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(.white)
+                    Text(isEn ? "Redownload range, file audit, lock & delete" : "Redescargar rango, auditar archivos, bloqueo y borrado")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
                 
                 Spacer()
                 
-                // Botón de Ordenación Ascendente / Descendente
+                HStack(spacing: 4) {
+                    Text(isServerAdminFolded ? (isEn ? "Show" : "Mostrar") : (isEn ? "Hide" : "Plegar"))
+                    Image(systemName: isServerAdminFolded ? "chevron.down" : "chevron.up")
+                }
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.cyan)
+            }
+            .padding(14)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+    
+    private var serverControlSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            serverFoldHeader
+            
+            if !isServerAdminFolded {
+                Divider()
+                    .background(Color.white.opacity(0.08))
+                
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
+                    Button {
+                        rangeStartChapter = "1"
+                        rangeEndChapter = "\(max(chapters.count, 10))"
+                        showRedownloadRangeAlert = true
+                    } label: {
+                        serverActionTile(
+                            icon: "arrow.triangle.2.circlepath",
+                            title: isEn ? "Redownload Range" : "Redescargar Rango",
+                            subtitle: isEn ? "Batch chapters" : "Capítulos por lote",
+                            tint: .cyan
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    
+                    Button {
+                        auditMangaIntegrity()
+                    } label: {
+                        serverActionTile(
+                            icon: "checkmark.shield",
+                            title: isEn ? "Audit Files" : "Auditar Archivos",
+                            subtitle: isEn ? "Verify CBZ integrity" : "Verificar CBZ",
+                            tint: .blue
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    
+                    Button {
+                        toggleMangaLock()
+                    } label: {
+                        serverActionTile(
+                            icon: currentManga.isLocked ? "lock.open" : "lock",
+                            title: currentManga.isLocked ? (isEn ? "Unlock Series" : "Desbloquear Serie") : (isEn ? "Lock Series" : "Bloquear Serie"),
+                            subtitle: currentManga.isLocked ? (isEn ? "Enable auto-updates" : "Activar descargas") : (isEn ? "Pause auto-updates" : "Pausar descargas"),
+                            tint: .orange
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    
+                    Button {
+                        showDeleteMangaAlert = true
+                    } label: {
+                        serverActionTile(
+                            icon: "trash",
+                            title: isEn ? "Delete Manga" : "Eliminar Manga",
+                            subtitle: isEn ? "Remove from server" : "Borrar del servidor",
+                            tint: .red
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(14)
+            }
+        }
+        .background(Color.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.cyan.opacity(0.22), lineWidth: 1))
+    }
+    
+    private func serverActionTile(icon: String, title: String, subtitle: String, tint: Color) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(tint)
+                .frame(width: 30, height: 30)
+                .background(tint.opacity(0.15), in: RoundedRectangle(cornerRadius: 8))
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                Text(subtitle)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .background(tint.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(tint.opacity(0.2), lineWidth: 1))
+    }
+    
+    // MARK: - Sección de Capítulos Sin Redundancia
+    
+    private var chaptersSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 10) {
+                HStack(spacing: 8) {
+                    Text(isEn ? "Chapters" : "Capítulos")
+                        .font(.title3.weight(.extrabold))
+                        .foregroundStyle(.white)
+                    
+                    Text("\(filteredChapters.count)")
+                        .font(.caption.weight(.bold))
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 3)
+                        .background(Color.cyan.opacity(0.15), in: Capsule())
+                        .foregroundStyle(.cyan)
+                }
+                
+                Spacer()
+                
                 Button {
                     withAnimation(.easeInOut(duration: 0.2)) {
                         sortNewestFirst.toggle()
@@ -1245,30 +1578,37 @@ public struct MangaDetailView: View {
                         Text(sortNewestFirst ? (isEn ? "Newest" : "Recientes") : (isEn ? "Oldest" : "Primeros"))
                     }
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                    .background(Color.white.opacity(0.08), in: Capsule())
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
                 }
                 .buttonStyle(.plain)
                 
                 if !chapters.isEmpty {
-                    Button(isEn ? "Mark all read" : "Marcar todo leído") {
+                    Button {
                         markAllAsRead()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "checkmark")
+                            Text(isEn ? "Mark all" : "Marcar todo")
+                        }
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.cyan)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color.cyan.opacity(0.14), in: RoundedRectangle(cornerRadius: 10))
                     }
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.cyan)
+                    .buttonStyle(.plain)
                 }
             }
-            .padding(.horizontal, 16)
             
-            // Buscador rápido de capítulo si la serie tiene más de 10 capítulos
-            if chapters.count > 10 {
+            if chapters.count > 6 {
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    TextField(isEn ? "Filter by chapter # (e.g. 45)..." : "Filtrar por número (ej: 45)...", text: $chapterSearchText)
+                    TextField(isEn ? "Go to chapter #..." : "Ir al capítulo #...", text: $chapterSearchText)
                         .textFieldStyle(.plain)
                         .font(.subheadline)
                         .foregroundStyle(.white)
@@ -1283,12 +1623,10 @@ public struct MangaDetailView: View {
                     }
                 }
                 .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
-                .padding(.horizontal, 16)
+                .padding(.vertical, 9)
+                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
             }
             
-            // Contenido de Capítulos
             if isLoadingChapters && chapters.isEmpty {
                 HStack {
                     Spacer()
@@ -1300,31 +1638,26 @@ public struct MangaDetailView: View {
                 Text(isEn ? "No matching chapters found" : "No se encontraron capítulos coincidentes")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                    .padding(.horizontal, 16)
                     .padding(.vertical, 20)
+            } else if isPad && padPanelMode == .hidden {
+                // Cuando la ficha está oculta, mostramos 2 columnas amplias
+                LazyVGrid(columns: fullWidthChapterColumns, spacing: 10) {
+                    ForEach(filteredChapters, id: \.uniqueKey) { chapter in
+                        chapterCardRow(chapter)
+                    }
+                }
             } else {
-                if isPad {
-                    // Modo Cuadrícula Adaptativa en iPad (2-3 columnas para aprovechar la pantalla completa)
-                    LazyVGrid(columns: padGridColumns, spacing: 12) {
-                        ForEach(filteredChapters, id: \.uniqueKey) { chapter in
-                            chapterCardRow(chapter)
-                        }
+                // En vista dividida o iPhone: 1 columna limpia con ancho completo para cada fila
+                LazyVStack(spacing: 8) {
+                    ForEach(filteredChapters, id: \.uniqueKey) { chapter in
+                        chapterCardRow(chapter)
                     }
-                    .padding(.horizontal, 16)
-                } else {
-                    // Modo Lista en iPhone
-                    LazyVStack(spacing: 8) {
-                        ForEach(filteredChapters, id: \.uniqueKey) { chapter in
-                            chapterCardRow(chapter)
-                        }
-                    }
-                    .padding(.horizontal, 16)
                 }
             }
         }
     }
     
-    // MARK: - Tarjeta de Fila de Capítulo
+    // MARK: - Fila de Capítulo Sin Repetir Número + Menú Contextual Limpio
     
     @ViewBuilder
     private func chapterCardRow(_ chapter: Chapter) -> some View {
@@ -1333,94 +1666,135 @@ public struct MangaDetailView: View {
                 readingChapter = chapter
             } label: {
                 HStack(spacing: 12) {
-                    ZStack {
-                        Circle()
-                            .fill(chapter.isRead ? Color.cyan.opacity(0.18) : Color.white.opacity(0.08))
-                            .frame(width: 42, height: 42)
+                    // Bloque único con el número de capítulo (sin repetir "Capítulo X" al lado)
+                    HStack(spacing: 4) {
+                        Text(isEn ? "Ch." : "Cap.")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(chapter.isRead ? Color.cyan.opacity(0.8) : Color.secondary)
                         Text("\(chapter.index)")
-                            .font(.subheadline.weight(.bold))
+                            .font(.subheadline.weight(.extrabold))
                             .foregroundStyle(chapter.isRead ? Color.cyan : Color.white)
                     }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(
+                        chapter.isRead ? Color.cyan.opacity(0.15) : Color.white.opacity(0.08),
+                        in: RoundedRectangle(cornerRadius: 10)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(chapter.isRead ? Color.cyan.opacity(0.3) : Color.white.opacity(0.1), lineWidth: 1)
+                    )
+                    .fixedSize(horizontal: true, vertical: false)
                     
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(chapter.displayName)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.white)
-                            .lineLimit(1)
+                    // Estado de lectura y tamaño en MB
+                    HStack(spacing: 8) {
+                        if chapter.isRead {
+                            HStack(spacing: 3) {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 9, weight: .bold))
+                                Text(isEn ? "Read" : "Leído")
+                            }
+                            .font(.caption2.weight(.bold))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Color.green.opacity(0.16), in: Capsule())
+                            .foregroundStyle(.green)
+                        } else if chapter.lastReadPage > 0 {
+                            Text(isEn ? "Page \(chapter.lastReadPage)" : "Pág. \(chapter.lastReadPage)")
+                                .font(.caption2.weight(.bold))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(Color.cyan.opacity(0.16), in: Capsule())
+                                .foregroundStyle(.cyan)
+                        } else {
+                            Text(isEn ? "Unread" : "Pendiente")
+                                .font(.caption2.weight(.medium))
+                                .foregroundStyle(.secondary)
+                        }
                         
-                        HStack(spacing: 6) {
-                            if chapter.lastReadPage > 0 && !chapter.isRead {
-                                Text(isEn ? "Page \(chapter.lastReadPage)" : "Pág. \(chapter.lastReadPage)")
-                                    .font(.caption2.weight(.bold))
-                                    .foregroundStyle(.cyan)
-                            }
-                            
-                            if let formattedSize = chapter.formattedSize {
-                                Text(formattedSize)
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
+                        if let formattedSize = chapter.formattedSize {
+                            Text(formattedSize)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
                     }
-                    Spacer()
+                    
+                    Spacer(minLength: 0)
                 }
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             
-            // Acciones por capítulo
-            HStack(spacing: 8) {
-                // Si es admin: botón directo de redescargar
-                if appState.isManagement {
-                    Button {
-                        redownloadSingleChapter(chapter)
-                    } label: {
-                        Image(systemName: "arrow.triangle.2.circlepath")
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(Color.cyan)
-                            .padding(7)
-                            .background(Color.cyan.opacity(0.14), in: Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .help(isEn ? "Redownload chapter on server" : "Redescargar capítulo en el servidor")
-                }
-                
-                // Botón de marcar leído/no leído (disponible para todos)
+            // Botones limpios a la derecha: Check de lectura + Menú ••• si es Admin
+            HStack(spacing: 6) {
                 Button {
                     toggleChapterRead(chapter)
                 } label: {
-                    Image(systemName: chapter.isRead ? "checkmark.circle.fill" : "circle")
-                        .font(.title3)
+                    Image(systemName: chapter.isRead ? "checkmark" : "circle")
+                        .font(.caption.weight(.bold))
                         .foregroundStyle(chapter.isRead ? Color.cyan : Color.secondary)
-                        .padding(4)
+                        .frame(width: 34, height: 34)
+                        .background(
+                            chapter.isRead ? Color.cyan.opacity(0.14) : Color.white.opacity(0.05),
+                            in: RoundedRectangle(cornerRadius: 10)
+                        )
                 }
                 .buttonStyle(.plain)
                 
-                // Si es admin: botón directo de eliminar capítulo y archivo de disco
                 if appState.isManagement {
-                    Button {
-                        chapterToDelete = chapter
-                        showDeleteChapterAlert = true
+                    Menu {
+                        Button {
+                            redownloadSingleChapter(chapter)
+                        } label: {
+                            Label(isEn ? "Redownload Chapter" : "Redescargar capítulo", systemImage: "arrow.triangle.2.circlepath")
+                        }
+                        
+                        Button {
+                            reportChapterCorrupt(chapter)
+                        } label: {
+                            Label(isEn ? "Report Corrupt" : "Reportar corrupto", systemImage: "flag")
+                        }
+                        
+                        Divider()
+                        
+                        Button(role: .destructive) {
+                            chapterToDelete = chapter
+                            showDeleteChapterAlert = true
+                        } label: {
+                            Label(isEn ? "Delete from Server" : "Eliminar del servidor", systemImage: "trash")
+                        }
                     } label: {
-                        Image(systemName: "trash")
+                        Image(systemName: "ellipsis")
                             .font(.caption.weight(.bold))
-                            .foregroundStyle(Color.red.opacity(0.85))
-                            .padding(7)
-                            .background(Color.red.opacity(0.12), in: Circle())
+                            .foregroundStyle(.secondary)
+                            .frame(width: 34, height: 34)
+                            .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
                     }
                     .buttonStyle(.plain)
-                    .help(isEn ? "Delete chapter and file from server" : "Eliminar capítulo y archivo del servidor")
                 }
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(Color.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 14))
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(chapter.isRead ? Color.cyan.opacity(0.15) : Color.white.opacity(0.05), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(chapter.isRead ? Color.cyan.opacity(0.14) : Color.white.opacity(0.06), lineWidth: 1)
         )
         .contextMenu {
+            Button {
+                toggleChapterRead(chapter)
+            } label: {
+                Label(
+                    chapter.isRead ? (isEn ? "Mark as unread" : "Marcar como no leído") : (isEn ? "Mark as read" : "Marcar como leído"),
+                    systemImage: chapter.isRead ? "circle" : "checkmark.circle"
+                )
+            }
+            
             if appState.isManagement {
+                Divider()
+                
                 Button {
                     redownloadSingleChapter(chapter)
                 } label: {
@@ -1440,12 +1814,6 @@ public struct MangaDetailView: View {
                     showDeleteChapterAlert = true
                 } label: {
                     Label(isEn ? "Delete Chapter from Server" : "Eliminar del servidor", systemImage: "trash")
-                }
-            } else {
-                Button {
-                    toggleChapterRead(chapter)
-                } label: {
-                    Label(chapter.isRead ? (isEn ? "Mark as unread" : "Marcar como no leído") : (isEn ? "Mark as read" : "Marcar como leído"), systemImage: chapter.isRead ? "circle" : "checkmark.circle")
                 }
             }
         }
@@ -1692,4 +2060,3 @@ public struct MangaDetailView: View {
 
 /// Compatibilidad con código existente
 public typealias MangaDetailSheet = MangaDetailView
-
