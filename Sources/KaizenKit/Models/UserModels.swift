@@ -1,4 +1,4 @@
-﻿import Foundation
+import Foundation
 
 /// Roles del sistema Kaizen compatibles con el backend
 public enum UserRole: String, Codable, Sendable, CaseIterable {
@@ -6,6 +6,22 @@ public enum UserRole: String, Codable, Sendable, CaseIterable {
     case manager = "MANAGER"
     case reader = "READER"
     case service = "SERVICE"
+    
+    public init?(rawValue: String) {
+        let upper = rawValue.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        switch upper {
+        case "SUPERADMIN", "ADMIN":
+            self = .superadmin
+        case "MANAGER":
+            self = .manager
+        case "READER", "USER":
+            self = .reader
+        case "SERVICE":
+            self = .service
+        default:
+            return nil
+        }
+    }
     
     public var isManagement: Bool {
         self == .superadmin || self == .manager

@@ -178,6 +178,9 @@ public struct ReaderView: View {
     @State private var store: ReaderStore
     let apiClient: KaizenAPIClient
     
+    @State private var isTransitioningChapter: Bool = false
+    @State private var topPullOffset: CGFloat = 0
+    
     private var isEn: Bool {
         appState.currentLanguage == "en"
     }
@@ -235,6 +238,36 @@ public struct ReaderView: View {
                         ScrollViewReader { proxy in
                             ScrollView(.vertical, showsIndicators: false) {
                                 LazyVStack(spacing: 0) {
+                                    // Indicador de Capítulo Anterior al hacer pull-down en el tope
+                                    if store.hasPreviousChapter {
+                                        VStack(spacing: 8) {
+                                            Image(systemName: "arrow.up.circle.fill")
+                                                .font(.title3)
+                                                .foregroundStyle(.cyan)
+                                                .rotationEffect(.degrees(topPullOffset > 70 ? 180 : 0))
+                                                .animation(.spring(response: 0.3), value: topPullOffset > 70)
+                                            Text(topPullOffset > 70
+                                                ? (isEn ? "Release to load previous chapter" : "Suelta para ir al capítulo anterior")
+                                                : (isEn ? "Pull down for previous chapter" : "Desliza hacia abajo para ir al capítulo anterior"))
+                                                .font(.caption.weight(.bold))
+                                                .foregroundStyle(.secondary)
+                                            if let prev = store.previousChapter {
+                                                Text(prev.displayName)
+                                                    .font(.caption2)
+                                                    .foregroundStyle(.cyan)
+                                            }
+                                        }
+                                        .frame(height: 75)
+                                        .frame(maxWidth: .infinity)
+                                    }
+                                    
+                                    // Medidor de desplazamiento en el tope
+                                    GeometryReader { g in
+                                        let minY = g.frame(in: .named("webtoonReaderScroll")).minY
+                                        Color.clear.preference(key: ReaderTopOffsetKey.self, value: minY)
+                                    }
+                                    .frame(height: 0)
+                                    
                                     ForEach(Array(store.pages.enumerated()), id: \.offset) { index, urlString in
                                         ZoomablePageView(
                                             url: URL(string: urlString),
@@ -255,14 +288,39 @@ public struct ReaderView: View {
                                             }
                                         }
                                     ) {
-                                        Task {
-                                            await store.goToNextChapter(apiClient: apiClient, session: appState.session)
-                                            recordHistory()
-                                        }
+                                        triggerAutoNextChapter()
                                     }
                                     
-                                    // Espacio generoso inferior para que en iPad nunca quede cortado ni solapado por el HUD
-                                    Spacer().frame(height: 160)
+                                    // Disparador de Scroll Continuo: al seguir deslizando entra en pantalla y salta solo
+                                    if store.hasNextChapter {
+                                        VStack(spacing: 10) {
+                                            ProgressView().tint(.cyan)
+                                            Text(isEn ? "Scrolling to next chapter..." : "Deslizando al siguiente capítulo...")
+                                                .font(.subheadline.weight(.semibold))
+                                                .foregroundStyle(.cyan)
+                                            if let next = store.nextChapter {
+                                                Text(next.displayName)
+                                                    .font(.caption)
+                                                    .foregroundStyle(.secondary)
+                                            }
+                                        }
+                                        .frame(height: 100)
+                                        .frame(maxWidth: .infinity)
+                                        .onAppear {
+                                            triggerAutoNextChapter()
+                                        }
+                                        
+                                        Spacer().frame(height: 120)
+                                    } else {
+                                        Spacer().frame(height: 160)
+                                    }
+                                }
+                            }
+                            .coordinateSpace(name: "webtoonReaderScroll")
+                            .onPreferenceChange(ReaderTopOffsetKey.self) { minY in
+                                topPullOffset = minY
+                                if minY > 85 {
+                                    triggerAutoPreviousChapter()
                                 }
                             }
                             .onChange(of: store.currentPage) { _, newPage in
@@ -289,10 +347,7 @@ public struct ReaderView: View {
                                 nextChapterName: store.nextChapter?.fileName ?? ((isEn ? "Chapter " : "Capítulo ") + "\(store.currentChapterIndex + 1)"),
                                 isEn: isEn,
                                 onNext: {
-                                    Task {
-                                        await store.goToNextChapter(apiClient: apiClient, session: appState.session)
-                                        recordHistory()
-                                    }
+                                    triggerAutoNextChapter()
                                 },
                                 onPrev: {
                                     if !store.pages.isEmpty {
@@ -304,6 +359,17 @@ public struct ReaderView: View {
                         }
                         .tabViewStyle(.page(indexDisplayMode: .never))
                         .environment(\.layoutDirection, store.readerMode == .horizontalRTL ? .rightToLeft : .leftToRight)
+                        .simultaneousGesture(
+                            DragGesture()
+                                .onEnded { value in
+                                    if store.currentPage == 1 && value.translation.width > 80 && store.hasPreviousChapter {
+                                        triggerAutoPreviousChapter()
+                                    }
+                                    if store.currentPage == (store.pages.count + 1) && value.translation.width < -80 && store.hasNextChapter {
+                                        triggerAutoNextChapter()
+                                    }
+                                }
+                        )
                     }
                 }
             }
@@ -479,6 +545,42 @@ public struct ReaderView: View {
             pageIndex: max(store.currentPage - 1, 0),
             totalPages: max(store.pages.count, 1)
         )
+    }
+    
+    private func triggerAutoNextChapter() {
+        guard !isTransitioningChapter, store.hasNextChapter else { return }
+        isTransitioningChapter = true
+        let impact = UIImpactFeedbackGenerator(style: .medium)
+        impact.prepare()
+        impact.impactOccurred()
+        Task {
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            await store.goToNextChapter(apiClient: apiClient, session: appState.session)
+            recordHistory()
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            isTransitioningChapter = false
+        }
+    }
+    
+    private func triggerAutoPreviousChapter() {
+        guard !isTransitioningChapter, store.hasPreviousChapter else { return }
+        isTransitioningChapter = true
+        let impact = UIImpactFeedbackGenerator(style: .medium)
+        impact.prepare()
+        impact.impactOccurred()
+        Task {
+            await store.goToPreviousChapter(apiClient: apiClient, session: appState.session)
+            recordHistory()
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            isTransitioningChapter = false
+        }
+    }
+}
+
+private struct ReaderTopOffsetKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
 
