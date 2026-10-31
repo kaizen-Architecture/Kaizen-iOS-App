@@ -5,7 +5,6 @@ public struct HomeDashboardView: View {
     @Environment(AppState.self) private var appState
     let apiClient: KaizenAPIClient
     
-    @State private var selectedManga: Manga?
     @State private var showCreateShelfSheet = false
     @State private var newShelfName = ""
     @State private var newShelfIcon = "books.vertical.fill"
@@ -133,16 +132,33 @@ public struct HomeDashboardView: View {
                     }
                     .refreshable {
                         await appState.loadLibrary(client: apiClient, force: true)
+                        if let session = appState.session, !inProgressMangas.isEmpty {
+                            await ChapterPrefetchManager.shared.prefetchFirstUnreadChapters(
+                                mangas: inProgressMangas,
+                                apiClient: apiClient,
+                                session: session
+                            )
+                        }
                     }
                 }
             }
             .navigationTitle("Kaizen")
+            .navigationDestination(for: Manga.self) { manga in
+                MangaDetailView(manga: manga, apiClient: apiClient)
+            }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     HStack(spacing: 12) {
                         Button {
                             Task {
                                 await appState.loadLibrary(client: apiClient, force: true)
+                                if let session = appState.session, !inProgressMangas.isEmpty {
+                                    await ChapterPrefetchManager.shared.prefetchFirstUnreadChapters(
+                                        mangas: inProgressMangas,
+                                        apiClient: apiClient,
+                                        session: session
+                                    )
+                                }
                             }
                         } label: {
                             Image(systemName: "arrow.triangle.2.circlepath")
@@ -162,9 +178,13 @@ public struct HomeDashboardView: View {
             }
             .task {
                 await appState.loadLibrary(client: apiClient, force: false)
-            }
-            .sheet(item: $selectedManga) { manga in
-                MangaDetailSheet(manga: manga, apiClient: apiClient)
+                if let session = appState.session, !inProgressMangas.isEmpty {
+                    await ChapterPrefetchManager.shared.prefetchFirstUnreadChapters(
+                        mangas: inProgressMangas,
+                        apiClient: apiClient,
+                        session: session
+                    )
+                }
             }
             .alert(isEn ? "New Reading Library" : "Nueva Librería de Lectura", isPresented: $showCreateShelfSheet) {
                 TextField(isEn ? "e.g. Manhwa Top, Re-reading, Favorites..." : "Ej: Manhwa Top, Para releer, Favoritos...", text: $newShelfName)
@@ -288,9 +308,7 @@ public struct HomeDashboardView: View {
                 // Modo Cuadrícula Adaptativa (en iPad muestra ~15 mangas de un vistazo con scroll vertical)
                 LazyVGrid(columns: adaptiveGridColumns, spacing: 16) {
                     ForEach(mangas) { manga in
-                        Button {
-                            selectedManga = manga
-                        } label: {
+                        NavigationLink(value: manga) {
                             MangaCardView(manga: manga)
                         }
                         .buttonStyle(.plain)
@@ -310,9 +328,7 @@ public struct HomeDashboardView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             LazyHStack(spacing: 16) {
                 ForEach(mangas) { manga in
-                    Button {
-                        selectedManga = manga
-                    } label: {
+                    NavigationLink(value: manga) {
                         MangaCardView(manga: manga)
                             .frame(width: 130)
                     }

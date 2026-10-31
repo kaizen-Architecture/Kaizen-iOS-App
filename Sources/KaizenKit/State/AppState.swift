@@ -82,6 +82,7 @@ public final class AppState {
         self.serverSettings = nil
         self.history = []
         KeychainService.shared.clearSession()
+        Task { await ChapterPrefetchManager.shared.clear() }
     }
     
     // MARK: - Gestión de Estanterías Lógicas

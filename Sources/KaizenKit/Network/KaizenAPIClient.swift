@@ -452,6 +452,145 @@ public actor KaizenAPIClient {
         guard (200...299).contains(http.statusCode) else { throw KaizenError.server(status: http.statusCode) }
     }
 
+    // MARK: - Control Remoto Avanzado de Manga y Capítulos (Admin tRPC)
+
+    public func deleteChapter(serverUrl: URL, token: String, chapterId: Int) async throws {
+        let req = try request(
+            try endpoint(serverUrl, path: "/api/trpc/manga.deleteChapter"),
+            method: "POST",
+            token: token,
+            json: ["json": ["id": chapterId]]
+        )
+        let (_, http) = try await send(req)
+        guard (200...299).contains(http.statusCode) else { throw KaizenError.server(status: http.statusCode) }
+        await KaizenLogger.shared.info("Admin", "Capítulo ID \(chapterId) eliminado del servidor y disco.")
+    }
+
+    public func redownloadChapter(serverUrl: URL, token: String, chapterId: Int) async throws {
+        let req = try request(
+            try endpoint(serverUrl, path: "/api/trpc/manga.redownloadChapter"),
+            method: "POST",
+            token: token,
+            json: ["json": ["chapterId": chapterId]]
+        )
+        let (_, http) = try await send(req)
+        guard (200...299).contains(http.statusCode) else { throw KaizenError.server(status: http.statusCode) }
+        await KaizenLogger.shared.info("Admin", "Capítulo ID \(chapterId) encolado para redescarga.")
+    }
+
+    public func redownloadChapterRange(serverUrl: URL, token: String, mangaId: Int, startChapter: Int, endChapter: Int) async throws {
+        let req = try request(
+            try endpoint(serverUrl, path: "/api/trpc/manga.redownloadChapterRange"),
+            method: "POST",
+            token: token,
+            json: ["json": ["mangaId": mangaId, "startChapter": startChapter, "endChapter": endChapter]]
+        )
+        let (_, http) = try await send(req)
+        guard (200...299).contains(http.statusCode) else { throw KaizenError.server(status: http.statusCode) }
+        await KaizenLogger.shared.info("Admin", "Rango de capítulos \(startChapter)-\(endChapter) encolado para redescarga en manga \(mangaId).")
+    }
+
+    public func auditMangaIntegrity(serverUrl: URL, token: String, mangaId: Int? = nil) async throws {
+        var inputDict: [String: Any] = [:]
+        if let mangaId { inputDict["mangaId"] = mangaId }
+        let req = try request(
+            try endpoint(serverUrl, path: "/api/trpc/manga.auditMangaIntegrity"),
+            method: "POST",
+            token: token,
+            json: ["json": inputDict]
+        )
+        let (_, http) = try await send(req)
+        guard (200...299).contains(http.statusCode) else { throw KaizenError.server(status: http.statusCode) }
+        await KaizenLogger.shared.info("Admin", "Auditoría de integridad encolada para manga: \(mangaId.map(String.init) ?? "todos").")
+    }
+
+    public func reportCorruptChapter(serverUrl: URL, token: String, chapterId: Int) async throws {
+        let req = try request(
+            try endpoint(serverUrl, path: "/api/trpc/manga.reportCorruptChapter"),
+            method: "POST",
+            token: token,
+            json: ["json": ["chapterId": chapterId]]
+        )
+        let (_, http) = try await send(req)
+        guard (200...299).contains(http.statusCode) else { throw KaizenError.server(status: http.statusCode) }
+        await KaizenLogger.shared.info("Reader", "Capítulo corrupto reportado ID \(chapterId).")
+    }
+
+    public func fetchMangaSources(serverUrl: URL, token: String, mangaId: Int) async throws -> [MangaConfiguredSource] {
+        let req = request(try trpcQueryURL(serverUrl, procedure: "manga.getSources", input: ["id": mangaId]), token: token)
+        let (data, http) = try await send(req)
+        guard (200...299).contains(http.statusCode) else { throw KaizenError.server(status: http.statusCode) }
+        guard let list = trpcRawData(data) as? [[String: Any]] else { return [] }
+        let raw = try JSONSerialization.data(withJSONObject: list)
+        return (try? decoder.decode([MangaConfiguredSource].self, from: raw)) ?? []
+    }
+
+    public func addMangaSource(serverUrl: URL, token: String, mangaId: Int, source: String, title: String) async throws {
+        let req = try request(
+            try endpoint(serverUrl, path: "/api/trpc/manga.addSource"),
+            method: "POST",
+            token: token,
+            json: ["json": ["mangaId": mangaId, "source": source, "title": title]]
+        )
+        let (data, http) = try await send(req)
+        guard (200...299).contains(http.statusCode) else {
+            if let str = String(data: data, encoding: .utf8), str.contains("CONFLICT") {
+                throw NSError(domain: "Kaizen", code: 409, userInfo: [NSLocalizedDescriptionKey: "Esta fuente ya está añadida a la serie."])
+            }
+            throw KaizenError.server(status: http.statusCode)
+        }
+        await KaizenLogger.shared.info("Admin", "Fuente '\(source)' añadida al manga \(mangaId).")
+    }
+
+    public func removeMangaSource(serverUrl: URL, token: String, sourceId: Int) async throws {
+        let req = try request(
+            try endpoint(serverUrl, path: "/api/trpc/manga.removeSource"),
+            method: "POST",
+            token: token,
+            json: ["json": ["id": sourceId]]
+        )
+        let (_, http) = try await send(req)
+        guard (200...299).contains(http.statusCode) else { throw KaizenError.server(status: http.statusCode) }
+        await KaizenLogger.shared.info("Admin", "Fuente ID \(sourceId) eliminada.")
+    }
+
+    public func switchMangaPrimarySource(serverUrl: URL, token: String, mangaId: Int, newSource: String, newSourceTitle: String? = nil) async throws {
+        var inputDict: [String: Any] = ["mangaId": mangaId, "newSource": newSource]
+        if let newSourceTitle, !newSourceTitle.isEmpty { inputDict["newSourceTitle"] = newSourceTitle }
+        let req = try request(
+            try endpoint(serverUrl, path: "/api/trpc/manga.switchMangaPrimarySource"),
+            method: "POST",
+            token: token,
+            json: ["json": inputDict]
+        )
+        let (_, http) = try await send(req)
+        guard (200...299).contains(http.statusCode) else { throw KaizenError.server(status: http.statusCode) }
+        await KaizenLogger.shared.info("Admin", "Fuente principal de manga \(mangaId) cambiada a '\(newSource)'.")
+    }
+
+    public func deleteManga(serverUrl: URL, token: String, mangaId: Int, shouldRemoveFiles: Bool = true) async throws {
+        let req = try request(
+            try endpoint(serverUrl, path: "/api/trpc/manga.remove"),
+            method: "POST",
+            token: token,
+            json: ["json": ["id": mangaId, "shouldRemoveFiles": shouldRemoveFiles]]
+        )
+        let (_, http) = try await send(req)
+        guard (200...299).contains(http.statusCode) else { throw KaizenError.server(status: http.statusCode) }
+        await KaizenLogger.shared.info("Admin", "Manga ID \(mangaId) eliminado del servidor (archivos borrados: \(shouldRemoveFiles)).")
+    }
+
+    public func toggleMangaLock(serverUrl: URL, token: String, mangaId: Int, isLocked: Bool) async throws {
+        let req = try request(
+            try endpoint(serverUrl, path: "/api/trpc/manga.toggleLock"),
+            method: "POST",
+            token: token,
+            json: ["json": ["id": mangaId, "isLocked": isLocked]]
+        )
+        let (_, http) = try await send(req)
+        guard (200...299).contains(http.statusCode) else { throw KaizenError.server(status: http.statusCode) }
+    }
+
     // MARK: - Helpers privados
 
     /// Construye `<base>/<path>` respetando un posible prefijo en la URL del servidor.

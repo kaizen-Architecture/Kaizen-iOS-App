@@ -1,7 +1,7 @@
 import Foundation
 
 /// Manga de la biblioteca de Kaizen, decodificado desde `GET /api/v1/mangas` o `GET /api/v1/mangas/:id`.
-public struct Manga: Identifiable, Decodable, Sendable, Equatable {
+public struct Manga: Identifiable, Decodable, Sendable, Equatable, Hashable {
     public let id: Int
     public let title: String
     public let altTitles: [String]?
@@ -11,11 +11,30 @@ public struct Manga: Identifiable, Decodable, Sendable, Equatable {
     public let genres: [String]?
     public let status: String?
     public let libraryId: Int?
+    public let source: String?
+    public let isLocked: Bool
+    public let interval: String?
     public let totalChapters: Int
     public let unreadCount: Int
     public let readingPercentage: Double
     public var isFavorite: Bool
     public var chapters: [Chapter]?
+    
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
+    
+    public static func == (lhs: Manga, rhs: Manga) -> Bool {
+        lhs.id == rhs.id &&
+        lhs.title == rhs.title &&
+        lhs.isFavorite == rhs.isFavorite &&
+        lhs.readingPercentage == rhs.readingPercentage &&
+        lhs.unreadCount == rhs.unreadCount &&
+        lhs.totalChapters == rhs.totalChapters &&
+        lhs.chapters == rhs.chapters &&
+        lhs.isLocked == rhs.isLocked &&
+        lhs.source == rhs.source
+    }
     
     public init(
         id: Int,
@@ -27,6 +46,9 @@ public struct Manga: Identifiable, Decodable, Sendable, Equatable {
         genres: [String]? = nil,
         status: String? = nil,
         libraryId: Int? = nil,
+        source: String? = nil,
+        isLocked: Bool = false,
+        interval: String? = nil,
         totalChapters: Int = 0,
         unreadCount: Int = 0,
         readingPercentage: Double = 0.0,
@@ -42,6 +64,9 @@ public struct Manga: Identifiable, Decodable, Sendable, Equatable {
         self.genres = genres
         self.status = status
         self.libraryId = libraryId
+        self.source = source
+        self.isLocked = isLocked
+        self.interval = interval
         self.totalChapters = totalChapters
         self.unreadCount = unreadCount
         self.readingPercentage = readingPercentage
@@ -50,7 +75,7 @@ public struct Manga: Identifiable, Decodable, Sendable, Equatable {
     }
     
     private enum Keys: String, CodingKey {
-        case id, title, isFavorite, libraryId, metadata, readingStatus, chapters
+        case id, title, isFavorite, libraryId, source, isLocked, interval, metadata, readingStatus, chapters
     }
     private enum MetadataKeys: String, CodingKey {
         case cover, summary, authors, genres, status, synonyms
@@ -65,6 +90,9 @@ public struct Manga: Identifiable, Decodable, Sendable, Equatable {
         title = try root.decode(String.self, forKey: .title)
         isFavorite = try root.decodeIfPresent(Bool.self, forKey: .isFavorite) ?? false
         libraryId = try root.decodeIfPresent(Int.self, forKey: .libraryId)
+        source = try root.decodeIfPresent(String.self, forKey: .source)
+        isLocked = try root.decodeIfPresent(Bool.self, forKey: .isLocked) ?? false
+        interval = try root.decodeIfPresent(String.self, forKey: .interval)
         if let lossyList = try? root.decodeIfPresent([LossyDecodable<Chapter>].self, forKey: .chapters) {
             chapters = lossyList.compactMap(\.value)
         } else {
@@ -112,21 +140,29 @@ private struct LossyDecodable<T: Decodable>: Decodable {
 }
 
 /// Capítulo real de un manga en Kaizen
-public struct Chapter: Identifiable, Codable, Sendable, Equatable {
+public struct Chapter: Identifiable, Codable, Sendable, Equatable, Hashable {
     public let id: Int
     public let mangaId: Int?
     public let index: Int
     public let fileName: String?
+    public let size: Int?
+    public let createdAt: String?
     public var isFavorite: Bool
     public var isRead: Bool
     public var lastReadPage: Int
     public let lastReadAt: String?
+    
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
     
     public init(
         id: Int,
         mangaId: Int? = nil,
         index: Int,
         fileName: String? = nil,
+        size: Int? = nil,
+        createdAt: String? = nil,
         isFavorite: Bool = false,
         isRead: Bool = false,
         lastReadPage: Int = 0,
@@ -136,6 +172,8 @@ public struct Chapter: Identifiable, Codable, Sendable, Equatable {
         self.mangaId = mangaId
         self.index = index
         self.fileName = fileName
+        self.size = size
+        self.createdAt = createdAt
         self.isFavorite = isFavorite
         self.isRead = isRead
         self.lastReadPage = lastReadPage
@@ -143,7 +181,7 @@ public struct Chapter: Identifiable, Codable, Sendable, Equatable {
     }
     
     private enum CodingKeys: String, CodingKey {
-        case id, mangaId, index, fileName, isFavorite, isRead, lastReadPage, lastReadAt
+        case id, mangaId, index, fileName, size, createdAt, isFavorite, isRead, lastReadPage, lastReadAt
     }
     
     public init(from decoder: Decoder) throws {
@@ -161,6 +199,8 @@ public struct Chapter: Identifiable, Codable, Sendable, Equatable {
         }
         
         self.fileName = try? container.decodeIfPresent(String.self, forKey: .fileName)
+        self.size = try? container.decodeIfPresent(Int.self, forKey: .size)
+        self.createdAt = try? container.decodeIfPresent(String.self, forKey: .createdAt)
         self.isFavorite = (try? container.decodeIfPresent(Bool.self, forKey: .isFavorite)) ?? false
         self.isRead = (try? container.decodeIfPresent(Bool.self, forKey: .isRead)) ?? false
         self.lastReadPage = (try? container.decodeIfPresent(Int.self, forKey: .lastReadPage)) ?? 0
@@ -173,6 +213,28 @@ public struct Chapter: Identifiable, Codable, Sendable, Equatable {
     
     public var uniqueKey: String {
         "\(id)_\(index)"
+    }
+    
+    public var formattedSize: String? {
+        guard let size, size > 0 else { return nil }
+        return ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)
+    }
+}
+
+/// Fuente o scraper configurado específicamente para un manga en Kaizen
+public struct MangaConfiguredSource: Identifiable, Codable, Sendable, Equatable, Hashable {
+    public let id: Int
+    public let mangaId: Int
+    public let source: String
+    public let title: String
+    public var priority: Int
+    
+    public init(id: Int, mangaId: Int, source: String, title: String, priority: Int) {
+        self.id = id
+        self.mangaId = mangaId
+        self.source = source
+        self.title = title
+        self.priority = priority
     }
 }
 

@@ -27,7 +27,6 @@ public struct LibraryView: View {
     @State private var selectedStatus: String? = nil
     @State private var selectedGenre: String? = nil
     @State private var searchText: String = ""
-    @State private var selectedManga: Manga?
     @State private var showCreateLibraryAlert = false
     @State private var showAddMangaSheet = false
     @State private var newLibraryPath = ""
@@ -319,9 +318,7 @@ public struct LibraryView: View {
                         ScrollView {
                             LazyVGrid(columns: columns, spacing: 20) {
                                 ForEach(filteredMangas) { manga in
-                                    Button {
-                                        selectedManga = manga
-                                    } label: {
+                                    NavigationLink(value: manga) {
                                         MangaCardView(manga: manga)
                                     }
                                     .buttonStyle(.plain)
@@ -390,8 +387,8 @@ public struct LibraryView: View {
             .task {
                 await appState.loadLibrary(client: apiClient, force: false)
             }
-            .sheet(item: $selectedManga) { manga in
-                MangaDetailSheet(manga: manga, apiClient: apiClient)
+            .navigationDestination(for: Manga.self) { manga in
+                MangaDetailView(manga: manga, apiClient: apiClient)
             }
             .sheet(isPresented: $showAddMangaSheet) {
                 AddMangaRemoteSheet(apiClient: apiClient) {
@@ -419,11 +416,12 @@ public struct LibraryView: View {
     }
 }
 
-/// Ficha completa e interactiva de Manga con listado de capítulos y lector real
-public struct MangaDetailSheet: View {
+/// Ficha completa e interactiva de Manga adaptada a iPad y iPhone, con control de Admin
+public struct MangaDetailView: View {
     let manga: Manga
     let apiClient: KaizenAPIClient
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(AppState.self) private var appState
     
     @State private var detailedManga: Manga?
@@ -435,6 +433,21 @@ public struct MangaDetailSheet: View {
     @State private var isCheckingNewChapters: Bool = false
     @State private var checkChaptersFeedback: (isSuccess: Bool, message: String)?
     
+    // Búsqueda y ordenación de capítulos
+    @State private var chapterSearchText: String = ""
+    @State private var sortNewestFirst: Bool = true
+    
+    // Herramientas de Administrador
+    @State private var showSourcesSheet: Bool = false
+    @State private var showRedownloadRangeAlert: Bool = false
+    @State private var rangeStartChapter: String = "1"
+    @State private var rangeEndChapter: String = "10"
+    @State private var showDeleteMangaAlert: Bool = false
+    @State private var alsoDeleteFiles: Bool = true
+    @State private var chapterToDelete: Chapter?
+    @State private var showDeleteChapterAlert: Bool = false
+    @State private var adminActionToast: String?
+    
     public init(manga: Manga, apiClient: KaizenAPIClient) {
         self.manga = manga
         self.apiClient = apiClient
@@ -442,6 +455,10 @@ public struct MangaDetailSheet: View {
     
     private var isEn: Bool {
         appState.currentLanguage == "en"
+    }
+    
+    private var isPad: Bool {
+        horizontalSizeClass == .regular
     }
     
     private var currentManga: Manga {
@@ -452,8 +469,21 @@ public struct MangaDetailSheet: View {
         detailedManga?.chapters ?? currentManga.chapters ?? []
     }
     
-    private var displayChapters: [Chapter] {
-        chapters.sorted { $0.index > $1.index }
+    private var filteredChapters: [Chapter] {
+        let base: [Chapter]
+        if chapterSearchText.trimmingCharacters(in: .whitespaces).isEmpty {
+            base = chapters
+        } else {
+            let query = chapterSearchText.trimmingCharacters(in: .whitespaces).lowercased()
+            base = chapters.filter { ch in
+                "\(ch.index)".contains(query) ||
+                (ch.fileName?.localizedCaseInsensitiveContains(query) ?? false) ||
+                ch.displayName.localizedCaseInsensitiveContains(query)
+            }
+        }
+        return base.sorted {
+            sortNewestFirst ? ($0.index > $1.index) : ($0.index < $1.index)
+        }
     }
     
     private var isCaughtUp: Bool {
@@ -465,395 +495,630 @@ public struct MangaDetailSheet: View {
         chapters.sorted { $0.index < $1.index }.first { !$0.isRead }
     }
     
+    // Columnas adaptativas para iPad: 2-3 columnas de capítulos cómodos
+    private let padGridColumns = [
+        GridItem(.adaptive(minimum: 280, maximum: 440), spacing: 12)
+    ]
+    
     public var body: some View {
-        NavigationStack {
-            ZStack {
-                Color.black.ignoresSafeArea()
-                
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 20) {
-                        // Cabecera con portada e información básica
-                        HStack(alignment: .top, spacing: 18) {
-                            MangaCardView(manga: currentManga)
-                                .frame(width: 140)
-                            
-                            VStack(alignment: .leading, spacing: 10) {
-                                Text(currentManga.title)
-                                    .font(.title3.weight(.bold))
-                                    .foregroundStyle(.white)
-                                
-                                if let authors = currentManga.authors, !authors.isEmpty {
-                                    Text(authors.joined(separator: ", "))
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
-                                }
-                                
-                                // Estado de publicación
-                                HStack(spacing: 8) {
-                                    Text(currentManga.status == "COMPLETED" ? (isEn ? "Completed" : "Finalizado") : (isEn ? "Ongoing" : "En emisión"))
-                                        .font(.caption2.weight(.bold))
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 4)
-                                        .background(currentManga.status == "COMPLETED" ? Color.purple.opacity(0.2) : Color.green.opacity(0.2), in: Capsule())
-                                        .foregroundStyle(currentManga.status == "COMPLETED" ? Color.purple : Color.green)
-                                    
-                                    if currentManga.readingPercentage >= 100 {
-                                        Text(isEn ? "Caught Up" : "Al día")
-                                            .font(.caption2.weight(.bold))
-                                            .padding(.horizontal, 8)
-                                            .padding(.vertical, 4)
-                                            .background(Color.cyan.opacity(0.2), in: Capsule())
-                                            .foregroundStyle(.cyan)
-                                    }
-                                }
-                                
-                                // Porcentaje de lectura
-                                VStack(alignment: .leading, spacing: 4) {
-                                    HStack {
-                                        Text(isEn ? "Progress: \(Int(currentManga.readingPercentage))%" : "Progreso: \(Int(currentManga.readingPercentage))%")
-                                            .font(.caption.weight(.semibold))
-                                            .foregroundStyle(.secondary)
-                                        Spacer()
-                                        Text("\(currentManga.totalChapters - currentManga.unreadCount)/\(currentManga.totalChapters) " + (isEn ? "ch." : "cap."))
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    ProgressView(value: min(max(currentManga.readingPercentage / 100.0, 0), 1))
-                                        .tint(.cyan)
-                                }
-                                
-                                // Botones de Favorito, Librerías de Lectura y Comprobar Nuevos Capítulos
-                                HStack(spacing: 8) {
-                                    Button {
-                                        Task {
-                                            await appState.toggleFavorite(mangaId: currentManga.id, client: apiClient)
-                                            detailedManga?.isFavorite.toggle()
-                                        }
-                                    } label: {
-                                        HStack(spacing: 6) {
-                                            Image(systemName: currentManga.isFavorite ? "heart.fill" : "heart")
-                                                .foregroundStyle(currentManga.isFavorite ? .pink : .white)
-                                            Text(isEn ? "Favorite" : "Favorito")
-                                                .font(.caption.weight(.semibold))
-                                        }
-                                        .padding(.horizontal, 10)
-                                        .padding(.vertical, 6)
-                                        .background(Color.white.opacity(0.1), in: Capsule())
-                                    }
-                                    .buttonStyle(.plain)
-                                    
-                                    Menu {
-                                        ForEach(appState.shelves) { shelf in
-                                            Button {
-                                                appState.toggleMangaInShelf(shelfId: shelf.id, mangaId: currentManga.id)
-                                            } label: {
-                                                let inShelf = appState.isMangaInShelf(shelfId: shelf.id, mangaId: currentManga.id)
-                                                Label(shelf.name, systemImage: inShelf ? "checkmark.circle.fill" : "circle")
-                                            }
-                                        }
-                                        
-                                        Divider()
-                                        
-                                        Button {
-                                            newShelfName = ""
-                                            showCreateShelfAlert = true
-                                        } label: {
-                                            Label(isEn ? "+ New Reading Library..." : "+ Nueva librería de lectura...", systemImage: "plus")
-                                        }
-                                    } label: {
-                                        HStack(spacing: 6) {
-                                            Image(systemName: "books.vertical.fill")
-                                                .foregroundStyle(.yellow)
-                                            Text(isEn ? "Libraries" : "Librerías")
-                                                .font(.caption.weight(.semibold))
-                                        }
-                                        .padding(.horizontal, 10)
-                                        .padding(.vertical, 6)
-                                        .background(Color.white.opacity(0.1), in: Capsule())
-                                    }
-                                    .buttonStyle(.plain)
-                                    
-                                    // Botón para refrescar y comprobar nuevos capítulos en el servidor Kaizen
-                                    Button {
-                                        Task { await checkForNewChapters() }
-                                    } label: {
-                                        HStack(spacing: 6) {
-                                            if isCheckingNewChapters {
-                                                ProgressView().scaleEffect(0.65).tint(.cyan)
-                                            } else {
-                                                Image(systemName: "arrow.triangle.2.circlepath")
-                                            }
-                                            Text(isEn ? "Check Chapters" : "Comprobar")
-                                                .font(.caption.weight(.semibold))
-                                        }
-                                        .padding(.horizontal, 10)
-                                        .padding(.vertical, 6)
-                                        .background(Color.cyan.opacity(0.15), in: Capsule())
-                                        .overlay(Capsule().stroke(Color.cyan.opacity(0.4), lineWidth: 1))
-                                        .foregroundStyle(Color.cyan)
-                                    }
-                                    .buttonStyle(.plain)
-                                    .disabled(isCheckingNewChapters)
-                                }
-                                
-                                // Indicador de librerías en las que está este manga
-                                let memberShelves = appState.shelves.filter { $0.mangaIds.contains(currentManga.id) }
-                                if !memberShelves.isEmpty {
-                                    ScrollView(.horizontal, showsIndicators: false) {
-                                        HStack(spacing: 6) {
-                                            Text(isEn ? "In:" : "En:")
-                                                .font(.caption2)
-                                                .foregroundStyle(.secondary)
-                                            ForEach(memberShelves) { s in
-                                                HStack(spacing: 4) {
-                                                    Image(systemName: s.icon)
-                                                        .font(.system(size: 9))
-                                                    Text(s.name)
-                                                        .font(.caption2.weight(.medium))
-                                                }
-                                                .foregroundStyle(.yellow)
-                                                .padding(.horizontal, 8)
-                                                .padding(.vertical, 3)
-                                                .background(Color.yellow.opacity(0.15), in: Capsule())
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+        ZStack {
+            Color.black.ignoresSafeArea()
+            
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    // Cabecera Principal (Hero)
+                    headerHeroSection
+                    
+                    // Banner de Feedback de Capítulos o Admin
+                    feedbackBanners
+                    
+                    // Botón Principal de Continuar / Empezar
+                    primaryActionButton
+                    
+                    // Sinopsis
+                    if let synopsis = currentManga.synopsis, !synopsis.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(isEn ? "Synopsis" : "Sinopsis")
+                                .font(.headline)
+                                .foregroundStyle(.white)
+                            Text(synopsis)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(isPad ? 10 : 5)
                         }
                         .padding(.horizontal, 16)
-                        .padding(.top, 16)
-                        
-                        // Banner informativo de resultado al comprobar capítulos
-                        if let feedback = checkChaptersFeedback {
-                            HStack(spacing: 8) {
-                                Image(systemName: feedback.isSuccess ? "checkmark.circle.fill" : "info.circle.fill")
-                                    .font(.subheadline)
-                                Text(feedback.message)
-                                    .font(.caption.weight(.medium))
-                            }
-                            .foregroundStyle(feedback.isSuccess ? Color.green : Color.cyan)
-                            .padding(12)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background((feedback.isSuccess ? Color.green : Color.cyan).opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 12)
-                                    .stroke((feedback.isSuccess ? Color.green : Color.cyan).opacity(0.3), lineWidth: 1)
-                            )
-                            .padding(.horizontal, 16)
-                            .transition(.opacity.combined(with: .move(edge: .top)))
-                        }
-                        
-                        if let errorMsg = errorMessage {
-                            HStack(spacing: 8) {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .font(.subheadline)
-                                Text(isEn ? "Error loading latest chapters: \(errorMsg)" : "Error al cargar capítulos actualizados: \(errorMsg)")
-                                    .font(.caption.weight(.medium))
-                            }
-                            .foregroundStyle(Color.red)
-                            .padding(12)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color.red.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 12)
-                                    .stroke(Color.red.opacity(0.3), lineWidth: 1)
-                            )
-                            .padding(.horizontal, 16)
-                        }
-                        
-                        // Botón de acción principal: Continuar Lectura / Todo Leído
-                        if isCaughtUp {
-                            VStack(spacing: 8) {
-                                HStack(spacing: 8) {
-                                    Image(systemName: "checkmark.seal.fill")
-                                        .font(.title3)
-                                    Text(isEn ? "All Caught Up • Everything Read" : "¡Al día! Todo leído")
-                                        .font(.headline.weight(.bold))
+                    }
+                    
+                    // Listado de Capítulos
+                    chaptersSection
+                }
+                .padding(.bottom, 40)
+            }
+        }
+        .navigationTitle(currentManga.title)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                HStack(spacing: 8) {
+                    // Menú de Herramientas de Administrador
+                    if appState.isManagement {
+                        Menu {
+                            Section(isEn ? "Server Control" : "Control de Servidor") {
+                                Button {
+                                    showSourcesSheet = true
+                                } label: {
+                                    Label(isEn ? "Manga Sources..." : "Gestionar Fuentes...", systemImage: "antenna.radiowaves.left.and.right")
                                 }
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 14)
-                                .background(Color.green.opacity(0.18), in: RoundedRectangle(cornerRadius: 12))
-                                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.green.opacity(0.4), lineWidth: 1))
-                                .foregroundStyle(Color.green)
                                 
-                                if let firstCh = chapters.sorted(by: { $0.index < $1.index }).first {
-                                    Button {
-                                        readingChapter = firstCh
-                                    } label: {
-                                        HStack(spacing: 6) {
-                                            Image(systemName: "arrow.counterclockwise")
-                                            Text(isEn ? "Re-read from Chapter 1" : "Volver a leer desde el inicio")
-                                        }
-                                        .font(.caption.weight(.semibold))
-                                        .foregroundStyle(.secondary)
-                                        .padding(.vertical, 4)
-                                    }
+                                Button {
+                                    rangeStartChapter = "1"
+                                    rangeEndChapter = "\(max(chapters.count, 10))"
+                                    showRedownloadRangeAlert = true
+                                } label: {
+                                    Label(isEn ? "Redownload Chapter Range..." : "Redescargar Rango...", systemImage: "arrow.triangle.2.circlepath")
                                 }
-                            }
-                            .padding(.horizontal, 16)
-                        } else if let next = nextUnreadChapter {
-                            Button {
-                                readingChapter = next
-                            } label: {
-                                HStack {
-                                    Image(systemName: "book.fill")
-                                    let validPage = (next.lastReadPage > 0 && next.lastReadPage < 9000) ? next.lastReadPage : 1
-                                    if validPage > 1 {
-                                        Text(isEn ? "Continue Ch. \(next.index) (p. \(validPage))" : "Continuar Cap. \(next.index) (pág. \(validPage))")
-                                    } else {
-                                        Text(isEn ? "Read Ch. \(next.index)" : "Leer Cap. \(next.index)")
-                                    }
-                                }
-                                .font(.headline.weight(.bold))
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 14)
-                                .background(Color.cyan, in: RoundedRectangle(cornerRadius: 12))
-                                .foregroundStyle(.black)
-                            }
-                            .padding(.horizontal, 16)
-                        }
-                        
-                        // Sinopsis
-                        if let synopsis = currentManga.synopsis, !synopsis.isEmpty {
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text(isEn ? "Synopsis" : "Sinopsis")
-                                    .font(.headline)
-                                    .foregroundStyle(.white)
-                                Text(synopsis)
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(5)
-                            }
-                            .padding(.horizontal, 16)
-                        }
-                        
-                        // Listado de Capítulos
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack {
-                                Text((isEn ? "Chapters (" : "Capítulos (") + "\(chapters.count))")
-                                    .font(.title3.weight(.bold))
-                                    .foregroundStyle(.white)
                                 
-                                Spacer()
+                                Button {
+                                    auditMangaIntegrity()
+                                } label: {
+                                    Label(isEn ? "Audit Files Integrity" : "Auditar Integridad", systemImage: "checkmark.shield")
+                                }
                                 
-                                if !chapters.isEmpty {
-                                    Button(isEn ? "Mark all read" : "Marcar todo leído") {
-                                        markAllAsRead()
-                                    }
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(.cyan)
+                                Button {
+                                    toggleMangaLock()
+                                } label: {
+                                    Label(
+                                        currentManga.isLocked ? (isEn ? "Unlock Manga Updates" : "Desbloquear Actualizaciones") : (isEn ? "Lock Manga Updates" : "Bloquear Actualizaciones"),
+                                        systemImage: currentManga.isLocked ? "lock.open" : "lock"
+                                    )
                                 }
                             }
-                            .padding(.horizontal, 16)
                             
-                            if isLoadingChapters && chapters.isEmpty {
-                                HStack {
-                                    Spacer()
-                                    ProgressView().tint(.cyan)
-                                    Spacer()
-                                }
-                                .padding(.vertical, 30)
-                            } else if chapters.isEmpty {
-                                Text(isEn ? "No chapters available on the server" : "No hay capítulos disponibles en el servidor")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                                    .padding(.horizontal, 16)
-                            } else {
-                                LazyVStack(spacing: 8) {
-                                    ForEach(displayChapters, id: \.uniqueKey) { chapter in
-                                        HStack {
-                                            Button {
-                                                readingChapter = chapter
-                                            } label: {
-                                                HStack(spacing: 12) {
-                                                    ZStack {
-                                                        Circle()
-                                                            .fill(chapter.isRead ? Color.cyan.opacity(0.15) : Color.white.opacity(0.08))
-                                                            .frame(width: 36, height: 36)
-                                                        Text("\(chapter.index)")
-                                                            .font(.caption.weight(.bold))
-                                                            .foregroundStyle(chapter.isRead ? Color.cyan : Color.white)
-                                                    }
-                                                    
-                                                    VStack(alignment: .leading, spacing: 2) {
-                                                        Text(chapter.displayName)
-                                                            .font(.subheadline.weight(.semibold))
-                                                            .foregroundStyle(.white)
-                                                        if chapter.lastReadPage > 0 && !chapter.isRead {
-                                                            Text(isEn ? "Page \(chapter.lastReadPage)" : "Página \(chapter.lastReadPage)")
-                                                                .font(.caption2)
-                                                                .foregroundStyle(.cyan)
-                                                        }
-                                                    }
-                                                    Spacer()
-                                                }
-                                            }
-                                            .buttonStyle(.plain)
-                                            
-                                            // Botón de marcar leído/no leído
-                                            Button {
-                                                toggleChapterRead(chapter)
-                                            } label: {
-                                                Image(systemName: chapter.isRead ? "checkmark.circle.fill" : "circle")
-                                                    .font(.title3)
-                                                    .foregroundStyle(chapter.isRead ? Color.cyan : Color.secondary)
-                                                    .padding(8)
-                                            }
-                                        }
-                                        .padding(.horizontal, 16)
-                                        .padding(.vertical, 8)
-                                        .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
-                                        .padding(.horizontal, 16)
-                                    }
+                            Divider()
+                            
+                            Section {
+                                Button(role: .destructive) {
+                                    showDeleteMangaAlert = true
+                                } label: {
+                                    Label(isEn ? "Delete Manga from Server..." : "Eliminar Manga del Servidor...", systemImage: "trash")
                                 }
                             }
+                        } label: {
+                            Image(systemName: "wrench.and.screwdriver.fill")
+                                .font(.subheadline)
+                                .foregroundStyle(.cyan)
+                                .padding(8)
+                                .background(Color.cyan.opacity(0.15), in: Circle())
                         }
                     }
-                    .padding(.bottom, 30)
                 }
             }
-            .navigationTitle(currentManga.title)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(isEn ? "Close" : "Cerrar") { dismiss() }
+        }
+        .task {
+            await loadDetail()
+        }
+        .fullScreenCover(item: $readingChapter) { chapter in
+            let safePage = (chapter.lastReadPage > 0 && chapter.lastReadPage < 9000) ? chapter.lastReadPage : 1
+            ReaderView(
+                manga: currentManga,
+                mangaId: currentManga.id,
+                chapterId: chapter.id,
+                chapterIndex: chapter.index,
+                initialPage: safePage,
+                allChapters: detailedManga?.chapters ?? [],
+                apiClient: apiClient
+            )
+            .onDisappear {
+                Task { await loadDetail() }
+            }
+        }
+        .sheet(isPresented: $showSourcesSheet) {
+            MangaSourcesManagementSheet(manga: currentManga, apiClient: apiClient) {
+                Task { await loadDetail() }
+            }
+        }
+        .alert(isEn ? "Redownload Chapter Range" : "Redescargar Rango de Capítulos", isPresented: $showRedownloadRangeAlert) {
+            TextField(isEn ? "Start Chapter (e.g. 1)" : "Capítulo Inicio (ej: 1)", text: $rangeStartChapter)
+            TextField(isEn ? "End Chapter (e.g. 20)" : "Capítulo Fin (ej: 20)", text: $rangeEndChapter)
+            Button(isEn ? "Redownload" : "Redescargar") {
+                executeRedownloadRange()
+            }
+            Button(isEn ? "Cancel" : "Cancelar", role: .cancel) {}
+        } message: {
+            Text(isEn ? "Re-queues all chapters in this range for redownload on Kaizen server." : "Encola la redescarga completa de los capítulos seleccionados en el servidor Kaizen.")
+        }
+        .alert(isEn ? "Delete Chapter" : "Eliminar Capítulo", isPresented: $showDeleteChapterAlert) {
+            Button(isEn ? "Delete File & Chapter" : "Eliminar Capítulo y Archivo", role: .destructive) {
+                if let ch = chapterToDelete {
+                    executeDeleteChapter(ch)
                 }
             }
-            .task {
-                await loadDetail()
+            Button(isEn ? "Cancel" : "Cancelar", role: .cancel) {}
+        } message: {
+            if let ch = chapterToDelete {
+                Text(isEn ? "Are you sure you want to delete \(ch.displayName)? The physical file on the server will be deleted." : "¿Seguro que quieres borrar el \(ch.displayName)? El archivo se borrará permanentemente del servidor.")
             }
-            .fullScreenCover(item: $readingChapter) { chapter in
-                let safePage = (chapter.lastReadPage > 0 && chapter.lastReadPage < 9000) ? chapter.lastReadPage : 1
-                ReaderView(
-                    manga: currentManga,
-                    mangaId: currentManga.id,
-                    chapterId: chapter.id,
-                    chapterIndex: chapter.index,
-                    initialPage: safePage,
-                    allChapters: detailedManga?.chapters ?? [],
-                    apiClient: apiClient
-                )
-                .onDisappear {
-                    Task { await loadDetail() }
+        }
+        .alert(isEn ? "Delete Series from Kaizen" : "Eliminar Manga de Kaizen", isPresented: $showDeleteMangaAlert) {
+            Button(isEn ? "Delete from Server & Disk" : "Eliminar de Servidor y Disco", role: .destructive) {
+                executeDeleteManga(deleteFiles: true)
+            }
+            Button(isEn ? "Unlink Only (Keep Files)" : "Solo Desvincular (Conservar Archivos)") {
+                executeDeleteManga(deleteFiles: false)
+            }
+            Button(isEn ? "Cancel" : "Cancelar", role: .cancel) {}
+        } message: {
+            Text(isEn ? "This will remove the series from your Kaizen library." : "Esto eliminará la serie de tu catálogo de Kaizen.")
+        }
+        .alert(isEn ? "New Reading Library" : "Nueva Librería de Lectura", isPresented: $showCreateShelfAlert) {
+            TextField(isEn ? "e.g. Masterpieces, Re-read, Top Tier..." : "Ej: Obras maestras, Relecturas, Favoritos...", text: $newShelfName)
+            Button(isEn ? "Create & Add" : "Crear y Añadir") {
+                let name = newShelfName.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !name.isEmpty {
+                    let newShelf = UserShelf(name: name, icon: "books.vertical.fill", mangaIds: [currentManga.id])
+                    appState.shelves.append(newShelf)
+                    appState.saveShelves()
                 }
             }
-            .alert(isEn ? "New Reading Library" : "Nueva Librería de Lectura", isPresented: $showCreateShelfAlert) {
-                TextField(isEn ? "e.g. Masterpieces, Re-read, Top Tier..." : "Ej: Obras maestras, Relecturas, Favoritos...", text: $newShelfName)
-                Button(isEn ? "Create & Add" : "Crear y Añadir") {
-                    let name = newShelfName.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !name.isEmpty {
-                        let newShelf = UserShelf(name: name, icon: "books.vertical.fill", mangaIds: [currentManga.id])
-                        appState.shelves.append(newShelf)
-                        appState.saveShelves()
+            Button(isEn ? "Cancel" : "Cancelar", role: .cancel) {}
+        } message: {
+            Text(isEn ? "Create a custom reading library and automatically add this manga to it." : "Crea una librería de lectura y asigna este manga inmediatamente.")
+        }
+    }
+    
+    // MARK: - Cabecera Hero Adaptativa
+    
+    private var headerHeroSection: some View {
+        HStack(alignment: .top, spacing: isPad ? 24 : 16) {
+            // Portada con tamaño ampliado en iPad
+            MangaCardView(manga: currentManga)
+                .frame(width: isPad ? 210 : 135)
+                .shadow(color: Color.cyan.opacity(0.2), radius: 12, y: 6)
+            
+            VStack(alignment: .leading, spacing: isPad ? 12 : 8) {
+                Text(currentManga.title)
+                    .font(isPad ? .title.weight(.bold) : .title3.weight(.bold))
+                    .foregroundStyle(.white)
+                    .lineLimit(3)
+                
+                if let authors = currentManga.authors, !authors.isEmpty {
+                    Text(authors.joined(separator: ", "))
+                        .font(isPad ? .headline : .subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                
+                // Badges de Estado y Bloqueo
+                HStack(spacing: 8) {
+                    Text(currentManga.status == "COMPLETED" ? (isEn ? "Completed" : "Finalizado") : (isEn ? "Ongoing" : "En emisión"))
+                        .font(.caption2.weight(.bold))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(currentManga.status == "COMPLETED" ? Color.purple.opacity(0.2) : Color.green.opacity(0.2), in: Capsule())
+                        .foregroundStyle(currentManga.status == "COMPLETED" ? Color.purple : Color.green)
+                    
+                    if currentManga.isLocked {
+                        HStack(spacing: 4) {
+                            Image(systemName: "lock.fill")
+                                .font(.system(size: 9))
+                            Text(isEn ? "Locked" : "Bloqueado")
+                        }
+                        .font(.caption2.weight(.bold))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.orange.opacity(0.2), in: Capsule())
+                        .foregroundStyle(.orange)
+                    }
+                    
+                    if isCaughtUp {
+                        Text(isEn ? "Caught Up" : "Al día")
+                            .font(.caption2.weight(.bold))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.cyan.opacity(0.2), in: Capsule())
+                            .foregroundStyle(.cyan)
                     }
                 }
-                Button(isEn ? "Cancel" : "Cancelar", role: .cancel) {}
-            } message: {
-                Text(isEn ? "Create a custom reading library and automatically add this manga to it." : "Crea una librería de lectura y asigna este manga inmediatamente.")
+                
+                // Porcentaje de lectura
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text(isEn ? "Progress: \(Int(currentManga.readingPercentage))%" : "Progreso: \(Int(currentManga.readingPercentage))%")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text("\(currentManga.totalChapters - currentManga.unreadCount)/\(currentManga.totalChapters) " + (isEn ? "ch." : "cap."))
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    ProgressView(value: min(max(currentManga.readingPercentage / 100.0, 0), 1))
+                        .tint(.cyan)
+                }
+                
+                // Botones Rápidos: Favorito, Librerías, Comprobar
+                HStack(spacing: 8) {
+                    Button {
+                        Task {
+                            await appState.toggleFavorite(mangaId: currentManga.id, client: apiClient)
+                            detailedManga?.isFavorite.toggle()
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: currentManga.isFavorite ? "heart.fill" : "heart")
+                                .foregroundStyle(currentManga.isFavorite ? .pink : .white)
+                            Text(isEn ? "Favorite" : "Favorito")
+                                .font(.caption.weight(.semibold))
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color.white.opacity(0.1), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    
+                    Menu {
+                        ForEach(appState.shelves) { shelf in
+                            Button {
+                                appState.toggleMangaInShelf(shelfId: shelf.id, mangaId: currentManga.id)
+                            } label: {
+                                let inShelf = appState.isMangaInShelf(shelfId: shelf.id, mangaId: currentManga.id)
+                                Label(shelf.name, systemImage: inShelf ? "checkmark.circle.fill" : "circle")
+                            }
+                        }
+                        
+                        Divider()
+                        
+                        Button {
+                            newShelfName = ""
+                            showCreateShelfAlert = true
+                        } label: {
+                            Label(isEn ? "+ New Reading Library..." : "+ Nueva librería de lectura...", systemImage: "plus")
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "books.vertical.fill")
+                                .foregroundStyle(.yellow)
+                            Text(isEn ? "Libraries" : "Librerías")
+                                .font(.caption.weight(.semibold))
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color.white.opacity(0.1), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    
+                    Button {
+                        Task { await checkForNewChapters() }
+                    } label: {
+                        HStack(spacing: 6) {
+                            if isCheckingNewChapters {
+                                ProgressView().scaleEffect(0.65).tint(.cyan)
+                            } else {
+                                Image(systemName: "arrow.triangle.2.circlepath")
+                            }
+                            Text(isEn ? "Check" : "Comprobar")
+                                .font(.caption.weight(.semibold))
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color.cyan.opacity(0.15), in: Capsule())
+                        .overlay(Capsule().stroke(Color.cyan.opacity(0.4), lineWidth: 1))
+                        .foregroundStyle(Color.cyan)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isCheckingNewChapters)
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 16)
+    }
+    
+    // MARK: - Botón Principal de Continuación
+    
+    @ViewBuilder
+    private var primaryActionButton: some View {
+        if isCaughtUp {
+            VStack(spacing: 8) {
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.seal.fill")
+                        .font(.title3)
+                    Text(isEn ? "All Caught Up • Everything Read" : "¡Al día! Todo leído")
+                        .font(.headline.weight(.bold))
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 52)
+                .background(Color.green.opacity(0.18), in: RoundedRectangle(cornerRadius: 14))
+                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.green.opacity(0.4), lineWidth: 1))
+                .foregroundStyle(Color.green)
+                
+                if let firstCh = chapters.sorted(by: { $0.index < $1.index }).first {
+                    Button {
+                        readingChapter = firstCh
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.counterclockwise")
+                            Text(isEn ? "Re-read from Chapter 1" : "Volver a leer desde el inicio")
+                        }
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.vertical, 4)
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+        } else if let next = nextUnreadChapter {
+            Button {
+                readingChapter = next
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "book.fill")
+                        .font(.headline)
+                    let validPage = (next.lastReadPage > 0 && next.lastReadPage < 9000) ? next.lastReadPage : 1
+                    if validPage > 1 {
+                        Text(isEn ? "Continue Ch. \(next.index) (p. \(validPage))" : "Continuar Cap. \(next.index) (pág. \(validPage))")
+                    } else {
+                        Text(isEn ? "Read Chapter \(next.index)" : "Leer Capítulo \(next.index)")
+                    }
+                }
+                .font(.headline.weight(.bold))
+                .frame(maxWidth: .infinity)
+                .frame(height: 54)
+                .background(Color.cyan, in: RoundedRectangle(cornerRadius: 14))
+                .foregroundStyle(.black)
+                .shadow(color: Color.cyan.opacity(0.35), radius: 8, y: 4)
+            }
+            .padding(.horizontal, 16)
+        }
+    }
+    
+    // MARK: - Banners de Notificaciones y Feedback
+    
+    @ViewBuilder
+    private var feedbackBanners: some View {
+        if let feedback = checkChaptersFeedback {
+            HStack(spacing: 8) {
+                Image(systemName: feedback.isSuccess ? "checkmark.circle.fill" : "info.circle.fill")
+                    .font(.subheadline)
+                Text(feedback.message)
+                    .font(.caption.weight(.medium))
+            }
+            .foregroundStyle(feedback.isSuccess ? Color.green : Color.cyan)
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background((feedback.isSuccess ? Color.green : Color.cyan).opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke((feedback.isSuccess ? Color.green : Color.cyan).opacity(0.3), lineWidth: 1)
+            )
+            .padding(.horizontal, 16)
+            .transition(.opacity.combined(with: .move(edge: .top)))
+        }
+        
+        if let toast = adminActionToast {
+            HStack(spacing: 8) {
+                Image(systemName: "gearshape.fill")
+                    .font(.subheadline)
+                Text(toast)
+                    .font(.caption.weight(.semibold))
+            }
+            .foregroundStyle(.cyan)
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.cyan.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.cyan.opacity(0.3), lineWidth: 1))
+            .padding(.horizontal, 16)
+        }
+        
+        if let errorMsg = errorMessage {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.subheadline)
+                Text(isEn ? "Error: \(errorMsg)" : "Error: \(errorMsg)")
+                    .font(.caption.weight(.medium))
+            }
+            .foregroundStyle(Color.red)
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.red.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+            .padding(.horizontal, 16)
+        }
+    }
+    
+    // MARK: - Sección de Capítulos con Búsqueda y Grid Adaptativo para iPad
+    
+    private var chaptersSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            // Barra de Título, Filtro y Ordenación
+            HStack(spacing: 12) {
+                Text((isEn ? "Chapters (" : "Capítulos (") + "\(filteredChapters.count)/\(chapters.count))")
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(.white)
+                
+                Spacer()
+                
+                // Botón de Ordenación Ascendente / Descendente
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        sortNewestFirst.toggle()
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: sortNewestFirst ? "arrow.down" : "arrow.up")
+                        Text(sortNewestFirst ? (isEn ? "Newest" : "Recientes") : (isEn ? "Oldest" : "Primeros"))
+                    }
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(Color.white.opacity(0.08), in: Capsule())
+                }
+                .buttonStyle(.plain)
+                
+                if !chapters.isEmpty {
+                    Button(isEn ? "Mark all read" : "Marcar todo leído") {
+                        markAllAsRead()
+                    }
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.cyan)
+                }
+            }
+            .padding(.horizontal, 16)
+            
+            // Buscador rápido de capítulo si la serie tiene más de 10 capítulos
+            if chapters.count > 10 {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    TextField(isEn ? "Filter by chapter # (e.g. 45)..." : "Filtrar por número (ej: 45)...", text: $chapterSearchText)
+                        .textFieldStyle(.plain)
+                        .font(.subheadline)
+                        .foregroundStyle(.white)
+                    if !chapterSearchText.isEmpty {
+                        Button {
+                            chapterSearchText = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+                .padding(.horizontal, 16)
+            }
+            
+            // Contenido de Capítulos
+            if isLoadingChapters && chapters.isEmpty {
+                HStack {
+                    Spacer()
+                    ProgressView().tint(.cyan)
+                    Spacer()
+                }
+                .padding(.vertical, 30)
+            } else if filteredChapters.isEmpty {
+                Text(isEn ? "No matching chapters found" : "No se encontraron capítulos coincidentes")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 20)
+            } else {
+                if isPad {
+                    // Modo Cuadrícula Adaptativa en iPad (2-3 columnas para aprovechar la pantalla completa)
+                    LazyVGrid(columns: padGridColumns, spacing: 12) {
+                        ForEach(filteredChapters, id: \.uniqueKey) { chapter in
+                            chapterCardRow(chapter)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                } else {
+                    // Modo Lista en iPhone
+                    LazyVStack(spacing: 8) {
+                        ForEach(filteredChapters, id: \.uniqueKey) { chapter in
+                            chapterCardRow(chapter)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                }
             }
         }
     }
+    
+    // MARK: - Tarjeta de Fila de Capítulo
+    
+    @ViewBuilder
+    private func chapterCardRow(_ chapter: Chapter) -> some View {
+        HStack(spacing: 12) {
+            Button {
+                readingChapter = chapter
+            } label: {
+                HStack(spacing: 12) {
+                    ZStack {
+                        Circle()
+                            .fill(chapter.isRead ? Color.cyan.opacity(0.18) : Color.white.opacity(0.08))
+                            .frame(width: 42, height: 42)
+                        Text("\(chapter.index)")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(chapter.isRead ? Color.cyan : Color.white)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(chapter.displayName)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                        
+                        HStack(spacing: 6) {
+                            if chapter.lastReadPage > 0 && !chapter.isRead {
+                                Text(isEn ? "Page \(chapter.lastReadPage)" : "Pág. \(chapter.lastReadPage)")
+                                    .font(.caption2.weight(.bold))
+                                    .foregroundStyle(.cyan)
+                            }
+                            
+                            if let formattedSize = chapter.formattedSize {
+                                Text(formattedSize)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    Spacer()
+                }
+            }
+            .buttonStyle(.plain)
+            
+            // Botón de marcar leído/no leído
+            Button {
+                toggleChapterRead(chapter)
+            } label: {
+                Image(systemName: chapter.isRead ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundStyle(chapter.isRead ? Color.cyan : Color.secondary)
+                    .padding(6)
+            }
+            
+            // Opciones de Administrador por capítulo
+            if appState.isManagement {
+                Menu {
+                    Button {
+                        redownloadSingleChapter(chapter)
+                    } label: {
+                        Label(isEn ? "Redownload Chapter" : "Redescargar capítulo", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                    
+                    Button {
+                        reportChapterCorrupt(chapter)
+                    } label: {
+                        Label(isEn ? "Report Corrupt" : "Reportar corrupto", systemImage: "flag")
+                    }
+                    
+                    Divider()
+                    
+                    Button(role: .destructive) {
+                        chapterToDelete = chapter
+                        showDeleteChapterAlert = true
+                    } label: {
+                        Label(isEn ? "Delete Chapter from Server" : "Eliminar del servidor", systemImage: "trash")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .padding(8)
+                }
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(chapter.isRead ? Color.cyan.opacity(0.15) : Color.white.opacity(0.05), lineWidth: 1)
+        )
+    }
+    
+    // MARK: - Métodos de Carga y Sincronización
     
     private func loadDetail() async {
         guard let session = appState.session else { return }
@@ -881,13 +1146,8 @@ public struct MangaDetailSheet: View {
         let initialCount = currentManga.totalChapters
         
         do {
-            // 1. Enviar orden de búsqueda de capítulos a Kaizen
             try await apiClient.syncManga(serverUrl: session.serverUrl, token: session.apiToken, mangaId: currentManga.id)
-            
-            // 2. Esperar 3.5 segundos para dar tiempo al scraper y crawler de BullMQ a procesar
             try? await Task.sleep(nanoseconds: 3_500_000_000)
-            
-            // 3. Obtener detalle actualizado
             let updated = try await apiClient.fetchMangaDetail(serverUrl: session.serverUrl, token: session.apiToken, mangaId: currentManga.id)
             self.detailedManga = updated
             appState.updateMangaInState(updated)
@@ -909,10 +1169,7 @@ public struct MangaDetailSheet: View {
                 )
             }
         } catch {
-            checkChaptersFeedback = (
-                isSuccess: false,
-                message: error.localizedDescription
-            )
+            checkChaptersFeedback = (isSuccess: false, message: error.localizedDescription)
         }
     }
     
@@ -951,4 +1208,110 @@ public struct MangaDetailSheet: View {
             await loadDetail()
         }
     }
+    
+    // MARK: - Acciones de Administrador
+    
+    private func redownloadSingleChapter(_ chapter: Chapter) {
+        guard let session = appState.session else { return }
+        Task {
+            do {
+                try await apiClient.redownloadChapter(serverUrl: session.serverUrl, token: session.apiToken, chapterId: chapter.id)
+                adminActionToast = isEn ? "Chapter \(chapter.index) queued for redownload." : "Capítulo \(chapter.index) encolado para redescarga."
+                await loadDetail()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+    
+    private func reportChapterCorrupt(_ chapter: Chapter) {
+        guard let session = appState.session else { return }
+        Task {
+            do {
+                try await apiClient.reportCorruptChapter(serverUrl: session.serverUrl, token: session.apiToken, chapterId: chapter.id)
+                adminActionToast = isEn ? "Chapter \(chapter.index) reported corrupt. Audit scheduled." : "Capítulo \(chapter.index) reportado. Auditoría programada."
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+    
+    private func executeDeleteChapter(_ chapter: Chapter) {
+        guard let session = appState.session else { return }
+        Task {
+            do {
+                try await apiClient.deleteChapter(serverUrl: session.serverUrl, token: session.apiToken, chapterId: chapter.id)
+                adminActionToast = isEn ? "Chapter \(chapter.index) deleted from server." : "Capítulo \(chapter.index) eliminado del servidor."
+                await loadDetail()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+    
+    private func executeRedownloadRange() {
+        guard let session = appState.session,
+              let start = Int(rangeStartChapter.trimmingCharacters(in: .whitespaces)),
+              let end = Int(rangeEndChapter.trimmingCharacters(in: .whitespaces)) else { return }
+        Task {
+            do {
+                try await apiClient.redownloadChapterRange(
+                    serverUrl: session.serverUrl,
+                    token: session.apiToken,
+                    mangaId: currentManga.id,
+                    startChapter: start,
+                    endChapter: end
+                )
+                adminActionToast = isEn ? "Range \(start)-\(end) queued for redownload." : "Rango \(start)-\(end) encolado para redescarga."
+                await loadDetail()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+    
+    private func auditMangaIntegrity() {
+        guard let session = appState.session else { return }
+        Task {
+            do {
+                try await apiClient.auditMangaIntegrity(serverUrl: session.serverUrl, token: session.apiToken, mangaId: currentManga.id)
+                adminActionToast = isEn ? "Integrity audit started for this series." : "Auditoría de integridad iniciada para esta serie."
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+    
+    private func toggleMangaLock() {
+        guard let session = appState.session else { return }
+        let newLocked = !currentManga.isLocked
+        Task {
+            do {
+                try await apiClient.toggleMangaLock(serverUrl: session.serverUrl, token: session.apiToken, mangaId: currentManga.id, isLocked: newLocked)
+                adminActionToast = newLocked
+                    ? (isEn ? "Manga updates locked." : "Actualizaciones automáticas bloqueadas.")
+                    : (isEn ? "Manga updates unlocked." : "Actualizaciones automáticas desbloqueadas.")
+                await loadDetail()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+    
+    private func executeDeleteManga(deleteFiles: Bool) {
+        guard let session = appState.session else { return }
+        Task {
+            do {
+                try await apiClient.deleteManga(serverUrl: session.serverUrl, token: session.apiToken, mangaId: currentManga.id, shouldRemoveFiles: deleteFiles)
+                appState.mangas.removeAll { $0.id == currentManga.id }
+                dismiss()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
 }
+
+/// Compatibilidad con código existente
+public typealias MangaDetailSheet = MangaDetailView
+
