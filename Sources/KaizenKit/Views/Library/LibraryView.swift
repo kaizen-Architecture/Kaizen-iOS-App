@@ -1084,121 +1084,134 @@ public struct MangaDetailView: View {
     
     // MARK: - Sección de Fuentes (MangaSources - Paridad Web)
     
-    private var sourcesInlineSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                HStack(spacing: 6) {
-                    Image(systemName: "antenna.radiowaves.left.and.right")
-                        .foregroundStyle(.purple)
-                    Text((isEn ? "Configured Sources (" : "Fuentes de la Serie (") + "\(max(configuredSources.count, 1)))")
-                        .font(.subheadline.weight(.bold))
-                        .foregroundStyle(.white)
+    private var sourcesHeader: some View {
+        HStack {
+            HStack(spacing: 6) {
+                Image(systemName: "antenna.radiowaves.left.and.right")
+                    .foregroundStyle(.purple)
+                Text(isEn ? "Configured Sources (\(max(configuredSources.count, 1)))" : "Fuentes de la Serie (\(max(configuredSources.count, 1)))")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.white)
+            }
+            
+            Spacer()
+            
+            Button {
+                showSourcesSheet = true
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "plus.circle.fill")
+                    Text(isEn ? "Add Source" : "Añadir Fuente")
                 }
-                
-                Spacer()
-                
-                Button {
-                    showSourcesSheet = true
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "plus.circle.fill")
-                        Text(isEn ? "Add Source" : "Añadir Fuente")
-                    }
-                    .font(.caption.weight(.bold))
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.cyan)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Color.cyan.opacity(0.15), in: Capsule())
+            }
+            .buttonStyle(.plain)
+        }
+    }
+    
+    private var sourcesEmptyPlaceholder: some View {
+        HStack(spacing: 10) {
+            // Badge fuente inicial
+            Text(currentManga.source ?? "Default")
+                .font(.caption2.weight(.bold))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color.purple.opacity(0.25), in: Capsule())
+                .foregroundStyle(Color.purple)
+            
+            Text(isEn ? "Default Primary Source" : "Fuente Principal de la Serie")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            
+            Spacer()
+            
+            Button {
+                showSourcesSheet = true
+            } label: {
+                Text(isEn ? "Configure" : "Configurar")
+                    .font(.caption2.weight(.semibold))
                     .foregroundStyle(.cyan)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(Color.cyan.opacity(0.15), in: Capsule())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(12)
+        .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
+    }
+    
+    @ViewBuilder
+    private func sourceRowItem(index: Int, src: MangaConfiguredSource) -> some View {
+        HStack(spacing: 10) {
+            // Badge de Scraper
+            Text(src.source)
+                .font(.caption2.weight(.bold))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(index == 0 ? Color.cyan.opacity(0.25) : Color.purple.opacity(0.25), in: Capsule())
+                .foregroundStyle(index == 0 ? Color.cyan : Color.purple)
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text(src.title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                
+                if index == 0 {
+                    HStack(spacing: 3) {
+                        Image(systemName: "star.fill")
+                            .font(.system(size: 8))
+                            .foregroundStyle(.yellow)
+                        Text(isEn ? "Primary" : "Principal")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.yellow)
+                    }
+                }
+            }
+            
+            Spacer()
+            
+            if index != 0 {
+                Button {
+                    promoteToPrimarySource(src)
+                } label: {
+                    Text(isEn ? "Set Primary" : "Hacer Principal")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.cyan)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.cyan.opacity(0.12), in: Capsule())
                 }
                 .buttonStyle(.plain)
             }
             
+            Button {
+                deleteSource(src)
+            } label: {
+                Image(systemName: "trash")
+                    .font(.caption)
+                    .foregroundStyle(.red.opacity(0.75))
+                    .padding(6)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
+    }
+    
+    private var sourcesInlineSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sourcesHeader
+            
             if configuredSources.isEmpty {
-                HStack(spacing: 10) {
-                    // Badge fuente inicial
-                    Text(currentManga.source ?? "Default")
-                        .font(.caption2.weight(.bold))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.purple.opacity(0.25), in: Capsule())
-                        .foregroundStyle(Color.purple)
-                    
-                    Text(isEn ? "Default Primary Source" : "Fuente Principal de la Serie")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    
-                    Spacer()
-                    
-                    Button {
-                        showSourcesSheet = true
-                    } label: {
-                        Text(isEn ? "Configure" : "Configurar")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.cyan)
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(12)
-                .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
+                sourcesEmptyPlaceholder
             } else {
                 VStack(spacing: 8) {
                     ForEach(Array(configuredSources.enumerated()), id: \.element.id) { index, src in
-                        HStack(spacing: 10) {
-                            // Badge de Scraper
-                            Text(src.source)
-                                .font(.caption2.weight(.bold))
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(index == 0 ? Color.cyan.opacity(0.25) : Color.purple.opacity(0.25), in: Capsule())
-                                .foregroundStyle(index == 0 ? Color.cyan : Color.purple)
-                            
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(src.title)
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(.white)
-                                    .lineLimit(1)
-                                
-                                if index == 0 {
-                                    HStack(spacing: 3) {
-                                        Image(systemName: "star.fill")
-                                            .font(.system(size: 8))
-                                            .foregroundStyle(.yellow)
-                                        Text(isEn ? "Primary" : "Principal")
-                                            .font(.caption2.weight(.bold))
-                                            .foregroundStyle(.yellow)
-                                    }
-                                }
-                            }
-                            
-                            Spacer()
-                            
-                            if index != 0 {
-                                Button {
-                                    promoteToPrimarySource(src)
-                                } label: {
-                                    Text(isEn ? "Set Primary" : "Hacer Principal")
-                                        .font(.caption2.weight(.semibold))
-                                        .foregroundStyle(.cyan)
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 4)
-                                        .background(Color.cyan.opacity(0.12), in: Capsule())
-                                }
-                                .buttonStyle(.plain)
-                            }
-                            
-                            Button {
-                                deleteSource(src)
-                            } label: {
-                                Image(systemName: "trash")
-                                    .font(.caption)
-                                    .foregroundStyle(.red.opacity(0.75))
-                                    .padding(6)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 9)
-                        .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
+                        sourceRowItem(index: index, src: src)
                     }
                 }
             }
@@ -1454,6 +1467,51 @@ public struct MangaDetailView: View {
         } catch {
             errorMessage = error.localizedDescription
             KaizenLogger.shared.error("MangaDetail", "Error al cargar capítulos de '\(currentManga.title)' (ID: \(currentManga.id))", details: error.localizedDescription)
+        }
+        
+        if appState.isManagement {
+            do {
+                let srcs = try await apiClient.fetchMangaSources(serverUrl: session.serverUrl, token: session.apiToken, mangaId: currentManga.id)
+                self.configuredSources = srcs
+            } catch {
+                // Mantener estado previo si falla la llamada
+            }
+        }
+    }
+    
+    private func promoteToPrimarySource(_ src: MangaConfiguredSource) {
+        guard let session = appState.session else { return }
+        Task {
+            do {
+                try await apiClient.switchMangaPrimarySource(
+                    serverUrl: session.serverUrl,
+                    token: session.apiToken,
+                    mangaId: currentManga.id,
+                    newSource: src.source,
+                    newSourceTitle: src.title
+                )
+                adminActionToast = isEn ? "Primary source switched to \(src.source)" : "Fuente principal cambiada a \(src.source)"
+                await loadDetail()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+    
+    private func deleteSource(_ src: MangaConfiguredSource) {
+        guard let session = appState.session else { return }
+        Task {
+            do {
+                try await apiClient.removeMangaSource(
+                    serverUrl: session.serverUrl,
+                    token: session.apiToken,
+                    sourceId: src.id
+                )
+                adminActionToast = isEn ? "Source removed" : "Fuente eliminada"
+                await loadDetail()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
         }
     }
     
