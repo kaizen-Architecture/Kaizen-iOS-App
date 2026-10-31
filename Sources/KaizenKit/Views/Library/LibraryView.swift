@@ -1722,34 +1722,23 @@ public struct MangaDetailView: View {
     
     private func chapterStatusMetadata(_ chapter: Chapter) -> some View {
         HStack(spacing: 8) {
-            if chapter.isRead {
-                HStack(spacing: 3) {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 9, weight: .bold))
-                    Text(isEn ? "Read" : "Leído")
-                }
-                .font(.caption2.weight(.bold))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(Color.green.opacity(0.16), in: Capsule())
-                .foregroundStyle(.green)
-            } else if chapter.lastReadPage > 0 {
+            if let formattedSize = chapter.formattedSize {
+                Text(formattedSize)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+            
+            if !chapter.isRead && chapter.lastReadPage > 0 {
                 Text(isEn ? "Page \(chapter.lastReadPage)" : "Pág. \(chapter.lastReadPage)")
                     .font(.caption2.weight(.bold))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
                     .background(Color.cyan.opacity(0.16), in: Capsule())
                     .foregroundStyle(.cyan)
-            } else {
-                Text(isEn ? "Unread" : "Pendiente")
-                    .font(.caption2.weight(.medium))
-                    .foregroundStyle(.secondary)
-            }
-            
-            if let formattedSize = chapter.formattedSize {
-                Text(formattedSize)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
             }
         }
     }
