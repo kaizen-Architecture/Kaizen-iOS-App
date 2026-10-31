@@ -10,7 +10,7 @@ on:
 jobs:
   build-and-package:
     name: Build, Test & Package Kaizen iOS IPA
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
