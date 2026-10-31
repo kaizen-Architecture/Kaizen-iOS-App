@@ -18,6 +18,9 @@ public final class AppState {
     public var libraryErrorMessage: String?
     public private(set) var lastLibrarySyncTime: Date?
     
+    // Cola de descargas en vivo compartida para mostrar indicador en sidebar y vistas
+    public var downloadQueueJobs: [DownloadQueueJob] = []
+    
     // Estanterías y colecciones lógicas del lector
     public var shelves: [UserShelf] = []
     
@@ -28,12 +31,35 @@ public final class AppState {
     public var preferredReaderMode: ReaderMode = .webtoon
     public var preferredReaderTheme: ReaderTheme = .black
     
+    // Modo de previsualización Admin <-> Reader sin cerrar sesión
+    public var simulateReaderMode: Bool = false
+    
     public var isAuthenticated: Bool {
         session != nil
     }
     
-    public var isManagement: Bool {
+    /// Indica si el usuario autenticado tiene rol real de Administrador/Manager en el servidor
+    public var isActualAdmin: Bool {
         session?.role.isManagement ?? false
+    }
+    
+    /// Indica si la interfaz debe mostrarse en modo Administrador (respeta el switch Admin <-> Reader)
+    public var isManagement: Bool {
+        isActualAdmin && !simulateReaderMode
+    }
+    
+    public var activeDownloadCount: Int {
+        downloadQueueJobs.filter { $0.status == "active" }.count
+    }
+    
+    public var waitingDownloadCount: Int {
+        downloadQueueJobs.filter { $0.status == "waiting" }.count
+    }
+    
+    public func toggleAdminReaderPreview() {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+            simulateReaderMode.toggle()
+        }
     }
     
     public init() {
@@ -63,6 +89,7 @@ public final class AppState {
             self.currentLanguage = session.language
         }
         self.session = mutableSession
+        self.simulateReaderMode = false
         if remember {
             UserDefaults.standard.set(false, forKey: "kaizen_remember_login_disabled")
             try? KeychainService.shared.saveSession(mutableSession)
@@ -77,12 +104,21 @@ public final class AppState {
     
     public func logout() {
         self.session = nil
+        self.simulateReaderMode = false
         self.mangas = []
         self.libraries = []
+        self.downloadQueueJobs = []
         self.serverSettings = nil
         self.history = []
         KeychainService.shared.clearSession()
         Task { await ChapterPrefetchManager.shared.clear() }
+    }
+    
+    public func refreshDownloadQueue(client: KaizenAPIClient) async {
+        guard let session else { return }
+        if let jobs = try? await client.fetchDownloadQueue(serverUrl: session.serverUrl, token: session.apiToken) {
+            self.downloadQueueJobs = jobs
+        }
     }
     
     // MARK: - Gestión de Estanterías Lógicas
@@ -279,6 +315,9 @@ public final class AppState {
             self.mangas = m
             self.libraries = libs
             self.lastLibrarySyncTime = Date()
+            if isActualAdmin {
+                await refreshDownloadQueue(client: client)
+            }
             KaizenLogger.shared.info("Library", "Sincronizada biblioteca: \(m.count) mangas y \(libs.count) carpetas en el servidor")
         } catch let error as KaizenError {
             libraryErrorMessage = error.userMessage(language: currentLanguage)

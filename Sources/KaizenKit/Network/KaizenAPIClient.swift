@@ -220,6 +220,146 @@ public actor KaizenAPIClient {
         return try? decoder.decode(QueuesResponse.self, from: raw)
     }
     
+    /// Obtiene la cola real de capítulos en descarga, en espera, completados y fallidos (`trpc/manga.downloadQueue`).
+    public func fetchDownloadQueue(serverUrl: URL, token: String) async throws -> [DownloadQueueJob] {
+        let req = request(try trpcQueryURL(serverUrl, procedure: "manga.downloadQueue", input: [:]), token: token)
+        let (data, http) = try await send(req)
+        guard (200...299).contains(http.statusCode) else { throw KaizenError.server(status: http.statusCode) }
+        guard let list = trpcRawData(data) as? [[String: Any]] else { return [] }
+        
+        return list.compactMap { dict in
+            let id = String(describing: dict["id"] ?? UUID().uuidString)
+            let mangaId = (dict["mangaId"] as? Int) ?? 0
+            let mangaTitle = (dict["mangaTitle"] as? String) ?? "Manga"
+            let source = (dict["source"] as? String) ?? "Unknown"
+            let chapterIndex: Double
+            if let ci = dict["chapterIndex"] as? Double {
+                chapterIndex = ci
+            } else if let ci = dict["chapterIndex"] as? Int {
+                chapterIndex = Double(ci)
+            } else if let ci = dict["chapterIndex"] as? String {
+                chapterIndex = Double(ci.replacingOccurrences(of: "@", with: "")) ?? 0
+            } else {
+                chapterIndex = 0
+            }
+            let status = (dict["status"] as? String) ?? "waiting"
+            let progress = (dict["progress"] as? Int) ?? Int((dict["progress"] as? Double) ?? 0)
+            let failedReason = dict["failedReason"] as? String
+            let timestamp = (dict["timestamp"] as? Double) ?? (dict["timestamp"] as? Int).map { Double($0) }
+            
+            return DownloadQueueJob(
+                id: id,
+                mangaId: mangaId,
+                mangaTitle: mangaTitle,
+                source: source,
+                chapterIndex: chapterIndex,
+                status: status,
+                progress: progress,
+                failedReason: failedReason,
+                timestamp: timestamp
+            )
+        }
+    }
+    
+    /// Obtiene los 5 contadores del Dashboard de Kaizen (`trpc/manga.activity`).
+    public func fetchActivityStats(serverUrl: URL, token: String) async throws -> KaizenActivityStats {
+        let req = request(try trpcQueryURL(serverUrl, procedure: "manga.activity", input: [:]), token: token)
+        let (data, http) = try await send(req)
+        guard (200...299).contains(http.statusCode), let payload = trpcPayload(data) else {
+            return KaizenActivityStats()
+        }
+        return KaizenActivityStats(
+            active: (payload["active"] as? Int) ?? 0,
+            queued: (payload["queued"] as? Int) ?? 0,
+            scheduled: (payload["scheduled"] as? Int) ?? 0,
+            failed: (payload["failed"] as? Int) ?? 0,
+            completed: (payload["completed"] as? Int) ?? 0,
+            outOfSync: (payload["outOfSync"] as? Int) ?? 0
+        )
+    }
+    
+    /// Obtiene el historial de capítulos descargados en los últimos 14 días (`trpc/manga.activityHistory`).
+    public func fetchActivityHistory(serverUrl: URL, token: String) async throws -> [KaizenActivityHistoryItem] {
+        let req = request(try trpcQueryURL(serverUrl, procedure: "manga.activityHistory", input: [:]), token: token)
+        let (data, http) = try await send(req)
+        guard (200...299).contains(http.statusCode),
+              let list = trpcRawData(data) as? [[String: Any]] else { return [] }
+        return list.compactMap { dict in
+            guard let date = dict["date"] as? String,
+                  let label = dict["label"] as? String else { return nil }
+            let count = (dict["count"] as? Int) ?? 0
+            return KaizenActivityHistoryItem(date: date, label: label, count: count)
+        }
+    }
+    
+    /// Obtiene las estadísticas de series y espacio en disco por fuente (`trpc/manga.sourceStats`).
+    public func fetchSourceStats(serverUrl: URL, token: String) async throws -> [KaizenSourceStatItem] {
+        let req = request(try trpcQueryURL(serverUrl, procedure: "manga.sourceStats", input: [:]), token: token)
+        let (data, http) = try await send(req)
+        guard (200...299).contains(http.statusCode),
+              let list = trpcRawData(data) as? [[String: Any]] else { return [] }
+        return list.compactMap { dict in
+            guard let source = dict["source"] as? String else { return nil }
+            let mangaCount = (dict["mangaCount"] as? Int) ?? 0
+            let totalSize: Int64
+            if let s64 = dict["totalSize"] as? Int64 {
+                totalSize = s64
+            } else if let sInt = dict["totalSize"] as? Int {
+                totalSize = Int64(sInt)
+            } else if let sDbl = dict["totalSize"] as? Double {
+                totalSize = Int64(sDbl)
+            } else {
+                totalSize = 0
+            }
+            return KaizenSourceStatItem(source: source, mangaCount: mangaCount, totalSize: totalSize)
+        }
+        .sorted { $0.totalSize > $1.totalSize }
+    }
+    
+    /// Obtiene los últimos capítulos descargados en el servidor (`trpc/manga.history`).
+    public func fetchRecentServerDownloads(serverUrl: URL, token: String) async throws -> [KaizenServerRecentDownload] {
+        let req = request(try trpcQueryURL(serverUrl, procedure: "manga.history", input: [:]), token: token)
+        let (data, http) = try await send(req)
+        guard (200...299).contains(http.statusCode),
+              let list = trpcRawData(data) as? [[String: Any]] else { return [] }
+        
+        let baseStr = serverUrl.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        return list.prefix(15).compactMap { dict in
+            guard let id = dict["id"] as? Int else { return nil }
+            let index: Double
+            if let idxD = dict["index"] as? Double {
+                index = idxD
+            } else if let idxI = dict["index"] as? Int {
+                index = Double(idxI)
+            } else {
+                index = 0
+            }
+            let fileName = dict["fileName"] as? String
+            let size = dict["size"] as? Int
+            let createdAt = dict["createdAt"] as? String
+            let mangaDict = dict["manga"] as? [String: Any]
+            let mangaTitle = (mangaDict?["title"] as? String) ?? fileName ?? "Manga"
+            
+            var coverUrl: String?
+            if let mangaId = dict["mangaId"] as? Int {
+                coverUrl = "\(baseStr)/api/v1/mangas/\(mangaId)/cover"
+            } else if let meta = mangaDict?["metadata"] as? [String: Any],
+                      let rawCover = meta["cover"] as? String,
+                      rawCover.hasPrefix("http") {
+                coverUrl = rawCover
+            }
+            return KaizenServerRecentDownload(
+                id: id,
+                index: index,
+                fileName: fileName,
+                size: size,
+                createdAt: createdAt,
+                mangaTitle: mangaTitle,
+                coverUrl: coverUrl
+            )
+        }
+    }
+    
     public func syncAllMangas(serverUrl: URL, token: String) async throws {
         let body: [String: Any] = ["json": [:]]
         let req = try request(try endpoint(serverUrl, path: "/api/trpc/manga.syncAll"), method: "POST", token: token, json: body)

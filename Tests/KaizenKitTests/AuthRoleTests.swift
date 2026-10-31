@@ -241,5 +241,49 @@ final class AuthRoleXCTests: XCTestCase {
         appState.setSession(session, remember: true)
         XCTAssertFalse(UserDefaults.standard.bool(forKey: "kaizen_remember_login_disabled"))
     }
+    
+    @MainActor
+    func testAdminReaderPreviewSwitch() {
+        let appState = AppState()
+        guard let url = URL(string: "http://192.168.20.28:3333") else { return }
+        let adminSession = UserSession(id: 1, username: "admin", role: .superadmin, language: "es", apiToken: "tok", serverUrl: url)
+        appState.setSession(adminSession, remember: false)
+        
+        XCTAssertTrue(appState.isActualAdmin)
+        XCTAssertTrue(appState.isManagement)
+        XCTAssertFalse(appState.simulateReaderMode)
+        
+        // Switch to Reader Preview
+        appState.toggleAdminReaderPreview()
+        XCTAssertTrue(appState.isActualAdmin)
+        XCTAssertFalse(appState.isManagement)
+        XCTAssertTrue(appState.simulateReaderMode)
+        
+        // Switch back to Admin
+        appState.toggleAdminReaderPreview()
+        XCTAssertTrue(appState.isActualAdmin)
+        XCTAssertTrue(appState.isManagement)
+        XCTAssertFalse(appState.simulateReaderMode)
+    }
+    
+    func testDownloadQueueAndDashboardModels() {
+        let job = DownloadQueueJob(
+            id: "dl-1",
+            mangaId: 12,
+            mangaTitle: "Solo Leveling",
+            source: "Mangatown",
+            chapterIndex: 145,
+            status: "active",
+            progress: 72
+        )
+        XCTAssertEqual(job.id, "dl-1")
+        XCTAssertEqual(job.progress, 72)
+        
+        let stats = KaizenActivityStats(active: 2, queued: 14, scheduled: 68, failed: 0, completed: 412, outOfSync: 1)
+        XCTAssertEqual(stats.active, 2)
+        XCTAssertEqual(stats.queued, 14)
+        XCTAssertEqual(stats.completed, 412)
+    }
 }
+
 

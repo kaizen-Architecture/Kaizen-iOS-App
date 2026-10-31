@@ -1,67 +1,323 @@
 import SwiftUI
+import Charts
 
-/// Pantalla Principal (Home) con estanterías lógicas y lectura en curso
-public struct HomeDashboardView: View {
+/// Hoja / Drawer en vivo con la Cola de Descargas de Kaizen (`trpc/manga.downloadQueue`)
+public struct LiveDownloadQueueSheet: View {
+    @Environment(\.dismiss) private var dismiss
     @Environment(AppState.self) private var appState
     let apiClient: KaizenAPIClient
     
-    @State private var showCreateShelfSheet = false
-    @State private var newShelfName = ""
-    @State private var newShelfIcon = "books.vertical.fill"
-    
-    // Gestión y edición de librerías de lectura (shelves)
-    @State private var shelfToRename: UserShelf?
-    @State private var renameText: String = ""
-    @State private var showRenameAlert = false
-    @State private var shelfToDelete: UserShelf?
-    @State private var showDeleteAlert = false
-    
-    // Secciones expandidas en modo cuadrícula adaptativa (recordadas en preferencias)
-    @State private var expandedSections: Set<String> = {
-        if let saved = UserDefaults.standard.stringArray(forKey: "kaizen_home_expanded_sections") {
-            return Set(saved)
-        }
-        return []
-    }()
-    
-    // Columnas adaptativas para el modo cuadrícula expandida (en iPad caben 5-6 columnas, ~15 mangas por pantalla)
-    private let adaptiveGridColumns = [
-        GridItem(.adaptive(minimum: 125, maximum: 175), spacing: 16, alignment: .top)
-    ]
+    @State private var jobs: [DownloadQueueJob] = []
+    @State private var isLoading: Bool = false
+    @State private var selectedFilter: String = "all" // "all", "active", "waiting", "failed", "completed"
+    @State private var isExecutingAction: Bool = false
     
     public init(apiClient: KaizenAPIClient) {
         self.apiClient = apiClient
     }
     
-    // Mangas que se están leyendo actualmente (ordenados cronológicamente por el historial)
-    private var inProgressMangas: [Manga] {
-        let historyMangaIds = appState.history.map { $0.mangaId }
-        var result: [Manga] = []
-        for id in historyMangaIds {
-            if let m = appState.mangas.first(where: { $0.id == id }), !result.contains(where: { $0.id == id }) {
-                result.append(m)
-            }
-        }
-        for m in appState.mangas where m.readingPercentage > 0 && m.readingPercentage < 100 {
-            if !result.contains(where: { $0.id == m.id }) {
-                result.append(m)
-            }
-        }
-        return result
+    private var isEn: Bool {
+        appState.currentLanguage == "en"
     }
     
-    // Mangas favoritos
-    private var favoriteMangas: [Manga] {
-        appState.mangas.filter { $0.isFavorite }
+    private var filteredJobs: [DownloadQueueJob] {
+        if selectedFilter == "all" { return jobs }
+        return jobs.filter { $0.status == selectedFilter }
     }
     
-    // Recién añadidos (orden natural o mayor id)
-    private var recentlyAddedMangas: [Manga] {
-        Array(appState.mangas.suffix(10).reversed())
+    private var activeCount: Int { jobs.filter { $0.status == "active" }.count }
+    private var waitingCount: Int { jobs.filter { $0.status == "waiting" }.count }
+    private var failedCount: Int { jobs.filter { $0.status == "failed" }.count }
+    private var completedCount: Int { jobs.filter { $0.status == "completed" }.count }
+    
+    public var body: some View {
+        NavigationStack {
+            ZStack {
+                Color.black.ignoresSafeArea()
+                
+                VStack(spacing: 12) {
+                    filterPillsRow
+                    
+                    if isLoading && jobs.isEmpty {
+                        Spacer()
+                        ProgressView().tint(.cyan)
+                        Spacer()
+                    } else if filteredJobs.isEmpty {
+                        Spacer()
+                        ContentUnavailableView(
+                            isEn ? "Download Queue Empty" : "Cola de descargas vacía",
+                            systemImage: "arrow.down.circle",
+                            description: Text(isEn ? "No chapter downloads matching the current filter." : "No hay descargas de capítulos en este estado ahora mismo.")
+                        )
+                        Spacer()
+                    } else {
+                        ScrollView {
+                            LazyVStack(spacing: 10) {
+                                ForEach(filteredJobs) { job in
+                                    queueJobCard(job)
+                                }
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, 20)
+                        }
+                        .refreshable {
+                            await loadQueue()
+                        }
+                    }
+                    
+                    bottomActionsBar
+                }
+                .padding(.top, 8)
+            }
+            .navigationTitle(isEn ? "Live Download Queue" : "Cola de Descargas en Vivo")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        Task { await loadQueue() }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .foregroundStyle(.cyan)
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(isEn ? "Close" : "Cerrar") {
+                        dismiss()
+                    }
+                    .foregroundStyle(.cyan)
+                }
+            }
+            .task {
+                await loadQueue()
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 3_500_000_000)
+                    guard !Task.isCancelled else { break }
+                    await loadQueue(silent: true)
+                }
+            }
+        }
+    }
+    
+    private var filterPillsRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                filterPill(id: "all", title: isEn ? "All (\(jobs.count))" : "Todas (\(jobs.count))", tint: .cyan)
+                filterPill(id: "active", title: isEn ? "Downloading (\(activeCount))" : "Descargando (\(activeCount))", tint: .cyan)
+                filterPill(id: "waiting", title: isEn ? "Queued (\(waitingCount))" : "En cola (\(waitingCount))", tint: .indigo)
+                filterPill(id: "failed", title: isEn ? "Failed (\(failedCount))" : "Fallidas (\(failedCount))", tint: .red)
+                filterPill(id: "completed", title: isEn ? "Completed (\(completedCount))" : "Completadas (\(completedCount))", tint: .green)
+            }
+            .padding(.horizontal, 16)
+        }
+    }
+    
+    private func filterPill(id: String, title: String, tint: Color) -> some View {
+        let isSelected = selectedFilter == id
+        return Button {
+            selectedFilter = id
+        } label: {
+            Text(title)
+                .font(.caption.weight(.bold))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(isSelected ? tint : Color.white.opacity(0.08), in: Capsule())
+                .foregroundStyle(isSelected ? Color.black : Color.white)
+        }
+        .buttonStyle(.plain)
+    }
+    
+    private func queueJobCard(_ job: DownloadQueueJob) -> some View {
+        let statusColor = colorForStatus(job.status)
+        let chapterStr = String(format: "%g", job.chapterIndex)
+        
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(job.mangaTitle)
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                    
+                    HStack(spacing: 6) {
+                        Text((isEn ? "Ch. " : "Cap. ") + chapterStr)
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.cyan)
+                        Text("•")
+                            .foregroundStyle(.secondary)
+                        Text(job.source)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                
+                Spacer()
+                
+                Text(labelForStatus(job))
+                    .font(.caption2.weight(.bold))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(statusColor.opacity(0.18), in: Capsule())
+                    .foregroundStyle(statusColor)
+            }
+            
+            if job.status == "active" {
+                ProgressView(value: Double(max(min(job.progress, 100), 5)) / 100.0)
+                    .tint(.cyan)
+            }
+            
+            if let reason = job.failedReason, !reason.isEmpty, job.status == "failed" {
+                HStack {
+                    Text(reason)
+                        .font(.caption2)
+                        .foregroundStyle(.red)
+                        .lineLimit(2)
+                    Spacer()
+                    Button {
+                        Task {
+                            guard let session = appState.session else { return }
+                            try? await apiClient.retryJob(serverUrl: session.serverUrl, token: session.apiToken, jobId: job.id)
+                            await loadQueue()
+                        }
+                    } label: {
+                        Text(isEn ? "Retry" : "Reintentar")
+                            .font(.caption2.weight(.bold))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.cyan.opacity(0.2), in: Capsule())
+                            .foregroundStyle(.cyan)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(12)
+        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(job.status == "active" ? Color.cyan.opacity(0.35) : Color.white.opacity(0.08), lineWidth: 1)
+        )
+    }
+    
+    private var bottomActionsBar: some View {
+        HStack(spacing: 10) {
+            Button {
+                Task {
+                    guard let session = appState.session else { return }
+                    isExecutingAction = true
+                    defer { isExecutingAction = false }
+                    try? await apiClient.retryAllFailedJobs(serverUrl: session.serverUrl, token: session.apiToken)
+                    await loadQueue()
+                }
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "arrow.clockwise")
+                    Text(isEn ? "Retry Failed" : "Reintentar Fallidas")
+                }
+                .font(.caption.weight(.bold))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(Color.orange.opacity(0.18), in: RoundedRectangle(cornerRadius: 10))
+                .foregroundStyle(.orange)
+            }
+            .buttonStyle(.plain)
+            .disabled(isExecutingAction || failedCount == 0)
+            
+            Button {
+                Task {
+                    guard let session = appState.session else { return }
+                    isExecutingAction = true
+                    defer { isExecutingAction = false }
+                    try? await apiClient.cleanQueue(serverUrl: session.serverUrl, token: session.apiToken, type: "completed")
+                    await loadQueue()
+                }
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "trash")
+                    Text(isEn ? "Clean Completed" : "Limpiar Completadas")
+                }
+                .font(.caption.weight(.bold))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                .foregroundStyle(.white)
+            }
+            .buttonStyle(.plain)
+            .disabled(isExecutingAction)
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 12)
+    }
+    
+    private func colorForStatus(_ status: String) -> Color {
+        switch status {
+        case "active": return .cyan
+        case "waiting": return .indigo
+        case "failed": return .red
+        case "completed": return .green
+        default: return .secondary
+        }
+    }
+    
+    private func labelForStatus(_ job: DownloadQueueJob) -> String {
+        switch job.status {
+        case "active":
+            return job.progress > 0 ? "\(job.progress)%" : (isEn ? "Downloading" : "Descargando")
+        case "waiting":
+            return isEn ? "Queued" : "En cola"
+        case "failed":
+            return isEn ? "Failed" : "Fallido"
+        case "completed":
+            return isEn ? "Completed" : "Completado"
+        default:
+            return job.status.capitalized
+        }
+    }
+    
+    private func loadQueue(silent: Bool = false) async {
+        guard let session = appState.session else { return }
+        if !silent { isLoading = true }
+        defer { if !silent { isLoading = false } }
+        if let fetched = try? await apiClient.fetchDownloadQueue(serverUrl: session.serverUrl, token: session.apiToken) {
+            self.jobs = fetched
+            appState.downloadQueueJobs = fetched
+        }
+    }
+}
+
+/// Dashboard nativo de Kaizen para el Administrador (KPIs en vivo, Gráfica 14 días, GB por Fuente, Cola en vivo y Últimas Descargas)
+public struct HomeDashboardView: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(AppState.self) private var appState
+    let apiClient: KaizenAPIClient
+    
+    @State private var activityStats = KaizenActivityStats()
+    @State private var activityHistory: [KaizenActivityHistoryItem] = []
+    @State private var sourceStats: [KaizenSourceStatItem] = []
+    @State private var recentDownloads: [KaizenServerRecentDownload] = []
+    @State private var queueJobs: [DownloadQueueJob] = []
+    
+    @State private var isLoading: Bool = false
+    @State private var showQueueSheet: Bool = false
+    @State private var showAddMangaSheet: Bool = false
+    
+    public init(apiClient: KaizenAPIClient) {
+        self.apiClient = apiClient
     }
     
     private var isEn: Bool {
         appState.currentLanguage == "en"
+    }
+    
+    private var isPad: Bool {
+        horizontalSizeClass == .regular
+    }
+    
+    private var activeAndWaitingJobs: [DownloadQueueJob] {
+        queueJobs.filter { $0.status == "active" || $0.status == "waiting" }
+    }
+    
+    private var totalStorageBytes: Int64 {
+        sourceStats.reduce(0) { $0 + $1.totalSize }
     }
     
     public var body: some View {
@@ -69,273 +325,450 @@ public struct HomeDashboardView: View {
             ZStack {
                 Color.black.ignoresSafeArea()
                 
-                if appState.isLoadingLibrary && appState.mangas.isEmpty {
-                    ProgressView().tint(.cyan)
-                } else if appState.mangas.isEmpty {
-                    ContentUnavailableView(
-                        isEn ? "Welcome to Kaizen" : "Bienvenido a Kaizen",
-                        systemImage: "house",
-                        description: Text(isEn ? "Your library is syncing with the server." : "Tu biblioteca aún se está sincronizando con el servidor.")
-                    )
-                } else {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 28) {
-                            // SECCIÓN 1: Continuar Leyendo
-                            if !inProgressMangas.isEmpty {
-                                shelfSection(
-                                    id: "continue_reading",
-                                    title: isEn ? "Continue Reading" : "Continuar leyendo",
-                                    icon: "play.circle.fill",
-                                    iconColor: .cyan,
-                                    mangas: inProgressMangas
-                                )
-                            }
-                            
-                            // SECCIÓN 2: Librerías de Lectura Personalizadas (un manga puede estar en varias)
-                            ForEach(appState.shelves) { shelf in
-                                let shelfMangas = appState.mangas.filter { shelf.mangaIds.contains($0.id) }
-                                if !shelfMangas.isEmpty {
-                                    shelfSection(
-                                        id: "shelf_\(shelf.id.uuidString)",
-                                        title: shelf.name,
-                                        icon: shelf.icon,
-                                        iconColor: .yellow,
-                                        mangas: shelfMangas,
-                                        shelf: shelf
-                                    )
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 18) {
+                        kpiCardsGrid
+                        
+                        if isPad {
+                            HStack(alignment: .top, spacing: 16) {
+                                VStack(spacing: 16) {
+                                    downloads14DaysChartCard
+                                    sourceStorageCard
                                 }
+                                .frame(maxWidth: .infinity)
+                                
+                                VStack(spacing: 16) {
+                                    liveDownloadQueueCard
+                                    recentServerDownloadsCard
+                                }
+                                .frame(maxWidth: .infinity)
                             }
-                            
-                            // SECCIÓN 3: Favoritos
-                            if !favoriteMangas.isEmpty {
-                                shelfSection(
-                                    id: "favorites",
-                                    title: isEn ? "Your Favorites" : "Tus Favoritos",
-                                    icon: "heart.fill",
-                                    iconColor: .pink,
-                                    mangas: favoriteMangas
-                                )
-                            }
-                            
-                            // SECCIÓN 4: Recién Añadidos
-                            if !recentlyAddedMangas.isEmpty {
-                                shelfSection(
-                                    id: "recently_added",
-                                    title: isEn ? "Recently Added" : "Recién añadidos",
-                                    icon: "sparkles",
-                                    iconColor: .purple,
-                                    mangas: recentlyAddedMangas
-                                )
+                        } else {
+                            VStack(spacing: 16) {
+                                liveDownloadQueueCard
+                                downloads14DaysChartCard
+                                sourceStorageCard
+                                recentServerDownloadsCard
                             }
                         }
-                        .padding(.vertical, 20)
                     }
-                    .refreshable {
-                        await appState.loadLibrary(client: apiClient, force: true)
-                        if let session = appState.session, !inProgressMangas.isEmpty {
-                            await ChapterPrefetchManager.shared.prefetchFirstUnreadChapters(
-                                mangas: inProgressMangas,
-                                apiClient: apiClient,
-                                session: session
-                            )
+                    .padding(16)
+                    .padding(.bottom, 28)
+                }
+                .refreshable {
+                    await loadDashboardData()
+                }
+            }
+            .navigationTitle(isEn ? "Kaizen Dashboard" : "Dashboard Kaizen")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    HStack(spacing: 10) {
+                        Button {
+                            showQueueSheet = true
+                        } label: {
+                            HStack(spacing: 5) {
+                                Image(systemName: "arrow.down.circle.fill")
+                                Text("\(activityStats.active + activityStats.queued)")
+                            }
+                            .font(.caption.weight(.bold))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(Color.cyan.opacity(0.16), in: Capsule())
+                            .foregroundStyle(.cyan)
+                        }
+                        
+                        if appState.isManagement {
+                            Button {
+                                showAddMangaSheet = true
+                            } label: {
+                                Label(isEn ? "Add Manga" : "Añadir Manga", systemImage: "plus.circle.fill")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.cyan)
+                            }
                         }
                     }
                 }
             }
-            .navigationTitle("Kaizen")
-            .navigationDestination(for: Manga.self) { manga in
-                MangaDetailView(manga: manga, apiClient: apiClient)
+            .sheet(isPresented: $showQueueSheet) {
+                LiveDownloadQueueSheet(apiClient: apiClient)
             }
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    HStack(spacing: 12) {
-                        Button {
-                            Task {
-                                await appState.loadLibrary(client: apiClient, force: true)
-                                if let session = appState.session, !inProgressMangas.isEmpty {
-                                    await ChapterPrefetchManager.shared.prefetchFirstUnreadChapters(
-                                        mangas: inProgressMangas,
-                                        apiClient: apiClient,
-                                        session: session
-                                    )
-                                }
-                            }
-                        } label: {
-                            Image(systemName: "arrow.triangle.2.circlepath")
-                                .foregroundStyle(appState.isLoadingLibrary ? .cyan : .secondary)
-                        }
-                        .disabled(appState.isLoadingLibrary)
-                        
-                        Button {
-                            newShelfName = ""
-                            showCreateShelfSheet = true
-                        } label: {
-                            Label(isEn ? "New Library" : "Nueva Librería", systemImage: "plus.rectangle.on.folder")
-                                .foregroundStyle(.cyan)
-                        }
+            .sheet(isPresented: $showAddMangaSheet) {
+                AddMangaRemoteSheet(apiClient: apiClient) {
+                    Task {
+                        await appState.loadLibrary(client: apiClient, force: true)
+                        await loadDashboardData()
                     }
                 }
             }
             .task {
-                await appState.loadLibrary(client: apiClient, force: false)
-                if let session = appState.session, !inProgressMangas.isEmpty {
-                    await ChapterPrefetchManager.shared.prefetchFirstUnreadChapters(
-                        mangas: inProgressMangas,
-                        apiClient: apiClient,
-                        session: session
-                    )
+                await loadDashboardData()
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 5_000_000_000)
+                    guard !Task.isCancelled else { break }
+                    await refreshLiveQueueOnly()
                 }
-            }
-            .alert(isEn ? "New Reading Library" : "Nueva Librería de Lectura", isPresented: $showCreateShelfSheet) {
-                TextField(isEn ? "e.g. Manhwa Top, Re-reading, Favorites..." : "Ej: Manhwa Top, Para releer, Favoritos...", text: $newShelfName)
-                Button(isEn ? "Create" : "Crear") {
-                    appState.createShelf(name: newShelfName)
-                }
-                Button(isEn ? "Cancel" : "Cancelar", role: .cancel) {}
-            } message: {
-                Text(isEn ? "Create a reading library to organize your series. A manga can be in multiple libraries." : "Crea una librería para organizar tus series. Un manga puede estar en varias librerías a la vez.")
-            }
-            .alert(isEn ? "Rename Library" : "Renombrar Librería", isPresented: $showRenameAlert) {
-                TextField(isEn ? "Library name" : "Nombre de la librería", text: $renameText)
-                Button(isEn ? "Save" : "Guardar") {
-                    if let s = shelfToRename {
-                        appState.renameShelf(id: s.id, newName: renameText)
-                    }
-                }
-                Button(isEn ? "Cancel" : "Cancelar", role: .cancel) {}
-            }
-            .alert(isEn ? "Delete Library" : "Borrar Librería", isPresented: $showDeleteAlert) {
-                Button(isEn ? "Delete" : "Borrar", role: .destructive) {
-                    if let s = shelfToDelete {
-                        appState.deleteShelf(id: s.id)
-                    }
-                }
-                Button(isEn ? "Cancel" : "Cancelar", role: .cancel) {}
-            } message: {
-                Text(isEn ? "Are you sure you want to delete this reading library? Your mangas won't be deleted." : "¿Seguro que quieres borrar esta librería de lectura? Tus mangas no se eliminarán de Kaizen.")
             }
         }
     }
     
-    private func toggleSection(_ id: String) {
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
-            if expandedSections.contains(id) {
-                expandedSections.remove(id)
-            } else {
-                expandedSections.insert(id)
-            }
-            UserDefaults.standard.set(Array(expandedSections), forKey: "kaizen_home_expanded_sections")
-        }
-    }
+    // MARK: - 1. Cinco Tarjetas KPI (trpc/manga.activity)
     
-    @ViewBuilder
-    private func shelfSection(
-        id: String,
-        title: String,
-        icon: String,
-        iconColor: Color,
-        mangas: [Manga],
-        shelf: UserShelf? = nil
-    ) -> some View {
-        let isExpanded = expandedSections.contains(id)
+    private var kpiCardsGrid: some View {
+        let columns = isPad
+            ? Array(repeating: GridItem(.flexible(), spacing: 10), count: 5)
+            : [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)]
         
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 8) {
-                Image(systemName: icon)
-                    .foregroundStyle(iconColor)
+        return LazyVGrid(columns: columns, spacing: 10) {
+            Button {
+                showQueueSheet = true
+            } label: {
+                kpiStatBox(
+                    title: isEn ? "DOWNLOADING" : "DESCARGANDO",
+                    value: "\(activityStats.active)",
+                    subtitle: isEn ? "View live queue →" : "Ver cola en vivo →",
+                    icon: "arrow.down.circle.fill",
+                    color: .cyan
+                )
+            }
+            .buttonStyle(.plain)
+            
+            Button {
+                showQueueSheet = true
+            } label: {
+                kpiStatBox(
+                    title: isEn ? "QUEUED" : "EN COLA",
+                    value: "\(activityStats.queued)",
+                    subtitle: isEn ? "Waiting turn" : "Esperando turno",
+                    icon: "clock.fill",
+                    color: .indigo
+                )
+            }
+            .buttonStyle(.plain)
+            
+            kpiStatBox(
+                title: isEn ? "SCHEDULED" : "PROGRAMADOS",
+                value: "\(activityStats.scheduled)",
+                subtitle: isEn ? "Active scheduler" : "Planificador activo",
+                icon: "calendar.badge.clock",
+                color: .purple
+            )
+            
+            Button {
+                showQueueSheet = true
+            } label: {
+                kpiStatBox(
+                    title: isEn ? "FAILED" : "FALLIDOS",
+                    value: "\(activityStats.failed)",
+                    subtitle: activityStats.failed > 0 ? (isEn ? "Tap to inspect" : "Pulsar para revisar") : (isEn ? "All healthy" : "Sin fallos"),
+                    icon: "exclamationmark.triangle.fill",
+                    color: activityStats.failed > 0 ? .red : .green
+                )
+            }
+            .buttonStyle(.plain)
+            
+            kpiStatBox(
+                title: isEn ? "COMPLETED" : "COMPLETADOS",
+                value: "\(activityStats.completed)",
+                subtitle: isEn ? "Verified CBZ" : "CBZ verificados",
+                icon: "checkmark.seal.fill",
+                color: .green
+            )
+        }
+    }
+    
+    private func kpiStatBox(title: String, value: String, subtitle: String, icon: String, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
                 Text(title)
-                    .font(.title3.weight(.bold))
-                    .foregroundStyle(.white)
-                Text("(\(mangas.count))")
-                    .font(.caption)
+                    .font(.caption2.weight(.bold))
                     .foregroundStyle(.secondary)
-                
-                // Si es una librería personalizable, menú con opciones para renombrar o borrar
-                if let shelf {
-                    Menu {
-                        Button {
-                            shelfToRename = shelf
-                            renameText = shelf.name
-                            showRenameAlert = true
-                        } label: {
-                            Label(isEn ? "Rename Library" : "Renombrar librería", systemImage: "pencil")
-                        }
-                        
-                        Button(role: .destructive) {
-                            shelfToDelete = shelf
-                            showDeleteAlert = true
-                        } label: {
-                            Label(isEn ? "Delete Library" : "Borrar librería", systemImage: "trash")
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 4)
-                    }
-                    .buttonStyle(.plain)
-                }
+                    .lineLimit(1)
+                Spacer()
+                Image(systemName: icon)
+                    .font(.caption)
+                    .foregroundStyle(color)
+            }
+            Text(value)
+                .font(.title2.weight(.bold))
+                .foregroundStyle(color)
+            Text(subtitle)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 14))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(color.opacity(0.22), lineWidth: 1)
+        )
+    }
+    
+    // MARK: - 2. Gráfica de Descargas — Últimos 14 Días (Swift Charts)
+    
+    private var downloads14DaysChartCard: some View {
+        let total14d = activityHistory.reduce(0) { $0 + $1.count }
+        
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label(
+                    isEn ? "Downloads — Last 14 Days" : "Descargas — Últimos 14 Días",
+                    systemImage: "chart.bar.fill"
+                )
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(.white)
                 
                 Spacer()
                 
-                // Botón Expandir / Contraer a la derecha
-                Button {
-                    toggleSection(id)
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: isExpanded ? "rectangle.compress.vertical" : "rectangle.expand.vertical")
-                            .font(.caption2.weight(.bold))
-                        Text(isExpanded ? (isEn ? "Collapse" : "Contraer") : (isEn ? "Expand" : "Expandir"))
-                            .font(.caption.weight(.semibold))
+                Text("\(total14d) " + (isEn ? "ch." : "caps."))
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.cyan)
+            }
+            
+            if activityHistory.isEmpty {
+                Text(isEn ? "No download activity in the last 14 days." : "Sin actividad de descargas en los últimos 14 días.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(height: 150)
+                    .frame(maxWidth: .infinity)
+            } else {
+                Chart(activityHistory) { item in
+                    BarMark(
+                        x: .value("Day", item.label),
+                        y: .value("Chapters", item.count)
+                    )
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [.cyan, .indigo],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .cornerRadius(4)
+                }
+                .frame(height: 165)
+            }
+        }
+        .padding(15)
+        .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.08), lineWidth: 1))
+    }
+    
+    // MARK: - 3. Series y Almacenamiento por Fuente (trpc/manga.sourceStats)
+    
+    private var sourceStorageCard: some View {
+        let totalFormatted = ByteCountFormatter.string(fromByteCount: totalStorageBytes, countStyle: .file)
+        let maxSourceBytes = max(sourceStats.first?.totalSize ?? 1, 1)
+        
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label(
+                    isEn ? "Series & Storage by Source" : "Series y Espacio por Fuente",
+                    systemImage: "externaldrive.fill.badge.timemachine"
+                )
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(.white)
+                
+                Spacer()
+                
+                Text("Total: \(totalFormatted)")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            
+            if sourceStats.isEmpty {
+                Text(isEn ? "No source statistics available." : "No hay estadísticas de fuentes disponibles.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 20)
+            } else {
+                VStack(spacing: 10) {
+                    ForEach(sourceStats.prefix(8)) { stat in
+                        let ratio = Double(stat.totalSize) / Double(maxSourceBytes)
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text("\(stat.source) (\(stat.mangaCount) " + (isEn ? "series)" : "series)"))
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.white)
+                                Spacer()
+                                Text(stat.formattedSize)
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(.cyan)
+                            }
+                            ProgressView(value: min(max(ratio, 0.04), 1.0))
+                                .tint(.cyan)
+                        }
                     }
-                    .foregroundStyle(isExpanded ? Color.cyan : Color.white.opacity(0.85))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(
-                        Capsule()
-                            .fill(isExpanded ? Color.cyan.opacity(0.18) : Color.white.opacity(0.08))
-                    )
-                    .overlay(
-                        Capsule()
-                            .stroke(isExpanded ? Color.cyan.opacity(0.4) : Color.white.opacity(0.12), lineWidth: 1)
-                    )
+                }
+            }
+        }
+        .padding(15)
+        .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.08), lineWidth: 1))
+    }
+    
+    // MARK: - 4. Cola de Descargas en Vivo (trpc/manga.downloadQueue)
+    
+    private var liveDownloadQueueCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label(
+                    isEn ? "Live Download Queue" : "Cola de Descargas en Vivo",
+                    systemImage: "arrow.down.circle.fill"
+                )
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(.white)
+                
+                Spacer()
+                
+                Button {
+                    showQueueSheet = true
+                } label: {
+                    Text(isEn ? "Full Queue (\(queueJobs.count)) →" : "Ver todas (\(queueJobs.count)) →")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.cyan)
                 }
                 .buttonStyle(.plain)
             }
-            .padding(.horizontal, 16)
             
-            if isExpanded {
-                // Modo Cuadrícula Adaptativa (en iPad muestra ~15 mangas de un vistazo con scroll vertical)
-                LazyVGrid(columns: adaptiveGridColumns, spacing: 16) {
-                    ForEach(mangas) { manga in
-                        NavigationLink(value: manga) {
-                            MangaCardView(manga: manga)
+            if activeAndWaitingJobs.isEmpty {
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                    Text(isEn ? "No active downloads right now. Tap 'Full Queue' for history." : "No hay descargas en curso ahora mismo. Pulsa 'Ver todas' para el historial.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 10))
+            } else {
+                VStack(spacing: 8) {
+                    ForEach(activeAndWaitingJobs.prefix(5)) { job in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(job.mangaTitle)
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(.white)
+                                    .lineLimit(1)
+                                Text((isEn ? "Ch. " : "Cap. ") + String(format: "%g", job.chapterIndex) + " • \(job.source)")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Text(job.status == "active" ? "\(max(job.progress, 1))%" : (isEn ? "Queued" : "En cola"))
+                                .font(.caption2.weight(.bold))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background((job.status == "active" ? Color.cyan : Color.indigo).opacity(0.18), in: Capsule())
+                                .foregroundStyle(job.status == "active" ? Color.cyan : Color.indigo)
                         }
-                        .buttonStyle(.plain)
+                        .padding(10)
+                        .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
                     }
                 }
-                .padding(.horizontal, 16)
-                .transition(.opacity.combined(with: .move(edge: .top)))
-            } else {
-                // Modo Horizontal de una sola línea
-                horizontalMangaList(mangas: mangas)
             }
+        }
+        .padding(15)
+        .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.cyan.opacity(0.22), lineWidth: 1))
+    }
+    
+    // MARK: - 5. Últimas Descargas del Servidor (trpc/manga.history)
+    
+    private var recentServerDownloadsCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label(
+                isEn ? "Recent Server Downloads" : "Últimas Descargas en el Servidor",
+                systemImage: "clock.arrow.circlepath"
+            )
+            .font(.subheadline.weight(.bold))
+            .foregroundStyle(.white)
+            
+            if recentDownloads.isEmpty {
+                Text(isEn ? "No recent chapters downloaded." : "No hay capítulos descargados recientemente.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 16)
+            } else {
+                VStack(spacing: 8) {
+                    ForEach(recentDownloads.prefix(6)) { item in
+                        HStack(spacing: 10) {
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(Color.white.opacity(0.08))
+                                .frame(width: 34, height: 48)
+                                .overlay {
+                                    RemoteImage(
+                                        url: item.coverUrl.flatMap { URL(string: $0) },
+                                        token: appState.session?.apiToken,
+                                        contentMode: .fill
+                                    )
+                                }
+                                .clipShape(RoundedRectangle(cornerRadius: 6))
+                            
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item.mangaTitle)
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(.white)
+                                    .lineLimit(1)
+                                
+                                HStack(spacing: 6) {
+                                    Text((isEn ? "Chapter " : "Capítulo ") + String(format: "%g", item.index))
+                                        .font(.caption2.weight(.semibold))
+                                        .foregroundStyle(.cyan)
+                                    if let sz = item.formattedSize {
+                                        Text("• \(sz)")
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                            Spacer()
+                        }
+                        .padding(8)
+                        .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 10))
+                    }
+                }
+            }
+        }
+        .padding(15)
+        .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.08), lineWidth: 1))
+    }
+    
+    // MARK: - Carga de Datos del Dashboard
+    
+    private func loadDashboardData() async {
+        guard let session = appState.session else { return }
+        isLoading = true
+        defer { isLoading = false }
+        
+        async let statsTask = apiClient.fetchActivityStats(serverUrl: session.serverUrl, token: session.apiToken)
+        async let historyTask = apiClient.fetchActivityHistory(serverUrl: session.serverUrl, token: session.apiToken)
+        async let sourcesTask = apiClient.fetchSourceStats(serverUrl: session.serverUrl, token: session.apiToken)
+        async let recentTask = apiClient.fetchRecentServerDownloads(serverUrl: session.serverUrl, token: session.apiToken)
+        async let queueTask = apiClient.fetchDownloadQueue(serverUrl: session.serverUrl, token: session.apiToken)
+        
+        if let st = try? await statsTask { self.activityStats = st }
+        if let hi = try? await historyTask { self.activityHistory = hi }
+        if let so = try? await sourcesTask { self.sourceStats = so }
+        if let re = try? await recentTask { self.recentDownloads = re }
+        if let qu = try? await queueTask {
+            self.queueJobs = qu
+            appState.downloadQueueJobs = qu
         }
     }
     
-    @ViewBuilder
-    private func horizontalMangaList(mangas: [Manga]) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            LazyHStack(alignment: .top, spacing: 16) {
-                ForEach(mangas) { manga in
-                    NavigationLink(value: manga) {
-                        MangaCardView(manga: manga)
-                            .frame(width: 130)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, 16)
+    private func refreshLiveQueueOnly() async {
+        guard let session = appState.session else { return }
+        if let st = try? await apiClient.fetchActivityStats(serverUrl: session.serverUrl, token: session.apiToken) {
+            self.activityStats = st
+        }
+        if let qu = try? await apiClient.fetchDownloadQueue(serverUrl: session.serverUrl, token: session.apiToken) {
+            self.queueJobs = qu
+            appState.downloadQueueJobs = qu
         }
     }
 }

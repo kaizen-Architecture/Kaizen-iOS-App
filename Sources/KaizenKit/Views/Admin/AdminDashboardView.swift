@@ -42,6 +42,7 @@ public enum SourceFilter: String, CaseIterable, Identifiable {
 @Observable
 public final class AdminStore {
     public var queuesResponse: QueuesResponse?
+    public var downloadQueueJobs: [DownloadQueueJob] = []
     public var sources: [KaizenSourceItem] = []
     public var failedJobs: [FailedDownloadJob] = []
     
@@ -98,11 +99,19 @@ public final class AdminStore {
         }
     }
     
+    public func loadDownloadQueue(apiClient: KaizenAPIClient, session: UserSession?) async {
+        guard let session else { return }
+        if let jobs = try? await apiClient.fetchDownloadQueue(serverUrl: session.serverUrl, token: session.apiToken) {
+            downloadQueueJobs = jobs
+        }
+    }
+    
     public func refreshAllData(apiClient: KaizenAPIClient, session: UserSession?) async {
         async let m: () = loadMetrics(apiClient: apiClient, session: session)
+        async let q: () = loadDownloadQueue(apiClient: apiClient, session: session)
         async let s: () = loadSources(apiClient: apiClient, session: session)
         async let f: () = loadFailedJobs(apiClient: apiClient, session: session)
-        _ = await (m, s, f)
+        _ = await (m, q, s, f)
     }
     
     public func syncSources(apiClient: KaizenAPIClient, session: UserSession?, isEn: Bool) async {
@@ -212,6 +221,7 @@ public struct AdminDashboardView: View {
     @Environment(AppState.self) private var appState
     @State private var store = AdminStore()
     @State private var showAddMangaSheet = false
+    @State private var showLiveQueueSheet = false
     let apiClient: KaizenAPIClient
     
     public init(apiClient: KaizenAPIClient) {
@@ -252,21 +262,34 @@ public struct AdminDashboardView: View {
                     mainContentView
                 }
             }
-            .navigationTitle(isEn ? "Server Remote Control" : "Control Remoto de Kaizen")
+            .navigationTitle(isEn ? "Server Control" : "Server Control")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        showAddMangaSheet = true
-                    } label: {
-                        Label(isEn ? "Add Manga" : "Añadir Manga", systemImage: "plus.circle.fill")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.cyan)
+                    HStack(spacing: 10) {
+                        Button {
+                            showLiveQueueSheet = true
+                        } label: {
+                            Label(isEn ? "Live Queue" : "Cola en Vivo", systemImage: "arrow.down.circle.fill")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(.cyan)
+                        }
+                        
+                        Button {
+                            showAddMangaSheet = true
+                        } label: {
+                            Label(isEn ? "Add Manga" : "Añadir Manga", systemImage: "plus.circle.fill")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.cyan)
+                        }
                     }
                 }
             }
             .sheet(isPresented: $showAddMangaSheet) {
                 AddMangaRemoteSheet(apiClient: apiClient)
+            }
+            .sheet(isPresented: $showLiveQueueSheet) {
+                LiveDownloadQueueSheet(apiClient: apiClient)
             }
             .task {
                 await store.refreshAllData(apiClient: apiClient, session: appState.session)
@@ -277,9 +300,6 @@ public struct AdminDashboardView: View {
     private var mainContentView: some View {
         ScrollView {
             VStack(spacing: 16) {
-                // Header de Conexión del Servidor
-                serverConnectionHeader
-                
                 // Mensajes de estado
                 statusMessagesView
                 
@@ -309,7 +329,7 @@ public struct AdminDashboardView: View {
                     queuesAndMetricsSection
                 }
             }
-            .padding(.vertical, 16)
+            .padding(.vertical, 12)
         }
         .refreshable {
             await store.refreshAllData(apiClient: apiClient, session: appState.session)
@@ -317,44 +337,6 @@ public struct AdminDashboardView: View {
     }
     
     // MARK: - Subcomponentes
-    
-    private var serverConnectionHeader: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(isEn ? "Kaizen Backend Server" : "Servidor Kaizen")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text(appState.session?.serverUrl.host ?? (isEn ? "Connected" : "Conectado"))
-                    .font(.title3.weight(.bold))
-                    .foregroundStyle(.white)
-            }
-            Spacer()
-            
-            HStack(spacing: 8) {
-                Button {
-                    showAddMangaSheet = true
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "plus")
-                        Text(isEn ? "Add Manga" : "Añadir Manga")
-                    }
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(.black)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(Color.cyan, in: Capsule())
-                }
-                
-                Label(isEn ? "Online" : "En línea", systemImage: "checkmark.circle.fill")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(.green)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(Color.green.opacity(0.15), in: Capsule())
-            }
-        }
-        .padding(.horizontal)
-    }
     
     @ViewBuilder
     private var statusMessagesView: some View {
@@ -836,11 +818,13 @@ public struct AdminDashboardView: View {
         }
     }
     
-    // MARK: - Sección 4: Colas BullMQ
+    // MARK: - Sección 4: Colas de Descarga en Vivo + BullMQ
     
     private var queuesAndMetricsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(isEn ? "Queue Remote Controller (BullMQ)" : "Control Remoto de Colas (BullMQ)")
+        VStack(alignment: .leading, spacing: 14) {
+            liveChapterQueueBlock
+            
+            Text(isEn ? "System Queues (BullMQ)" : "Colas del Sistema (BullMQ)")
                 .font(.headline)
                 .foregroundStyle(.white)
                 .padding(.horizontal)
@@ -948,6 +932,62 @@ public struct AdminDashboardView: View {
                         }
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)
+                        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
+                    }
+                }
+                .padding(.horizontal)
+            }
+        }
+    }
+    
+    private var liveChapterQueueBlock: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(isEn ? "Live Download Queue (Chapters)" : "Cola de Descarga de Capítulos en Vivo")
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                Spacer()
+                Button {
+                    showLiveQueueSheet = true
+                } label: {
+                    Text(isEn ? "Full View →" : "Pantalla completa →")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.cyan)
+                }
+            }
+            .padding(.horizontal)
+            
+            if store.downloadQueueJobs.isEmpty {
+                Text(isEn ? "No recent or active chapter downloads." : "Sin capítulos en la cola de descargas.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal)
+            } else {
+                VStack(spacing: 8) {
+                    ForEach(store.downloadQueueJobs.prefix(8)) { job in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(job.mangaTitle)
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.white)
+                                    .lineLimit(1)
+                                Text((isEn ? "Ch. " : "Cap. ") + String(format: "%g", job.chapterIndex) + " • \(job.source)")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Text(job.status == "active" ? "\(max(job.progress, 1))%" : job.status.uppercased())
+                                .font(.caption2.weight(.bold))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(
+                                    (job.status == "active" ? Color.cyan : (job.status == "failed" ? Color.red : (job.status == "completed" ? Color.green : Color.indigo))).opacity(0.2),
+                                    in: Capsule()
+                                )
+                                .foregroundStyle(job.status == "active" ? Color.cyan : (job.status == "failed" ? Color.red : (job.status == "completed" ? Color.green : Color.indigo)))
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 9)
                         .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
                     }
                 }

@@ -16,7 +16,7 @@ public struct RootAppView: View {
                 LoginView(apiClient: apiClient)
             } else {
                 if horizontalSizeClass == .regular {
-                    // iPadOS: Layout con barra lateral expansiva
+                    // iPadOS: Layout con barra lateral expansiva colapsable
                     iPadRootLayout(apiClient: apiClient)
                 } else {
                     // iPhone: Layout compacto con TabView
@@ -64,6 +64,63 @@ public struct InAppLanguageToggle: View {
     }
 }
 
+// MARK: - Componente Compartido: Switch instantáneo Admin ↔ Reader
+
+public struct AdminReaderModeSwitch: View {
+    @Environment(AppState.self) private var appState
+    
+    private var isEn: Bool {
+        appState.currentLanguage == "en"
+    }
+    
+    public init() {}
+    
+    public var body: some View {
+        if appState.isActualAdmin {
+            HStack(spacing: 4) {
+                Button {
+                    withAnimation(.spring(duration: 0.25)) {
+                        appState.simulateReaderMode = false
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "shield.lefthalf.filled")
+                            .font(.caption2)
+                        Text("Admin")
+                            .font(.caption.weight(.bold))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
+                    .background(!appState.simulateReaderMode ? Color.cyan : Color.clear, in: Capsule())
+                    .foregroundStyle(!appState.simulateReaderMode ? Color.black : Color.secondary)
+                }
+                .buttonStyle(.plain)
+                
+                Button {
+                    withAnimation(.spring(duration: 0.25)) {
+                        appState.simulateReaderMode = true
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "book.pages.fill")
+                            .font(.caption2)
+                        Text("Reader")
+                            .font(.caption.weight(.bold))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
+                    .background(appState.simulateReaderMode ? Color.green : Color.clear, in: Capsule())
+                    .foregroundStyle(appState.simulateReaderMode ? Color.black : Color.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(3)
+            .background(Color.white.opacity(0.08), in: Capsule())
+            .overlay(Capsule().stroke(Color.white.opacity(0.14), lineWidth: 1))
+        }
+    }
+}
+
 // MARK: - Layout iPhone
 
 struct iPhoneRootLayout: View {
@@ -76,42 +133,67 @@ struct iPhoneRootLayout: View {
     
     var body: some View {
         TabView {
-            HomeDashboardView(apiClient: apiClient)
-                .tabItem {
-                    Label(isEn ? "Home" : "Inicio", systemImage: "house.fill")
-                }
-            
-            LibraryView(apiClient: apiClient)
-                .tabItem {
-                    Label(isEn ? "Library" : "Biblioteca", systemImage: "books.vertical.fill")
-                }
-            
-            ReadingHistoryView(apiClient: apiClient)
-                .tabItem {
-                    Label(isEn ? "History" : "Historial", systemImage: "clock.arrow.circlepath")
-                }
-            
-            MangaRequestsView(apiClient: apiClient)
-                .tabItem {
-                    Label(isEn ? "Requests" : "Peticiones", systemImage: "tray.and.arrow.down.fill")
-                }
-            
             if appState.isManagement {
+                HomeDashboardView(apiClient: apiClient)
+                    .tabItem {
+                        Label("Dashboard", systemImage: "chart.bar.xaxis")
+                    }
+                
+                LibraryView(apiClient: apiClient, mode: .unifiedCatalog)
+                    .tabItem {
+                        Label(isEn ? "Library" : "Biblioteca", systemImage: "books.vertical.fill")
+                    }
+                
+                ReadingHistoryView(apiClient: apiClient)
+                    .tabItem {
+                        Label(isEn ? "History" : "Historial", systemImage: "clock.arrow.circlepath")
+                    }
+                
+                MangaRequestsView(apiClient: apiClient)
+                    .tabItem {
+                        Label(isEn ? "Requests" : "Peticiones", systemImage: "tray.and.arrow.down.fill")
+                    }
+                
                 AdminDashboardView(apiClient: apiClient)
                     .tabItem {
-                        Label(isEn ? "Control" : "Administración", systemImage: "server.rack")
+                        Label("Server Control", systemImage: "server.rack")
                     }
                 
                 AIStudioView(apiClient: apiClient)
                     .tabItem {
                         Label("AI Studio", systemImage: "sparkles")
                     }
+                
+                UserSettingsView(apiClient: apiClient)
+                    .tabItem {
+                        Label(isEn ? "Settings" : "Ajustes", systemImage: "gearshape.fill")
+                    }
+            } else {
+                LibraryView(apiClient: apiClient, mode: .personalReading)
+                    .tabItem {
+                        Label(isEn ? "My Reading" : "Mi Lectura", systemImage: "book.pages.fill")
+                    }
+                
+                LibraryView(apiClient: apiClient, mode: .discoverCatalog)
+                    .tabItem {
+                        Label(isEn ? "Discover" : "Discover", systemImage: "safari.fill")
+                    }
+                
+                ReadingHistoryView(apiClient: apiClient)
+                    .tabItem {
+                        Label(isEn ? "History" : "Historial", systemImage: "clock.arrow.circlepath")
+                    }
+                
+                MangaRequestsView(apiClient: apiClient)
+                    .tabItem {
+                        Label(isEn ? "Requests" : "Peticiones", systemImage: "hand.raised.fill")
+                    }
+                
+                UserSettingsView(apiClient: apiClient)
+                    .tabItem {
+                        Label(isEn ? "Settings" : "Ajustes", systemImage: "gearshape.fill")
+                    }
             }
-            
-            UserSettingsView(apiClient: apiClient)
-                .tabItem {
-                    Label(isEn ? "Settings" : "Ajustes", systemImage: "gearshape.fill")
-                }
         }
     }
 }
@@ -121,7 +203,8 @@ struct iPhoneRootLayout: View {
 struct iPadRootLayout: View {
     @Environment(AppState.self) private var appState
     let apiClient: KaizenAPIClient
-    @State private var selectedTab: String? = "home"
+    @State private var selectedTab: String? = "dashboard"
+    @State private var showLiveQueueSheet = false
     
     private var isEn: Bool {
         appState.currentLanguage == "en"
@@ -130,22 +213,92 @@ struct iPadRootLayout: View {
     var body: some View {
         NavigationSplitView {
             List(selection: $selectedTab) {
-                Section {
-                    Label(isEn ? "Home" : "Inicio", systemImage: "house.fill").tag("home")
-                    Label(isEn ? "Library" : "Biblioteca", systemImage: "books.vertical.fill").tag("library")
-                    Label(isEn ? "History" : "Historial", systemImage: "clock.arrow.circlepath").tag("history")
-                    Label(isEn ? "Requests" : "Peticiones", systemImage: "tray.and.arrow.down.fill").tag("requests")
-                }
-                
-                if appState.isManagement {
-                    Section(isEn ? "Administration" : "Administración") {
-                        Label(isEn ? "Server Control" : "Control Remoto", systemImage: "server.rack").tag("admin")
-                        Label("AI Studio", systemImage: "sparkles").tag("ai_studio")
+                if appState.isActualAdmin {
+                    Section {
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack {
+                                Text(isEn ? "View Mode" : "Modo de Vista")
+                                    .font(.caption2.weight(.bold))
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                if appState.simulateReaderMode {
+                                    Text(isEn ? "Inspecting Reader" : "Probando Reader")
+                                        .font(.caption2.weight(.bold))
+                                        .foregroundStyle(.green)
+                                }
+                            }
+                            AdminReaderModeSwitch()
+                        }
+                        .padding(.vertical, 2)
                     }
                 }
                 
-                Section {
-                    Label(isEn ? "Settings" : "Ajustes", systemImage: "gearshape.fill").tag("settings")
+                if appState.isManagement {
+                    Section(isEn ? "Kaizen Remote" : "Kaizen Remoto") {
+                        Label(isEn ? "Kaizen Dashboard" : "Dashboard Kaizen", systemImage: "chart.bar.xaxis")
+                            .tag("dashboard")
+                        Label(isEn ? "Library" : "Biblioteca", systemImage: "books.vertical.fill")
+                            .tag("library")
+                        Label(isEn ? "History" : "Historial", systemImage: "clock.arrow.circlepath")
+                            .tag("history")
+                        Label(isEn ? "Requests" : "Peticiones", systemImage: "tray.and.arrow.down.fill")
+                            .tag("requests")
+                    }
+                    
+                    Section(isEn ? "Administration" : "Administración") {
+                        Label("Server Control", systemImage: "server.rack")
+                            .tag("admin")
+                        Label("AI Studio", systemImage: "sparkles")
+                            .tag("ai_studio")
+                    }
+                } else {
+                    Section(isEn ? "Reading & Catalog" : "Lectura y Catálogo") {
+                        Label(isEn ? "My Reading" : "Mi Lectura", systemImage: "book.pages.fill")
+                            .tag("reading")
+                        Label("Discover", systemImage: "safari.fill")
+                            .tag("discover")
+                        Label(isEn ? "History" : "Historial", systemImage: "clock.arrow.circlepath")
+                            .tag("history")
+                        Label(isEn ? "Requests" : "Peticiones", systemImage: "hand.raised.fill")
+                            .tag("requests")
+                    }
+                }
+                
+                Section(isEn ? "Downloads" : "Descargas") {
+                    Button {
+                        showLiveQueueSheet = true
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: appState.activeDownloadCount > 0 ? "arrow.down.circle.dotted" : "arrow.down.circle")
+                                .foregroundStyle(appState.activeDownloadCount > 0 ? .cyan : .secondary)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(isEn ? "Download Queue" : "Cola de Descarga")
+                                    .font(.subheadline.weight(.medium))
+                                    .foregroundStyle(.white)
+                                Text(
+                                    appState.activeDownloadCount > 0 || appState.waitingDownloadCount > 0
+                                    ? "\(appState.activeDownloadCount) act · \(appState.waitingDownloadCount) " + (isEn ? "queued" : "en cola")
+                                    : (isEn ? "View live status" : "Ver estado en vivo")
+                                )
+                                .font(.caption2)
+                                .foregroundStyle(appState.activeDownloadCount > 0 ? .cyan : .secondary)
+                            }
+                            Spacer()
+                            if appState.activeDownloadCount > 0 {
+                                Text("\(appState.activeDownloadCount)")
+                                    .font(.caption2.weight(.bold))
+                                    .padding(.horizontal, 7)
+                                    .padding(.vertical, 2)
+                                    .background(Color.cyan.opacity(0.2), in: Capsule())
+                                    .foregroundStyle(.cyan)
+                            }
+                        }
+                    }
+                }
+                
+                Section(isEn ? "User & Settings" : "Usuario y Ajustes") {
+                    Label(isEn ? "User Settings" : "Ajustes de Usuario", systemImage: "gearshape.fill")
+                        .tag("settings")
                 }
             }
             .navigationTitle("Kaizen")
@@ -159,14 +312,14 @@ struct iPadRootLayout: View {
                         HStack(spacing: 10) {
                             Image(systemName: "person.circle.fill")
                                 .font(.title3)
-                                .foregroundStyle(.cyan)
+                                .foregroundStyle(appState.simulateReaderMode ? .green : .cyan)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(user.username)
                                     .font(.caption.weight(.semibold))
                                     .foregroundStyle(.white)
-                                Text(user.role.rawValue)
+                                Text(appState.simulateReaderMode ? "\(user.role.rawValue) (Reader UI)" : user.role.rawValue)
                                     .font(.caption2)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(appState.simulateReaderMode ? .green : .secondary)
                             }
                             Spacer()
                             
@@ -181,10 +334,22 @@ struct iPadRootLayout: View {
             }
         } detail: {
             switch selectedTab {
-            case "home":
-                HomeDashboardView(apiClient: apiClient)
+            case "dashboard":
+                if appState.isManagement {
+                    HomeDashboardView(apiClient: apiClient)
+                } else {
+                    LibraryView(apiClient: apiClient, mode: .personalReading)
+                }
             case "library":
-                LibraryView(apiClient: apiClient)
+                if appState.isManagement {
+                    LibraryView(apiClient: apiClient, mode: .unifiedCatalog)
+                } else {
+                    LibraryView(apiClient: apiClient, mode: .personalReading)
+                }
+            case "reading":
+                LibraryView(apiClient: apiClient, mode: .personalReading)
+            case "discover":
+                LibraryView(apiClient: apiClient, mode: .discoverCatalog)
             case "history":
                 ReadingHistoryView(apiClient: apiClient)
             case "requests":
@@ -193,18 +358,46 @@ struct iPadRootLayout: View {
                 if appState.isManagement {
                     AdminDashboardView(apiClient: apiClient)
                 } else {
-                    HomeDashboardView(apiClient: apiClient)
+                    LibraryView(apiClient: apiClient, mode: .personalReading)
                 }
             case "ai_studio":
                 if appState.isManagement {
                     AIStudioView(apiClient: apiClient)
                 } else {
-                    HomeDashboardView(apiClient: apiClient)
+                    LibraryView(apiClient: apiClient, mode: .personalReading)
                 }
             case "settings":
                 UserSettingsView(apiClient: apiClient)
             default:
-                HomeDashboardView(apiClient: apiClient)
+                if appState.isManagement {
+                    HomeDashboardView(apiClient: apiClient)
+                } else {
+                    LibraryView(apiClient: apiClient, mode: .personalReading)
+                }
+            }
+        }
+        .onAppear {
+            syncDefaultTabForMode(isManagement: appState.isManagement)
+        }
+        .onChange(of: appState.isManagement) { _, newValue in
+            syncDefaultTabForMode(isManagement: newValue)
+        }
+        .task {
+            await appState.refreshDownloadQueue(client: apiClient)
+        }
+        .sheet(isPresented: $showLiveQueueSheet) {
+            LiveDownloadQueueSheet(apiClient: apiClient)
+        }
+    }
+    
+    private func syncDefaultTabForMode(isManagement: Bool) {
+        if isManagement {
+            if selectedTab == nil || selectedTab == "reading" || selectedTab == "discover" {
+                selectedTab = "dashboard"
+            }
+        } else {
+            if selectedTab == nil || selectedTab == "dashboard" || selectedTab == "library" || selectedTab == "admin" || selectedTab == "ai_studio" {
+                selectedTab = "reading"
             }
         }
     }

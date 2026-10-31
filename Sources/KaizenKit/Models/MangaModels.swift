@@ -515,3 +515,129 @@ public struct FailedDownloadJob: Identifiable, Codable, Sendable, Equatable {
 }
 
 
+/// Elemento en vivo de la cola de descargas (`trpc/manga.downloadQueue`)
+public struct DownloadQueueJob: Identifiable, Codable, Sendable, Equatable {
+    public let id: String
+    public let mangaId: Int
+    public let mangaTitle: String
+    public let source: String
+    public let chapterIndex: Double
+    public let status: String // "active", "waiting", "completed", "failed"
+    public let progress: Int
+    public let failedReason: String?
+    public let timestamp: Double?
+    
+    public init(
+        id: String,
+        mangaId: Int,
+        mangaTitle: String,
+        source: String,
+        chapterIndex: Double,
+        status: String,
+        progress: Int = 0,
+        failedReason: String? = nil,
+        timestamp: Double? = nil
+    ) {
+        self.id = id
+        self.mangaId = mangaId
+        self.mangaTitle = mangaTitle
+        self.source = source
+        self.chapterIndex = chapterIndex
+        self.status = status
+        self.progress = progress
+        self.failedReason = failedReason
+        self.timestamp = timestamp
+    }
+}
+
+/// Estadísticas globales del Dashboard (`trpc/manga.activity`)
+public struct KaizenActivityStats: Codable, Sendable, Equatable {
+    public let active: Int
+    public let queued: Int
+    public let scheduled: Int
+    public let failed: Int
+    public let completed: Int
+    public let outOfSync: Int
+    
+    public init(
+        active: Int = 0,
+        queued: Int = 0,
+        scheduled: Int = 0,
+        failed: Int = 0,
+        completed: Int = 0,
+        outOfSync: Int = 0
+    ) {
+        self.active = active
+        self.queued = queued
+        self.scheduled = scheduled
+        self.failed = failed
+        self.completed = completed
+        self.outOfSync = outOfSync
+    }
+}
+
+/// Punto de historial de descargas de los últimos 14 días (`trpc/manga.activityHistory`)
+public struct KaizenActivityHistoryItem: Identifiable, Codable, Sendable, Equatable {
+    public var id: String { date }
+    public let date: String
+    public let label: String
+    public let count: Int
+    
+    public init(date: String, label: String, count: Int) {
+        self.date = date
+        self.label = label
+        self.count = count
+    }
+}
+
+/// Estadísticas de series y almacenamiento en disco por fuente (`trpc/manga.sourceStats`)
+public struct KaizenSourceStatItem: Identifiable, Codable, Sendable, Equatable {
+    public var id: String { source }
+    public let source: String
+    public let mangaCount: Int
+    public let totalSize: Int64
+    
+    public init(source: String, mangaCount: Int, totalSize: Int64) {
+        self.source = source
+        self.mangaCount = mangaCount
+        self.totalSize = totalSize
+    }
+    
+    public var formattedSize: String {
+        ByteCountFormatter.string(fromByteCount: totalSize, countStyle: .file)
+    }
+}
+
+/// Capítulo recién descargado en el servidor (`trpc/manga.history`)
+public struct KaizenServerRecentDownload: Identifiable, Codable, Sendable, Equatable {
+    public let id: Int
+    public let index: Double
+    public let fileName: String?
+    public let size: Int?
+    public let createdAt: String?
+    public let mangaTitle: String
+    public let coverUrl: String?
+    
+    public init(
+        id: Int,
+        index: Double,
+        fileName: String? = nil,
+        size: Int? = nil,
+        createdAt: String? = nil,
+        mangaTitle: String,
+        coverUrl: String? = nil
+    ) {
+        self.id = id
+        self.index = index
+        self.fileName = fileName
+        self.size = size
+        self.createdAt = createdAt
+        self.mangaTitle = mangaTitle
+        self.coverUrl = coverUrl
+    }
+    
+    public var formattedSize: String? {
+        guard let size, size > 0 else { return nil }
+        return ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)
+    }
+}

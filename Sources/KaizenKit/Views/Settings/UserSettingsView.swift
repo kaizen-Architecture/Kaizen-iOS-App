@@ -87,6 +87,20 @@ public struct UserSettingsView: View {
     public var body: some View {
         NavigationStack {
             Form {
+                if appState.isActualAdmin {
+                    Section {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(isEn ? "Switch between full Admin view and Reader experience without logging out." : "Alterna al instante entre la vista de Administrador y la experiencia de Lector sin cambiar de cuenta.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            AdminReaderModeSwitch()
+                        }
+                        .padding(.vertical, 4)
+                    } header: {
+                        Text(isEn ? "Admin / Reader View Switch" : "Conmutador de Vista Admin / Reader")
+                    }
+                }
+                
                 // Sección AniList & Tracker (Sincronizado con Kaizen)
                 Section {
                     LabeledContent(isEn ? "Status" : "Estado") {

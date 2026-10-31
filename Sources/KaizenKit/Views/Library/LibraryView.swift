@@ -18,30 +18,63 @@ public enum LibraryFilter: String, CaseIterable, Identifiable {
     }
 }
 
+public enum LibraryDisplayMode: String, Sendable {
+    /// Vista unificada (Catálogo completo + Leyendo + Favoritos + Estanterías propias)
+    case unifiedCatalog
+    /// Espacio personal del lector (Leyendo ahora + Favoritos + Estanterías digitales propias)
+    case personalReading
+    /// Catálogo general del servidor para explorar (Discover para el Reader)
+    case discoverCatalog
+}
+
 public struct LibraryView: View {
     @Environment(AppState.self) private var appState
     let apiClient: KaizenAPIClient
+    let mode: LibraryDisplayMode
     
-    @State private var selectedFilter: LibraryFilter = .all
+    @State private var selectedFilter: LibraryFilter
+    @State private var selectedShelfId: UUID? = nil
     @State private var selectedLibraryId: Int? = nil
     @State private var selectedStatus: String? = nil
     @State private var selectedGenre: String? = nil
     @State private var searchText: String = ""
+    
     @State private var showCreateLibraryAlert = false
     @State private var showAddMangaSheet = false
+    @State private var showQueueSheet = false
     @State private var newLibraryPath = ""
     @State private var creationError: String?
+    
+    // Gestión de estanterías personalizadas (unificadas aquí)
+    @State private var showCreateShelfAlert = false
+    @State private var newShelfName = ""
+    @State private var shelfToRename: UserShelf? = nil
+    @State private var renameShelfText = ""
+    @State private var showRenameShelfAlert = false
     
     private let columns = [
         GridItem(.adaptive(minimum: 125, maximum: 180), spacing: 16, alignment: .top)
     ]
     
-    public init(apiClient: KaizenAPIClient) {
+    public init(apiClient: KaizenAPIClient, mode: LibraryDisplayMode = .unifiedCatalog) {
         self.apiClient = apiClient
+        self.mode = mode
+        self._selectedFilter = State(initialValue: mode == .personalReading ? .reading : .all)
     }
     
     private var isEn: Bool {
         appState.currentLanguage == "en"
+    }
+    
+    private var navigationTitleText: String {
+        switch mode {
+        case .unifiedCatalog:
+            return isEn ? "Library" : "Biblioteca"
+        case .personalReading:
+            return isEn ? "My Reading" : "Mi Lectura"
+        case .discoverCatalog:
+            return isEn ? "Discover" : "Explorar Catálogo"
+        }
     }
     
     private var availableGenres: [String] {
@@ -76,11 +109,13 @@ public struct LibraryView: View {
     }
     
     private var hasActiveFilters: Bool {
-        selectedFilter != .all || selectedLibraryId != nil || selectedStatus != nil || selectedGenre != nil || !searchText.isEmpty
+        let defaultFilter: LibraryFilter = mode == .personalReading ? .reading : .all
+        return selectedFilter != defaultFilter || selectedShelfId != nil || selectedLibraryId != nil || selectedStatus != nil || selectedGenre != nil || !searchText.isEmpty
     }
     
     private func resetFilters() {
-        selectedFilter = .all
+        selectedFilter = mode == .personalReading ? .reading : .all
+        selectedShelfId = nil
         selectedLibraryId = nil
         selectedStatus = nil
         selectedGenre = nil
@@ -117,19 +152,30 @@ public struct LibraryView: View {
                 matchesGenre = true
             }
             
-            let matchesFilter: Bool
-            switch selectedFilter {
-            case .all:
-                matchesFilter = true
-            case .reading:
-                matchesFilter = manga.readingPercentage > 0 && manga.readingPercentage < 100
-            case .caughtUp:
-                matchesFilter = manga.readingPercentage >= 100
-            case .favorites:
-                matchesFilter = manga.isFavorite
+            let matchesFilterOrShelf: Bool
+            if let shelfId = selectedShelfId,
+               let shelf = appState.shelves.first(where: { $0.id == shelfId }) {
+                matchesFilterOrShelf = shelf.mangaIds.contains(manga.id)
+            } else {
+                switch selectedFilter {
+                case .all:
+                    if mode == .personalReading {
+                        let inAnyShelf = appState.shelves.contains { $0.mangaIds.contains(manga.id) }
+                        matchesFilterOrShelf = manga.isFavorite || manga.readingPercentage > 0 || inAnyShelf
+                    } else {
+                        matchesFilterOrShelf = true
+                    }
+                case .reading:
+                    let inHistory = appState.history.contains { $0.mangaId == manga.id }
+                    matchesFilterOrShelf = (manga.readingPercentage > 0 && manga.readingPercentage < 100) || (inHistory && manga.readingPercentage < 100)
+                case .caughtUp:
+                    matchesFilterOrShelf = manga.readingPercentage >= 100
+                case .favorites:
+                    matchesFilterOrShelf = manga.isFavorite
+                }
             }
             
-            return matchesSearch && matchesLibrary && matchesStatus && matchesGenre && matchesFilter
+            return matchesSearch && matchesLibrary && matchesStatus && matchesGenre && matchesFilterOrShelf
         }
     }
     
@@ -139,249 +185,15 @@ public struct LibraryView: View {
                 Color.black.ignoresSafeArea()
                 
                 VStack(spacing: 0) {
-                    // Barra superior con filtros y selector de biblioteca
-                    VStack(spacing: 8) {
-                        // Fila 1: Filtros de lectura y biblioteca remota del servidor
-                        HStack {
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 8) {
-                                    ForEach(LibraryFilter.allCases) { filter in
-                                        Button(filter.label(language: appState.currentLanguage)) {
-                                            selectedFilter = filter
-                                        }
-                                        .font(.subheadline.weight(.medium))
-                                        .padding(.horizontal, 14)
-                                        .padding(.vertical, 7)
-                                        .background(
-                                            selectedFilter == filter ?
-                                            Color.cyan : Color.white.opacity(0.08),
-                                            in: Capsule()
-                                        )
-                                        .foregroundStyle(
-                                            selectedFilter == filter ? Color.black : Color.white
-                                        )
-                                    }
-                                }
-                            }
-                            
-                            // Menú de Bibliotecas de Kaizen
-                            if !appState.libraries.isEmpty {
-                                Menu {
-                                    Button(isEn ? "All Server Libraries" : "Todas las bibliotecas") {
-                                        selectedLibraryId = nil
-                                    }
-                                    Divider()
-                                    ForEach(appState.libraries) { lib in
-                                        Button(lib.displayTitle) {
-                                            selectedLibraryId = lib.id
-                                        }
-                                    }
-                                    Divider()
-                                    Button(isEn ? "Add Library..." : "Añadir biblioteca...") {
-                                        newLibraryPath = ""
-                                        creationError = nil
-                                        showCreateLibraryAlert = true
-                                    }
-                                } label: {
-                                    Image(systemName: selectedLibraryId != nil ? "folder.fill.badge.gearshape" : "folder.badge.gearshape")
-                                        .font(.headline)
-                                        .foregroundStyle(selectedLibraryId != nil ? Color.black : Color.cyan)
-                                        .padding(8)
-                                        .background(selectedLibraryId != nil ? Color.cyan : Color.white.opacity(0.08), in: Circle())
-                                }
-                            }
-                        }
-                        
-                        // Fila 2: Filtros por Tipo (Estado) y Género
-                        HStack(spacing: 8) {
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 8) {
-                                    // Selector de Tipo / Estado
-                                    Menu {
-                                        Button(isEn ? "All Types" : "Todos los tipos") {
-                                            selectedStatus = nil
-                                        }
-                                        Divider()
-                                        ForEach(availableStatuses, id: \.self) { status in
-                                            Button(localizedStatus(status)) {
-                                                selectedStatus = status
-                                            }
-                                        }
-                                    } label: {
-                                        HStack(spacing: 5) {
-                                            Image(systemName: "line.3.horizontal.decrease.circle")
-                                            Text(selectedStatus == nil ? (isEn ? "Type: All" : "Tipo: Todos") : localizedStatus(selectedStatus!))
-                                                .fontWeight(.medium)
-                                            Image(systemName: "chevron.down")
-                                                .font(.caption2)
-                                        }
-                                        .font(.caption)
-                                        .padding(.horizontal, 10)
-                                        .padding(.vertical, 6)
-                                        .background(
-                                            selectedStatus != nil ? Color.cyan : Color.white.opacity(0.07),
-                                            in: Capsule()
-                                        )
-                                        .foregroundStyle(selectedStatus != nil ? Color.black : Color.white)
-                                    }
-                                    
-                                    // Selector de Género
-                                    if !availableGenres.isEmpty {
-                                        Menu {
-                                            Button(isEn ? "All Genres" : "Todos los géneros") {
-                                                selectedGenre = nil
-                                            }
-                                            Divider()
-                                            ForEach(availableGenres, id: \.self) { genre in
-                                                Button(genre) {
-                                                    selectedGenre = genre
-                                                }
-                                            }
-                                        } label: {
-                                            HStack(spacing: 5) {
-                                                Image(systemName: "tag")
-                                                Text(selectedGenre == nil ? (isEn ? "Genre: All" : "Género: Todos") : selectedGenre!)
-                                                    .fontWeight(.medium)
-                                                Image(systemName: "chevron.down")
-                                                    .font(.caption2)
-                                            }
-                                            .font(.caption)
-                                            .padding(.horizontal, 10)
-                                            .padding(.vertical, 6)
-                                            .background(
-                                                selectedGenre != nil ? Color.cyan : Color.white.opacity(0.07),
-                                                in: Capsule()
-                                            )
-                                            .foregroundStyle(selectedGenre != nil ? Color.black : Color.white)
-                                        }
-                                    }
-                                    
-                                    // Botón para resetear filtros si hay alguno activo
-                                    if hasActiveFilters {
-                                        Button(action: resetFilters) {
-                                            HStack(spacing: 4) {
-                                                Image(systemName: "xmark.circle.fill")
-                                                Text(isEn ? "Clear" : "Limpiar")
-                                            }
-                                            .font(.caption.weight(.medium))
-                                            .foregroundStyle(.secondary)
-                                            .padding(.horizontal, 8)
-                                            .padding(.vertical, 6)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    
-                    // Contenido
-                    if appState.isLoadingLibrary && appState.mangas.isEmpty {
-                        Spacer()
-                        ProgressView().tint(.cyan)
-                        Spacer()
-                    } else if filteredMangas.isEmpty {
-                        Spacer()
-                        if let error = appState.libraryErrorMessage {
-                            VStack(spacing: 14) {
-                                ContentUnavailableView(
-                                    isEn ? "Failed to load library" : "No se pudo cargar la biblioteca",
-                                    systemImage: "exclamationmark.triangle",
-                                    description: Text(error)
-                                )
-                                Button(isEn ? "Retry" : "Reintentar") {
-                                    Task {
-                                        await appState.loadLibrary(client: apiClient, force: true)
-                                    }
-                                }
-                                .buttonStyle(.borderedProminent)
-                            }
-                        } else {
-                            VStack(spacing: 16) {
-                                ContentUnavailableView(
-                                    isEn ? "No manga found" : "No hay mangas",
-                                    systemImage: "books.vertical",
-                                    description: Text(hasActiveFilters ? (isEn ? "No manga match the selected filters or search." : "Ningún manga coincide con los filtros o la búsqueda.") : (isEn ? "Your library is empty" : "Tu biblioteca está vacía"))
-                                )
-                                if hasActiveFilters {
-                                    Button(isEn ? "Reset Filters" : "Restablecer filtros") {
-                                        resetFilters()
-                                    }
-                                    .buttonStyle(.bordered)
-                                    .tint(.cyan)
-                                }
-                            }
-                        }
-                        Spacer()
-                    } else {
-                        ScrollView {
-                            LazyVGrid(columns: columns, spacing: 20) {
-                                ForEach(filteredMangas) { manga in
-                                    NavigationLink(value: manga) {
-                                        MangaCardView(manga: manga)
-                                    }
-                                    .buttonStyle(.plain)
-                                    .contextMenu {
-                                        Button {
-                                            Task { await appState.toggleFavorite(mangaId: manga.id, client: apiClient) }
-                                        } label: {
-                                            Label(
-                                                manga.isFavorite ? (isEn ? "Remove from favorites" : "Quitar de favoritos") : (isEn ? "Add to favorites" : "Añadir a favoritos"),
-                                                systemImage: manga.isFavorite ? "heart.slash" : "heart.fill"
-                                            )
-                                        }
-                                        
-                                        if !appState.shelves.isEmpty {
-                                            Menu(isEn ? "Shelves" : "Estanterías") {
-                                                ForEach(appState.shelves) { shelf in
-                                                    Button {
-                                                        appState.toggleMangaInShelf(shelfId: shelf.id, mangaId: manga.id)
-                                                    } label: {
-                                                        let inShelf = appState.isMangaInShelf(shelfId: shelf.id, mangaId: manga.id)
-                                                        Label(shelf.name, systemImage: inShelf ? "checkmark.circle.fill" : "circle")
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.top, 8)
-                            .padding(.bottom, 24)
-                        }
-                        .refreshable {
-                            await appState.loadLibrary(client: apiClient, force: true)
-                        }
-                    }
+                    topFilterBars
+                    mainCatalogContent
                 }
             }
-            .navigationTitle(isEn ? "Library" : "Biblioteca")
-            .searchable(text: $searchText, prompt: isEn ? "Search your catalog..." : "Buscar en tu catálogo...")
+            .navigationTitle(navigationTitleText)
+            .searchable(text: $searchText, prompt: isEn ? "Search title, author, genre..." : "Buscar título, autor, género...")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    HStack(spacing: 12) {
-                        Button {
-                            Task {
-                                await appState.loadLibrary(client: apiClient, force: true)
-                            }
-                        } label: {
-                            Image(systemName: "arrow.triangle.2.circlepath")
-                                .foregroundStyle(appState.isLoadingLibrary ? .cyan : .secondary)
-                        }
-                        .disabled(appState.isLoadingLibrary)
-                        
-                        if appState.isManagement {
-                            Button {
-                                showAddMangaSheet = true
-                            } label: {
-                                Label(isEn ? "Add Manga" : "Añadir Manga", systemImage: "plus.circle.fill")
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(.cyan)
-                            }
-                        }
-                    }
+                    toolbarTrailingButtons
                 }
             }
             .task {
@@ -394,6 +206,27 @@ public struct LibraryView: View {
                 AddMangaRemoteSheet(apiClient: apiClient) {
                     Task { await appState.loadLibrary(client: apiClient, force: true) }
                 }
+            }
+            .sheet(isPresented: $showQueueSheet) {
+                LiveDownloadQueueSheet(apiClient: apiClient)
+            }
+            .alert(isEn ? "New Reading Shelf" : "Nueva Estantería", isPresented: $showCreateShelfAlert) {
+                TextField(isEn ? "e.g. Manhwa Top, To Re-read..." : "Ej: Manhwa Top, Para releer...", text: $newShelfName)
+                Button(isEn ? "Create" : "Crear") {
+                    appState.createShelf(name: newShelfName)
+                }
+                Button(isEn ? "Cancel" : "Cancelar", role: .cancel) {}
+            } message: {
+                Text(isEn ? "Organize your series into custom shelves. A manga can belong to multiple shelves." : "Organiza tus series en estanterías personalizadas. Un manga puede estar en varias a la vez.")
+            }
+            .alert(isEn ? "Rename Shelf" : "Renombrar Estantería", isPresented: $showRenameShelfAlert) {
+                TextField(isEn ? "Shelf name" : "Nombre de la estantería", text: $renameShelfText)
+                Button(isEn ? "Save" : "Guardar") {
+                    if let s = shelfToRename {
+                        appState.renameShelf(id: s.id, newName: renameShelfText)
+                    }
+                }
+                Button(isEn ? "Cancel" : "Cancelar", role: .cancel) {}
             }
             .alert(isEn ? "New Server Library" : "Nueva Biblioteca", isPresented: $showCreateLibraryAlert) {
                 TextField(isEn ? "Server path (e.g. /manga/manhwa)" : "Ruta en servidor (ej: /manga/manhwa)", text: $newLibraryPath)
@@ -411,6 +244,342 @@ public struct LibraryView: View {
                 Button(isEn ? "Cancel" : "Cancelar", role: .cancel) {}
             } message: {
                 Text(isEn ? "Enter the absolute path on the server disk where manga will be stored." : "Introduce la ruta absoluta en el disco del servidor donde se alojarán los mangas.")
+            }
+        }
+    }
+    
+    // MARK: - Subvistas de Filtros y Cabecera de Biblioteca
+    
+    private var topFilterBars: some View {
+        VStack(spacing: 8) {
+            if mode != .discoverCatalog {
+                HStack {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(LibraryFilter.allCases) { filter in
+                                if !(mode == .personalReading && filter == .all) {
+                                    let isSelected = (selectedShelfId == nil && selectedFilter == filter)
+                                    Button {
+                                        selectedShelfId = nil
+                                        selectedFilter = filter
+                                    } label: {
+                                        HStack(spacing: 5) {
+                                            if filter == .favorites {
+                                                Image(systemName: "heart.fill")
+                                                    .font(.caption2)
+                                            } else if filter == .reading {
+                                                Image(systemName: "play.fill")
+                                                    .font(.caption2)
+                                            }
+                                            Text(filter.label(language: appState.currentLanguage))
+                                        }
+                                        .font(.subheadline.weight(.medium))
+                                        .padding(.horizontal, 14)
+                                        .padding(.vertical, 7)
+                                        .background(
+                                            isSelected ? Color.cyan : Color.white.opacity(0.08),
+                                            in: Capsule()
+                                        )
+                                        .foregroundStyle(isSelected ? Color.black : Color.white)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            
+                            // Píldoras de Estanterías Personalizadas del Usuario
+                            ForEach(appState.shelves) { shelf in
+                                let isShelfSelected = (selectedShelfId == shelf.id)
+                                HStack(spacing: 4) {
+                                    Button {
+                                        selectedShelfId = shelf.id
+                                    } label: {
+                                        HStack(spacing: 5) {
+                                            Image(systemName: "folder.fill")
+                                                .font(.caption2)
+                                            Text(shelf.name)
+                                            Text("(\(shelf.mangaIds.count))")
+                                                .font(.caption2)
+                                                .opacity(0.75)
+                                        }
+                                        .font(.subheadline.weight(.medium))
+                                        .padding(.horizontal, 13)
+                                        .padding(.vertical, 7)
+                                        .background(
+                                            isShelfSelected ? Color.cyan : Color.white.opacity(0.08),
+                                            in: Capsule()
+                                        )
+                                        .foregroundStyle(isShelfSelected ? Color.black : Color.white)
+                                    }
+                                    .buttonStyle(.plain)
+                                    
+                                    if isShelfSelected {
+                                        Menu {
+                                            Button {
+                                                shelfToRename = shelf
+                                                renameShelfText = shelf.name
+                                                showRenameShelfAlert = true
+                                            } label: {
+                                                Label(isEn ? "Rename Shelf" : "Renombrar estantería", systemImage: "pencil")
+                                            }
+                                            Button(role: .destructive) {
+                                                selectedShelfId = nil
+                                                appState.deleteShelf(id: shelf.id)
+                                            } label: {
+                                                Label(isEn ? "Delete Shelf" : "Borrar estantería", systemImage: "trash")
+                                            }
+                                        } label: {
+                                            Image(systemName: "ellipsis.circle.fill")
+                                                .foregroundStyle(.cyan)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    if appState.isManagement && !appState.libraries.isEmpty {
+                        serverLibrariesMenu
+                    }
+                }
+            }
+            
+            // Fila 2: Filtros por Tipo (Estado) y Género
+            HStack(spacing: 8) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        Menu {
+                            Button(isEn ? "All Types" : "Todos los tipos") {
+                                selectedStatus = nil
+                            }
+                            Divider()
+                            ForEach(availableStatuses, id: \.self) { status in
+                                Button(localizedStatus(status)) {
+                                    selectedStatus = status
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 5) {
+                                Image(systemName: "line.3.horizontal.decrease.circle")
+                                Text(selectedStatus == nil ? (isEn ? "Type: All" : "Tipo: Todos") : localizedStatus(selectedStatus!))
+                                    .fontWeight(.medium)
+                                Image(systemName: "chevron.down")
+                                    .font(.caption2)
+                            }
+                            .font(.caption)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(
+                                selectedStatus != nil ? Color.cyan : Color.white.opacity(0.07),
+                                in: Capsule()
+                            )
+                            .foregroundStyle(selectedStatus != nil ? Color.black : Color.white)
+                        }
+                        
+                        if !availableGenres.isEmpty {
+                            Menu {
+                                Button(isEn ? "All Genres" : "Todos los géneros") {
+                                    selectedGenre = nil
+                                }
+                                Divider()
+                                ForEach(availableGenres, id: \.self) { genre in
+                                    Button(genre) {
+                                        selectedGenre = genre
+                                    }
+                                }
+                            } label: {
+                                HStack(spacing: 5) {
+                                    Image(systemName: "tag")
+                                    Text(selectedGenre == nil ? (isEn ? "Genre: All" : "Género: Todos") : selectedGenre!)
+                                        .fontWeight(.medium)
+                                    Image(systemName: "chevron.down")
+                                        .font(.caption2)
+                                }
+                                .font(.caption)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(
+                                    selectedGenre != nil ? Color.cyan : Color.white.opacity(0.07),
+                                    in: Capsule()
+                                )
+                                .foregroundStyle(selectedGenre != nil ? Color.black : Color.white)
+                            }
+                        }
+                        
+                        if hasActiveFilters {
+                            Button(action: resetFilters) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "xmark.circle.fill")
+                                    Text(isEn ? "Clear" : "Limpiar")
+                                }
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 6)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+    }
+    
+    private var serverLibrariesMenu: some View {
+        Menu {
+            Button(isEn ? "All Server Libraries" : "Todas las bibliotecas") {
+                selectedLibraryId = nil
+            }
+            Divider()
+            ForEach(appState.libraries) { lib in
+                Button(lib.displayTitle) {
+                    selectedLibraryId = lib.id
+                }
+            }
+            Divider()
+            Button(isEn ? "Add Library..." : "Añadir biblioteca...") {
+                newLibraryPath = ""
+                creationError = nil
+                showCreateLibraryAlert = true
+            }
+        } label: {
+            Image(systemName: selectedLibraryId != nil ? "folder.fill.badge.gearshape" : "folder.badge.gearshape")
+                .font(.headline)
+                .foregroundStyle(selectedLibraryId != nil ? Color.black : Color.cyan)
+                .padding(8)
+                .background(selectedLibraryId != nil ? Color.cyan : Color.white.opacity(0.08), in: Circle())
+        }
+    }
+    
+    @ViewBuilder
+    private var mainCatalogContent: some View {
+        if appState.isLoadingLibrary && appState.mangas.isEmpty {
+            Spacer()
+            ProgressView().tint(.cyan)
+            Spacer()
+        } else if filteredMangas.isEmpty {
+            Spacer()
+            if let error = appState.libraryErrorMessage {
+                VStack(spacing: 14) {
+                    ContentUnavailableView(
+                        isEn ? "Failed to load library" : "No se pudo cargar la biblioteca",
+                        systemImage: "exclamationmark.triangle",
+                        description: Text(error)
+                    )
+                    Button(isEn ? "Retry" : "Reintentar") {
+                        Task {
+                            await appState.loadLibrary(client: apiClient, force: true)
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            } else {
+                VStack(spacing: 16) {
+                    ContentUnavailableView(
+                        isEn ? "No manga found" : "No hay mangas",
+                        systemImage: "books.vertical",
+                        description: Text(hasActiveFilters ? (isEn ? "No manga match the selected filters or search." : "Ningún manga coincide con los filtros o la búsqueda.") : (isEn ? "Your library is empty" : "Tu biblioteca está vacía"))
+                    )
+                    if hasActiveFilters {
+                        Button(isEn ? "Reset Filters" : "Restablecer filtros") {
+                            resetFilters()
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(.cyan)
+                    }
+                }
+            }
+            Spacer()
+        } else {
+            ScrollView {
+                LazyVGrid(columns: columns, spacing: 20) {
+                    ForEach(filteredMangas) { manga in
+                        NavigationLink(value: manga) {
+                            MangaCardView(manga: manga)
+                        }
+                        .buttonStyle(.plain)
+                        .contextMenu {
+                            Button {
+                                Task { await appState.toggleFavorite(mangaId: manga.id, client: apiClient) }
+                            } label: {
+                                Label(
+                                    manga.isFavorite ? (isEn ? "Remove from favorites" : "Quitar de favoritos") : (isEn ? "Add to favorites" : "Añadir a favoritos"),
+                                    systemImage: manga.isFavorite ? "heart.slash" : "heart.fill"
+                                )
+                            }
+                            
+                            if !appState.shelves.isEmpty {
+                                Menu(isEn ? "Shelves" : "Estanterías") {
+                                    ForEach(appState.shelves) { shelf in
+                                        Button {
+                                            appState.toggleMangaInShelf(shelfId: shelf.id, mangaId: manga.id)
+                                        } label: {
+                                            let inShelf = appState.isMangaInShelf(shelfId: shelf.id, mangaId: manga.id)
+                                            Label(shelf.name, systemImage: inShelf ? "checkmark.circle.fill" : "circle")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 24)
+            }
+            .refreshable {
+                await appState.loadLibrary(client: apiClient, force: true)
+            }
+        }
+    }
+    
+    private var toolbarTrailingButtons: some View {
+        HStack(spacing: 10) {
+            if appState.isManagement {
+                Button {
+                    showQueueSheet = true
+                } label: {
+                    let totalQ = appState.activeDownloadCount + appState.waitingDownloadCount
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.down.circle.fill")
+                        if totalQ > 0 {
+                            Text("\(totalQ)")
+                        }
+                    }
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(totalQ > 0 ? Color.cyan : Color.secondary)
+                }
+            }
+            
+            if mode != .discoverCatalog {
+                Button {
+                    newShelfName = ""
+                    showCreateShelfAlert = true
+                } label: {
+                    Image(systemName: "folder.badge.plus")
+                        .foregroundStyle(.cyan)
+                }
+                .help(isEn ? "New Shelf" : "Nueva Estantería")
+            }
+            
+            Button {
+                Task {
+                    await appState.loadLibrary(client: apiClient, force: true)
+                }
+            } label: {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .foregroundStyle(appState.isLoadingLibrary ? .cyan : .secondary)
+            }
+            .disabled(appState.isLoadingLibrary)
+            
+            if appState.isManagement {
+                Button {
+                    showAddMangaSheet = true
+                } label: {
+                    Label(isEn ? "Add Manga" : "Añadir Manga", systemImage: "plus.circle.fill")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.cyan)
+                }
             }
         }
     }
