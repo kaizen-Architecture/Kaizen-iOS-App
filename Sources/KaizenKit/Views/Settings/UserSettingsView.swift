@@ -249,7 +249,7 @@ public struct UserSettingsView: View {
                 
                 // Versión de la Aplicación
                 Section(isEn ? "About Kaizen" : "Acerca de Kaizen") {
-                    LabeledContent(isEn ? "Version" : "Versión", value: "1.1.0 (Build 2)")
+                    LabeledContent(isEn ? "Version" : "Versión", value: LoginView.appVersionString)
                     LabeledContent(isEn ? "Compatibility" : "Compatibilidad", value: "iOS 17+ / iPadOS")
                     LabeledContent(isEn ? "Target" : "Plataforma", value: "Native SwiftUI (arm64)")
                 }
