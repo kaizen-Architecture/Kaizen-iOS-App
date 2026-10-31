@@ -303,6 +303,14 @@ struct iPadRootLayout: View {
             }
             .navigationTitle("Kaizen")
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Image("KaizenLogo")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 28, height: 28)
+                        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                }
+                
                 ToolbarItem(placement: .topBarTrailing) {
                     InAppLanguageToggle(apiClient: apiClient)
                 }
