@@ -8,7 +8,7 @@ public struct LoginView: View {
     @Environment(AppState.self) private var appState
     let apiClient: KaizenAPIClient
     
-    @AppStorage("kaizen.serverURL") private var serverUrlString: String = "http://192.168.20.28:3333"
+    @AppStorage("kaizen.serverURL") private var serverUrlString: String = "http://192.168.1.100:3000"
     @AppStorage("kaizen_remember_login") private var rememberLogin: Bool = true
     @State private var username: String = ""
     @State private var password: String = ""
