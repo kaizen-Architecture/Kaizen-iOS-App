@@ -9,12 +9,25 @@
 </p>
 
 <p align="center">
+  <a href="#-prerequisite-kaizen-server">Prerequisite: Kaizen Server</a> •
   <a href="#-download-ipa">Download IPA</a> •
   <a href="#-installation-guide-sideloading">Sideloading Guide</a> •
   <a href="#-connecting-to-kaizen-server-local-vpn-or-remote">Server & VPN Setup</a> •
-  <a href="#-development--building">Development</a> •
   <a href="#-guía-en-español">Versión en Español</a>
 </p>
+
+---
+
+## ⚡ Prerequisite: Kaizen Server
+
+> [!IMPORTANT]
+> **Kaizen iOS is a companion client application.** It does not work as a standalone offline app without a running Kaizen server backend.
+>
+> You need your own self-hosted instance of **[Kaizen Server](https://github.com/kaizen-Architecture/Kaizen)** to manage your manga library, scraping sources, download queues, user accounts, and reading progress synchronization.
+>
+> - 📖 **Backend Repository & Setup Guide:** [github.com/kaizen-Architecture/Kaizen](https://github.com/kaizen-Architecture/Kaizen)
+> - Runs easily via Docker / Docker Compose or Node.js.
+> - Default production port: `3000`.
 
 ---
 
@@ -146,6 +159,12 @@ The CI workflow (`.github/workflows/ci.yml`) compiles, runs tests, and packages 
 
 <details>
 <summary><b>Haz clic aquí para ver la guía completa en español</b></summary>
+
+### ⚡ Prerrequisito Fundamental: Servidor Kaizen
+> **Importante:** Kaizen iOS es una aplicación cliente complementaria. No funciona de forma independiente sin una instancia activa del backend de Kaizen.
+>
+> Debes tener corriendo tu propio servidor de **[Kaizen (Backend)](https://github.com/kaizen-Architecture/Kaizen)** (mediante Docker o Node.js), el cual gestiona la biblioteca, fuentes, descargas y cuentas de usuario.
+> - **Repositorio del Servidor:** [github.com/kaizen-Architecture/Kaizen](https://github.com/kaizen-Architecture/Kaizen)
 
 ### 📥 Descarga del IPA
 - Puedes descargar el archivo `.ipa` compilado desde la sección de [**GitHub Releases**](../../releases).
