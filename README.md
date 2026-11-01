@@ -5,139 +5,161 @@
 </p>
 
 <p align="center">
-  <b>Aplicación nativa de lectura y gestión de manga para iOS (SwiftUI, iOS 26+).</b>
+  <b>Native manga reading and management client for iOS (SwiftUI, iOS 26+).</b>
 </p>
 
 <p align="center">
-  <a href="#-descarga-del-ipa">Descargar IPA</a> •
-  <a href="#-guía-de-instalación-sideloading">Instalación (Sideloading)</a> •
-  <a href="#-conexión-con-el-servidor-kaizen-local-vpn-o-remoto">Conexión y VPN</a> •
-  <a href="#-desarrollo-y-compilación">Desarrollo</a>
+  <a href="#-download-ipa">Download IPA</a> •
+  <a href="#-installation-guide-sideloading">Sideloading Guide</a> •
+  <a href="#-connecting-to-kaizen-server-local-vpn-or-remote">Server & VPN Setup</a> •
+  <a href="#-development--building">Development</a> •
+  <a href="#-guía-en-español">Versión en Español</a>
 </p>
 
 ---
 
-## 📥 Descarga del IPA
+## 📥 Download IPA
 
-Cualquier persona puede descargar e instalar la versión empaquetada lista para sideloading:
+Anyone can download the pre-packaged application ready for sideloading:
 
-- **Última versión estable / pre-release:** Ve a la sección de [**GitHub Releases**](../../releases) del repositorio.
-- **Descargas disponibles:**
-  - `Kaizen_vX.Y.Z.ipa`: IPA versionada lista para firmar e instalar.
-  - `Kaizen.ipa`: Enlace directo a la última build generada.
-- **Artefactos de GitHub Actions:** También puedes ir a la pestaña **Actions** > seleccionar la última ejecución exitosa > descargar el artefacto `Kaizen-vX.Y.Z-IPA`.
-
----
-
-## 📲 Guía de Instalación (Sideloading)
-
-Como Kaizen es una aplicación auto-hospedada y de código abierto sin distribución comercial en el App Store, se instala usando **Sideloading** mediante tu cuenta de Apple ID (gratuita o de desarrollador).
-
-Elige la herramienta que prefieras:
-
-### Opción A: AltStore (Recomendada para Windows y Mac)
-
-1. **Instalar AltServer en tu PC/Mac:**
-   - Descarga AltServer desde [altstore.io](https://altstore.io).
-   - En Windows, asegúrate de tener instalado **iTunes** e **iCloud** (versiones directas de Apple, no las de la Microsoft Store).
-2. **Instalar AltStore en el iPhone:**
-   - Conecta tu iPhone por cable al ordenador.
-   - Abre AltServer en la bandeja del sistema > Haz clic en **Install AltStore** > Selecciona tu iPhone e introduce tu Apple ID.
-   - En tu iPhone, ve a **Ajustes > General > Gestión de dispositivos y VPN** y confía en el certificado de tu cuenta.
-   - En iOS 16 o superior: Activa el **Modo de desarrollador** en **Ajustes > Privacidad y seguridad > Modo de desarrollador** (requiere reiniciar el dispositivo).
-3. **Instalar Kaizen:**
-   - Descarga el archivo `.ipa` de Kaizen desde GitHub en tu iPhone (Safari).
-   - Abre **AltStore** en tu iPhone > pestaña **My Apps** > pulsa el botón **`+`** arriba a la izquierda.
-   - Selecciona el archivo `Kaizen.ipa` descargado. AltStore lo firmará y lo instalará en tu pantalla de inicio.
+- **Latest Release / Pre-Release:** Visit the [**GitHub Releases**](../../releases) page.
+- **Available assets:**
+  - `Kaizen_vX.Y.Z.ipa`: Versioned package ready for signing and installing.
+  - `Kaizen.ipa`: Direct link to the latest packaged build.
+- **GitHub Actions Artifacts:** You can also navigate to the **Actions** tab > click on the latest successful workflow run > download the `Kaizen-vX.Y.Z-IPA` artifact bundle.
 
 ---
 
-### Opción B: Sideloadly (Rápido y directo vía USB o Wi-Fi)
+## 📲 Installation Guide (Sideloading)
 
-1. Descarga e instala **Sideloadly** desde [sideloadly.io](https://sideloadly.io) en tu PC o Mac.
-2. Conecta tu iPhone al ordenador y abre Sideloadly.
-3. Arrastra el archivo `Kaizen.ipa` a la ventana de Sideloadly.
-4. Introduce tu Apple ID en el campo correspondiente.
-5. Pulsa **Start**. En unos segundos la app aparecerá instalada en tu iPhone.
-6. Si es la primera vez, ve a **Ajustes > General > Gestión de dispositivos y VPN** en tu iPhone y confía en tu perfil.
+Because Kaizen is a self-hosted, open-source application without commercial distribution on the Apple App Store, it is installed via **Sideloading** using your Apple ID (free or developer account).
+
+Choose your preferred tool:
+
+### Option A: AltStore (Recommended for Windows & Mac)
+
+1. **Install AltServer on your PC/Mac:**
+   - Download AltServer from [altstore.io](https://altstore.io).
+   - *Windows users:* Ensure you install the official direct builds of **iTunes** and **iCloud** (from Apple's website, not from the Microsoft Store).
+2. **Install AltStore on your iPhone:**
+   - Connect your iPhone to your computer using a USB cable.
+   - Launch AltServer from your system tray/menu bar > Click **Install AltStore** > Select your device and enter your Apple ID credentials.
+   - On your iPhone, open **Settings > General > VPN & Device Management** and trust your developer certificate.
+   - *iOS 16+:* Turn on **Developer Mode** in **Settings > Privacy & Security > Developer Mode** (reboot required).
+3. **Install Kaizen:**
+   - Download the `Kaizen.ipa` file directly on your iPhone using Safari.
+   - Open **AltStore** > go to the **My Apps** tab > tap the **`+`** icon in the top-left corner.
+   - Select the downloaded `Kaizen.ipa`. AltStore will sign and install the app to your Home Screen.
 
 ---
 
-### Opción C: SideStore (Instalación autónoma sin PC continuo)
+### Option B: Sideloadly (Fast & direct via USB or Wi-Fi)
 
-1. Sigue la guía oficial de [sidestore.io](https://sidestore.io) para inicializar SideStore.
-2. Una vez tengas SideStore en tu iPhone, descarga el `.ipa` de Kaizen desde Safari.
-3. Abre SideStore, pulsa `+`, selecciona el `.ipa` y se firmará automáticamente usando la VPN local de WireGuard de SideStore.
+1. Download and install **Sideloadly** from [sideloadly.io](https://sideloadly.io) on your PC or Mac.
+2. Connect your iPhone to your computer and launch Sideloadly.
+3. Drag and drop the `Kaizen.ipa` file into the Sideloadly window.
+4. Enter your Apple ID email.
+5. Click **Start**. In a few moments, Kaizen will be installed on your device.
+6. If this is your first time sideloading, trust your certificate under **Settings > General > VPN & Device Management**.
+
+---
+
+### Option C: SideStore (Computer-free on-device refreshing)
+
+1. Follow the official setup instructions at [sidestore.io](https://sidestore.io) to initialize SideStore.
+2. Download `Kaizen.ipa` on your iPhone.
+3. Open SideStore, tap `+`, select the `.ipa`, and let SideStore sign it using its local WireGuard loopback VPN.
 
 > [!NOTE]
-> Las cuentas gratuitas de Apple ID permiten firmar apps durante **7 días**. AltStore y SideStore renuevan la firma automáticamente en segundo plano cuando estás conectado a la misma red Wi-Fi que tu ordenador (o mediante la VPN de SideStore).
+> Free Apple IDs permit app signatures for **7 days**. AltStore and SideStore automatically refresh the signature in the background when connected to the same local Wi-Fi or via SideStore's VPN.
 
 ---
 
-## 🌐 Conexión con el Servidor Kaizen (Local, VPN o Remoto)
+## 🌐 Connecting to Kaizen Server (Local, VPN or Remote)
 
-Kaizen iOS se conecta a tu instancia auto-hospedada del servidor Kaizen. Por defecto, en producción el servidor Kaizen corre en el puerto **`3000`** (mientras que entornos de pruebas/staging suelen usar el **`3333`**).
+Kaizen iOS connects to your self-hosted Kaizen backend instance. By default, **production runs on port `3000`** (staging and test environments typically use port `3333`).
 
-Al abrir la app por primera vez, introduce los siguientes datos:
-- **URL del Servidor**: La dirección de tu servidor Kaizen con su puerto o dominio.
-- **Usuario y Contraseña**
-- **API Token**: Lo obtienes en el panel web de Kaizen (en los ajustes de tu perfil).
+When you launch the app, provide:
+- **Server URL**: Your server address including port or domain.
+- **Username & Password**: Your credentials.
+- **API Token**: Found in your Kaizen web dashboard user profile settings.
 
----
+### Connection Scenarios
 
-### Escenarios de Conexión
-
-#### 1. Red Local (En casa por Wi-Fi)
-- Tu iPhone debe estar en la misma red Wi-Fi que el servidor.
-- Introduce la IP local de tu servidor y el puerto de producción:
+#### 1. Local Network (Home Wi-Fi)
+- Connect your iPhone to the same Wi-Fi network as your server.
+- Enter your server's local IP and production port:
   ```text
   http://192.168.1.XX:3000
   ```
-- *Nota:* En el primer inicio, iOS te solicitará permiso para **Red Local**. Confírmalo para permitir el descubrimiento y la conexión.
+- *Note:* On first launch, iOS will request **Local Network** access. Tap **Allow** to enable discovery and socket communication.
 
-#### 2. Acceso Remoto con VPN Privada (Tailscale, WireGuard, ZeroTier) — *Recomendado*
-Si sales de casa y no quieres abrir puertos a internet:
+#### 2. Remote Access via Private VPN (Tailscale, WireGuard) — *Recommended*
+Access your library on the go without exposing open ports to the internet:
 - **Tailscale**:
-  1. Instala Tailscale en tu servidor y en tu iPhone.
-  2. Conéctate con la misma cuenta en ambos dispositivos.
-  3. Usa la IP de Tailscale (o MagicDNS) con el puerto 3000:
+  1. Install Tailscale on both your Kaizen server and iPhone.
+  2. Log in with the same account.
+  3. Use the Tailscale IP (or MagicDNS hostname) with port 3000:
      ```text
-     http://100.x.y.z:3000  o  http://mi-servidor:3000
+     http://100.x.y.z:3000   or   http://my-server:3000
      ```
 - **WireGuard / OpenVPN**:
-  - Activa la VPN en tu iPhone e introduce la IP local habitual (`http://192.168.1.XX:3000`).
+  - Connect to your home VPN tunnel from iOS and use your normal local IP (`http://192.168.1.XX:3000`).
 
-#### 3. Acceso Público (IP Externa / DNS Dinámico / Dominio Propio)
-Si decides abrir Kaizen a internet:
-- **Con Dominio / Reverse Proxy (Recomendado con HTTPS):**
-  - Si tienes un subdominio gestionado por Cloudflare Tunnel, Nginx, Caddy o Traefik apuntando al puerto 3000:
+#### 3. Public Remote Access (Domain / Reverse Proxy / Port Forwarding)
+- **Domain with Reverse Proxy (Recommended with HTTPS):**
+  - If you use Cloudflare Tunnels, Nginx, Caddy, or Traefik proxying port 3000:
     ```text
-    https://kaizen.tudominio.com
+    https://kaizen.yourdomain.com
     ```
-- **Con IP Pública / DDNS y Port Forwarding:**
-  - Si abres un puerto en tu router hacia el puerto 3000 del servidor:
+- **Public IP / Dynamic DNS with Port Forwarding:**
+  - Forward an external router port to port 3000 on your server:
     ```text
-    http://tu-ip-publica:puerto_abierto
-    # o bien
-    http://tu-host.ddns.net:puerto_abierto
+    http://your-public-ip:port
+    # or
+    http://your-host.ddns.net:port
     ```
-  - *(Opcional)* Entornos de desarrollo/staging internos pueden utilizar el puerto alternativo `3333`.
+  - *(Optional)* Internal development and staging instances use port `3333`.
 
 ---
 
-## 🛠 Desarrollo y Compilación
+## 🛠 Development & Building
 
-Para compilar el proyecto manualmente desde el código fuente:
+To build the project manually from source:
 
 ```bash
-# Requiere macOS con Xcode 16+ y XcodeGen
+# Requires macOS with Xcode 16+ and XcodeGen
 brew install xcodegen
 
-# Generar el proyecto Xcode
+# Generate the Xcode project
 xcodegen generate
 
-# Abrir en Xcode
+# Open in Xcode
 open Kaizen.xcodeproj
 ```
 
-El pipeline de integración continua (`.github/workflows/ci.yml`) compila, pasa las pruebas unitarias y genera el archivo `.ipa` automáticamente en cada push a `main` y ante nuevos tags.
+The CI workflow (`.github/workflows/ci.yml`) compiles, runs tests, and packages the `.ipa` automatically on pushes to `main` and release tags.
+
+---
+
+## 🇪🇸 Guía en Español
+
+<details>
+<summary><b>Haz clic aquí para ver la guía completa en español</b></summary>
+
+### 📥 Descarga del IPA
+- Puedes descargar el archivo `.ipa` compilado desde la sección de [**GitHub Releases**](../../releases).
+- Descargas disponibles: `Kaizen_vX.Y.Z.ipa` (versionado) y `Kaizen.ipa` (última build).
+
+### 📲 Instalación con Sideloading
+1. **AltStore:** Instala AltServer en PC/Mac, instala AltStore en tu iPhone por USB, descarga el `.ipa` en Safari y pulsa `+` en AltStore para instalarlo.
+2. **Sideloadly:** Conecta el iPhone, arrastra el `.ipa` a la ventana de Sideloadly, introduce tu Apple ID y pulsa Start.
+3. **SideStore:** Permite firmar e instalar directamente desde el iPhone utilizando una VPN WireGuard local.
+*Recuerda activar el Modo de Desarrollador en Ajustes > Privacidad y seguridad en iOS 16+ y confiar en tu certificado en Ajustes > General > Gestión de dispositivos y VPN.*
+
+### 🌐 Conexión al Servidor (Puerto 3000 en Producción / 3333 en Staging)
+- **Red Local (Wi-Fi):** `http://192.168.1.XX:3000` (concede permiso de red local en iOS al abrir la app).
+- **VPN Privada (Tailscale / WireGuard):** Conéctate a Tailscale en el iPhone y usa `http://100.x.y.z:3000` o el MagicDNS de tu servidor. No requiere abrir puertos.
+- **Dominio Público / Reverse Proxy:** Introduce `https://kaizen.tudominio.com` o tu IP externa con el puerto configurado.
+
+</details>
