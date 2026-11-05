@@ -57,10 +57,10 @@ public struct ReadingHomeView: View {
                         .padding(.top, 60)
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.bottom, 24)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 32)
                 .frame(maxWidth: 900)
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: .infinity, alignment: .top)
             }
             .background(Color.black.ignoresSafeArea())
             .navigationTitle(isEn ? "Reading" : "Leyendo")
@@ -153,47 +153,65 @@ public struct ReadingHomeView: View {
         let pagesText = "\(entry.pageIndex + 1)/\(entry.totalPages)"
         let subtitle = (isEn ? "Chapter " : "Capítulo ") + chapterIdxText + " · " + (isEn ? "p. " : "pág. ") + pagesText
         
-        return ZStack {
+        return HStack(spacing: 16) {
             RemoteImage(url: coverURL, token: appState.session?.apiToken, contentMode: .fill)
-                .blur(radius: 40)
-                .scaleEffect(1.3)
-                .overlay(Color.black.opacity(0.45))
+                .frame(width: 88, height: 130)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .shadow(color: .black.opacity(0.45), radius: 8, y: 4)
             
-            HStack(spacing: 16) {
-                RemoteImage(url: coverURL, token: appState.session?.apiToken, contentMode: .fill)
-                    .frame(width: 96, height: 144)
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .shadow(color: .black.opacity(0.5), radius: 12, y: 6)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(isEn ? "CONTINUE READING" : "CONTINUAR LEYENDO")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.cyan)
                 
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(isEn ? "CONTINUE READING" : "CONTINUAR LEYENDO")
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(.cyan)
-                    Text(entry.mangaTitle)
-                        .font(.title3.weight(.bold))
-                        .foregroundStyle(.white)
-                        .lineLimit(2)
-                    Text(subtitle)
-                        .font(.footnote)
-                        .foregroundStyle(.white.opacity(0.75))
-                    ProgressView(value: progressVal, total: 100)
-                        .tint(.cyan)
-                    Button {
-                        resumeEntry = entry
-                    } label: {
-                        Label(isEn ? "Continue" : "Continuar", systemImage: "play.fill")
-                            .font(.subheadline.weight(.semibold))
-                            .padding(.horizontal, 6)
-                    }
-                    .buttonStyle(.glass)
-                    .padding(.top, 2)
+                Text(entry.mangaTitle)
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(.white)
+                    .lineLimit(2)
+                
+                Text(subtitle)
+                    .font(.footnote)
+                    .foregroundStyle(.white.opacity(0.75))
+                
+                ProgressView(value: progressVal, total: 100)
+                    .tint(.cyan)
+                    .padding(.vertical, 2)
+                
+                Button {
+                    resumeEntry = entry
+                } label: {
+                    Label(isEn ? "Continue" : "Continuar", systemImage: "play.fill")
+                        .font(.subheadline.weight(.semibold))
+                        .padding(.horizontal, 6)
                 }
-                Spacer(minLength: 0)
+                .buttonStyle(.glass)
+                .padding(.top, 2)
             }
-            .padding(16)
+            
+            Spacer(minLength: 0)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-        .contentShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            GeometryReader { geo in
+                ZStack {
+                    Color.black
+                    RemoteImage(url: coverURL, token: appState.session?.apiToken, contentMode: .fill)
+                        .frame(width: geo.size.width, height: geo.size.height)
+                        .clipped()
+                        .blur(radius: 35)
+                        .scaleEffect(1.2)
+                        .overlay(Color.black.opacity(0.55))
+                }
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(Color.white.opacity(0.12), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.3), radius: 10, y: 4)
+        .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .contextMenu {
             if let manga {
                 NavigationLink(value: manga) {
