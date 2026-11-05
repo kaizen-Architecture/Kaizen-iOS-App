@@ -147,7 +147,6 @@ public struct MangaRequestsView: View {
             .scrollContentBackground(.hidden)
             .background(Color.black.ignoresSafeArea())
             .navigationTitle(isEn ? "Requests" : "Peticiones")
-            .navigationSubtitle(pendingCount > 0 ? (isEn ? "\(pendingCount) pending" : "\(pendingCount) pendientes") : "")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showNewRequest = true } label: { Image(systemName: "plus") }

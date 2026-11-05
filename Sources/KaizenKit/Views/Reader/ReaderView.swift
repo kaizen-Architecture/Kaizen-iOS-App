@@ -278,313 +278,9 @@ public struct ReaderView: View {
     public var body: some View {
         ZStack {
             backgroundColor.ignoresSafeArea()
-            
-            // Área de Páginas con zoom interactivo y carga optimizada
-            Group {
-                if store.pages.isEmpty && !store.isBufferingChapter {
-                    ContentUnavailableView(
-                        isEn ? "No pages found" : "No se encontraron páginas",
-                        systemImage: "photo.badge.exclamationmark",
-                        description: Text(store.errorMessage ?? (isEn ? "Could not load pages for this chapter." : "No se han podido cargar las páginas de este capítulo."))
-                    )
-                } else {
-                    switch store.readerMode {
-                    case .webtoon:
-                        ScrollViewReader { proxy in
-                            ScrollView(.vertical, showsIndicators: false) {
-                                LazyVStack(spacing: 0) {
-                                    // Indicador de Capítulo Anterior al hacer pull-down en el tope
-                                    if store.hasPreviousChapter {
-                                        VStack(spacing: 8) {
-                                            Image(systemName: "arrow.up.circle.fill")
-                                                .font(.title3)
-                                                .foregroundStyle(.cyan)
-                                                .rotationEffect(.degrees(topPullOffset > 70 ? 180 : 0))
-                                                .animation(.spring(response: 0.3), value: topPullOffset > 70)
-                                            Text(topPullOffset > 70
-                                                ? (isEn ? "Release to load previous chapter" : "Suelta para ir al capítulo anterior")
-                                                : (isEn ? "Pull down for previous chapter" : "Desliza hacia abajo para ir al capítulo anterior"))
-                                                .font(.caption.weight(.bold))
-                                                .foregroundStyle(.secondary)
-                                            if let prev = store.previousChapter {
-                                                Text(prev.displayName)
-                                                    .font(.caption2)
-                                                    .foregroundStyle(.cyan)
-                                            }
-                                        }
-                                        .frame(height: 75)
-                                        .frame(maxWidth: .infinity)
-                                    }
-                                    
-                                    // Medidor de desplazamiento en el tope
-                                    GeometryReader { g in
-                                        let minY = g.frame(in: .named("webtoonReaderScroll")).minY
-                                        Color.clear.preference(key: ReaderTopOffsetKey.self, value: minY)
-                                    }
-                                    .frame(height: 0)
-                                    
-                                    ForEach(Array(store.pages.enumerated()), id: \.offset) { index, urlString in
-                                        ReaderPageView(
-                                            pageIndex: index + 1,
-                                            totalPages: store.pages.count,
-                                            url: URL(string: urlString),
-                                            token: appState.session?.apiToken,
-                                            isEn: isEn,
-                                            readerTheme: store.readerTheme
-                                        )
-                                        .id(index + 1)
-                                    }
-                                    
-                                    // Tarjeta de fin de capítulo
-                                    EndOfChapterCard(
-                                        currentChapterIndex: store.currentChapterIndex,
-                                        hasNextChapter: store.hasNextChapter,
-                                        nextChapterName: store.nextChapter?.fileName ?? ((isEn ? "Chapter " : "Capítulo ") + "\(store.currentChapterIndex + 1)"),
-                                        isEn: isEn,
-                                        onReportCorrupt: {
-                                            Task {
-                                                await store.reportCorruptChapter(apiClient: apiClient, session: appState.session, isEn: isEn)
-                                            }
-                                        }
-                                    ) {
-                                        triggerAutoNextChapter()
-                                    }
-                                    
-                                    // Disparador de Scroll Continuo: al seguir deslizando entra en pantalla y salta solo
-                                    if store.hasNextChapter {
-                                        VStack(spacing: 10) {
-                                            ProgressView().tint(.cyan)
-                                            Text(isEn ? "Scrolling to next chapter..." : "Deslizando al siguiente capítulo...")
-                                                .font(.subheadline.weight(.semibold))
-                                                .foregroundStyle(.cyan)
-                                            if let next = store.nextChapter {
-                                                Text(next.displayName)
-                                                    .font(.caption)
-                                                    .foregroundStyle(.secondary)
-                                            }
-                                        }
-                                        .frame(height: 100)
-                                        .frame(maxWidth: .infinity)
-                                        .onAppear {
-                                            triggerAutoNextChapter()
-                                        }
-                                        
-                                        Spacer().frame(height: 120)
-                                    } else {
-                                        Spacer().frame(height: 160)
-                                    }
-                                }
-                            }
-                            .coordinateSpace(name: "webtoonReaderScroll")
-                            .onPreferenceChange(ReaderTopOffsetKey.self) { minY in
-                                topPullOffset = minY
-                                if minY > 85 {
-                                    triggerAutoPreviousChapter()
-                                }
-                            }
-                            .onChange(of: store.currentPage) { _, newPage in
-                                withAnimation(.easeInOut(duration: 0.2)) {
-                                    proxy.scrollTo(newPage, anchor: .top)
-                                }
-                            }
-                        }
-                        
-                    case .horizontalLTR, .horizontalRTL:
-                        TabView(selection: $store.currentPage) {
-                            ForEach(Array(store.pages.enumerated()), id: \.offset) { index, urlString in
-                                ReaderPageView(
-                                    pageIndex: index + 1,
-                                    totalPages: store.pages.count,
-                                    url: URL(string: urlString),
-                                    token: appState.session?.apiToken,
-                                    isEn: isEn,
-                                    readerTheme: store.readerTheme
-                                )
-                                .tag(index + 1)
-                            }
-                            
-                            // Diapositiva final de capítulo en modo horizontal
-                            EndOfChapterSlide(
-                                currentChapterIndex: store.currentChapterIndex,
-                                hasNextChapter: store.hasNextChapter,
-                                nextChapterName: store.nextChapter?.fileName ?? ((isEn ? "Chapter " : "Capítulo ") + "\(store.currentChapterIndex + 1)"),
-                                isEn: isEn,
-                                onNext: {
-                                    triggerAutoNextChapter()
-                                },
-                                onPrev: {
-                                    if !store.pages.isEmpty {
-                                        store.currentPage = store.pages.count
-                                    }
-                                }
-                            )
-                            .tag(store.pages.count + 1)
-                        }
-                        .tabViewStyle(.page(indexDisplayMode: .never))
-                        .environment(\.layoutDirection, store.readerMode == .horizontalRTL ? .rightToLeft : .leftToRight)
-                        .simultaneousGesture(
-                            DragGesture()
-                                .onEnded { value in
-                                    if store.currentPage == 1 && value.translation.width > 80 && store.hasPreviousChapter {
-                                        triggerAutoPreviousChapter()
-                                    }
-                                    if store.currentPage == (store.pages.count + 1) && value.translation.width < -80 && store.hasNextChapter {
-                                        triggerAutoNextChapter()
-                                    }
-                                }
-                        )
-                    }
-                }
-            }
-            .contentShape(Rectangle())
-            .onTapGesture {
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                    store.isHUDVisible.toggle()
-                }
-            }
-            
-            // HUD Flotante (Glassmorphism estilo Paperback)
-            if store.isHUDVisible && !store.isBufferingChapter {
-                VStack {
-                    // Barra Superior Flotante Liquid Glass
-                    HStack(spacing: 14) {
-                        Button {
-                            dismiss()
-                        } label: {
-                            Image(systemName: "xmark")
-                                .font(.footnote.weight(.bold))
-                                .foregroundStyle(.white)
-                                .frame(width: 32, height: 32)
-                                .background(Color.white.opacity(0.12), in: Circle())
-                        }
-                        .buttonStyle(.plain)
-                        
-                        VStack(spacing: 2) {
-                            Text(store.manga?.title ?? (isEn ? "Reader" : "Lector"))
-                                .font(.subheadline.weight(.bold))
-                                .foregroundStyle(.white)
-                                .lineLimit(1)
-                            
-                            Text((isEn ? "Chapter " : "Capítulo ") + "\(store.currentChapterIndex)")
-                                .font(.caption2.weight(.medium))
-                                .foregroundStyle(.cyan)
-                        }
-                        .frame(maxWidth: .infinity)
-                        
-                        // Menú de Ajustes del Lector
-                        Menu {
-                            Section(isEn ? "Reading Mode" : "Modo de Lectura") {
-                                ForEach(ReaderMode.allCases) { mode in
-                                    Button {
-                                        store.readerMode = mode
-                                        appState.updateReaderMode(mode)
-                                    } label: {
-                                        Label(mode.rawValue, systemImage: mode.iconName)
-                                    }
-                                }
-                            }
-                            
-                            Section(isEn ? "Theme" : "Tema de Fondo") {
-                                ForEach(ReaderTheme.allCases) { theme in
-                                    Button {
-                                        store.readerTheme = theme
-                                        appState.updateReaderTheme(theme)
-                                    } label: {
-                                        Text(theme.rawValue)
-                                    }
-                                }
-                            }
-                        } label: {
-                            Image(systemName: "slider.horizontal.3")
-                                .font(.footnote.weight(.bold))
-                                .foregroundStyle(.white)
-                                .frame(width: 32, height: 32)
-                                .background(Color.white.opacity(0.12), in: Circle())
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .glassEffect(.regular.interactive(), in: Capsule())
-                    .padding(.horizontal, 20)
-                    .padding(.top, 8)
-                    
-                    Spacer()
-                    
-                    // Barra Inferior Flotante (Scrubber Liquid Glass)
-                    if !store.pages.isEmpty {
-                        VStack(spacing: 10) {
-                            HStack(spacing: 12) {
-                                Button {
-                                    Task {
-                                        await store.goToPreviousChapter(apiClient: apiClient, session: appState.session)
-                                        recordHistory()
-                                    }
-                                } label: {
-                                    Image(systemName: "backward.end.fill")
-                                        .font(.subheadline)
-                                        .foregroundStyle(store.hasPreviousChapter ? .white : .white.opacity(0.25))
-                                }
-                                .buttonStyle(.plain)
-                                .disabled(!store.hasPreviousChapter)
-                                
-                                Text("\(store.currentPage)")
-                                    .font(.caption.monospacedDigit().weight(.bold))
-                                    .foregroundStyle(.white)
-                                    .frame(width: 28, alignment: .trailing)
-                                
-                                Slider(
-                                    value: Binding(
-                                        get: { Double(store.currentPage) },
-                                        set: { store.currentPage = Int($0) }
-                                    ),
-                                    in: 1...Double(max(store.pages.count, 1)),
-                                    step: 1
-                                )
-                                .tint(.cyan)
-                                
-                                Text("\(store.pages.count)")
-                                    .font(.caption.monospacedDigit().weight(.bold))
-                                    .foregroundStyle(.white.opacity(0.7))
-                                    .frame(width: 28, alignment: .leading)
-                                
-                                Button {
-                                    Task {
-                                        await store.goToNextChapter(apiClient: apiClient, session: appState.session)
-                                        recordHistory()
-                                    }
-                                } label: {
-                                    Image(systemName: "forward.end.fill")
-                                        .font(.subheadline)
-                                        .foregroundStyle(store.hasNextChapter ? .white : .white.opacity(0.25))
-                                }
-                                .buttonStyle(.plain)
-                                .disabled(!store.hasNextChapter)
-                            }
-                        }
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 12)
-                        .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-                        .padding(.horizontal, 20)
-                        .safeAreaPadding(.bottom, 12)
-                    }
-                }
-                .transition(.opacity.combined(with: .scale(scale: 0.98)))
-            }
-            
-            // Pantalla inmersiva de transición y carga del capítulo (evita ver páginas a medio cargar)
-            if store.isBufferingChapter {
-                ChapterLoadingOverlayView(
-                    mangaTitle: store.manga?.title ?? (isEn ? "Manga" : "Manga"),
-                    chapterName: store.currentChapter.displayName,
-                    chapterIndex: store.currentChapterIndex,
-                    totalPages: store.pages.count,
-                    isEn: isEn,
-                    onDismiss: {
-                        dismiss()
-                    }
-                )
-                .zIndex(100)
-            }
+            readerContentLayer
+            hudOverlayLayer
+            bufferingOverlayLayer
         }
         .alert(isEn ? "Chapter Status" : "Estado del Capítulo", isPresented: Binding(
             get: { store.reportMessage != nil },
@@ -610,6 +306,335 @@ public struct ReaderView: View {
             }
             store.prefetchUpcomingPages(from: newPage, session: appState.session)
         }
+    }
+
+    // MARK: - Subvistas del Lector para aligerar el chequeo de tipos del compilador
+
+    @ViewBuilder
+    private var readerContentLayer: some View {
+        Group {
+            if store.pages.isEmpty && !store.isBufferingChapter {
+                ContentUnavailableView(
+                    isEn ? "No pages found" : "No se encontraron páginas",
+                    systemImage: "photo.badge.exclamationmark",
+                    description: Text(store.errorMessage ?? (isEn ? "Could not load pages for this chapter." : "No se han podido cargar las páginas de este capítulo."))
+                )
+            } else {
+                switch store.readerMode {
+                case .webtoon:
+                    webtoonScrollView
+                case .horizontalLTR, .horizontalRTL:
+                    horizontalTabView
+                }
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                store.isHUDVisible.toggle()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var webtoonScrollView: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.vertical, showsIndicators: false) {
+                LazyVStack(spacing: 0) {
+                    if store.hasPreviousChapter {
+                        previousChapterPullIndicator
+                    }
+                    
+                    GeometryReader { g in
+                        let minY = g.frame(in: .named("webtoonReaderScroll")).minY
+                        Color.clear.preference(key: ReaderTopOffsetKey.self, value: minY)
+                    }
+                    .frame(height: 0)
+                    
+                    ForEach(Array(store.pages.enumerated()), id: \.offset) { index, urlString in
+                        ReaderPageView(
+                            pageIndex: index + 1,
+                            totalPages: store.pages.count,
+                            url: URL(string: urlString),
+                            token: appState.session?.apiToken,
+                            isEn: isEn,
+                            readerTheme: store.readerTheme
+                        )
+                        .id(index + 1)
+                    }
+                    
+                    EndOfChapterCard(
+                        currentChapterIndex: store.currentChapterIndex,
+                        hasNextChapter: store.hasNextChapter,
+                        nextChapterName: store.nextChapter?.fileName ?? ((isEn ? "Chapter " : "Capítulo ") + "\(store.currentChapterIndex + 1)"),
+                        isEn: isEn,
+                        onReportCorrupt: {
+                            Task {
+                                await store.reportCorruptChapter(apiClient: apiClient, session: appState.session, isEn: isEn)
+                            }
+                        }
+                    ) {
+                        triggerAutoNextChapter()
+                    }
+                    
+                    if store.hasNextChapter {
+                        VStack(spacing: 10) {
+                            ProgressView().tint(.cyan)
+                            Text(isEn ? "Scrolling to next chapter..." : "Deslizando al siguiente capítulo...")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.cyan)
+                            if let next = store.nextChapter {
+                                Text(next.displayName)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .frame(height: 100)
+                        .frame(maxWidth: .infinity)
+                        .onAppear {
+                            triggerAutoNextChapter()
+                        }
+                        
+                        Spacer().frame(height: 120)
+                    } else {
+                        Spacer().frame(height: 160)
+                    }
+                }
+            }
+            .coordinateSpace(name: "webtoonReaderScroll")
+            .onPreferenceChange(ReaderTopOffsetKey.self) { minY in
+                topPullOffset = minY
+                if minY > 85 {
+                    triggerAutoPreviousChapter()
+                }
+            }
+            .onChange(of: store.currentPage) { _, newPage in
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    proxy.scrollTo(newPage, anchor: .top)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var horizontalTabView: some View {
+        TabView(selection: $store.currentPage) {
+            ForEach(Array(store.pages.enumerated()), id: \.offset) { index, urlString in
+                ReaderPageView(
+                    pageIndex: index + 1,
+                    totalPages: store.pages.count,
+                    url: URL(string: urlString),
+                    token: appState.session?.apiToken,
+                    isEn: isEn,
+                    readerTheme: store.readerTheme
+                )
+                .tag(index + 1)
+            }
+            
+            EndOfChapterSlide(
+                currentChapterIndex: store.currentChapterIndex,
+                hasNextChapter: store.hasNextChapter,
+                nextChapterName: store.nextChapter?.fileName ?? ((isEn ? "Chapter " : "Capítulo ") + "\(store.currentChapterIndex + 1)"),
+                isEn: isEn,
+                onNext: {
+                    triggerAutoNextChapter()
+                },
+                onPrev: {
+                    if !store.pages.isEmpty {
+                        store.currentPage = store.pages.count
+                    }
+                }
+            )
+            .tag(store.pages.count + 1)
+        }
+        .tabViewStyle(.page(indexDisplayMode: .never))
+        .environment(\.layoutDirection, store.readerMode == .horizontalRTL ? .rightToLeft : .leftToRight)
+        .simultaneousGesture(
+            DragGesture()
+                .onEnded { value in
+                    if store.currentPage == 1 && value.translation.width > 80 && store.hasPreviousChapter {
+                        triggerAutoPreviousChapter()
+                    }
+                    if store.currentPage == (store.pages.count + 1) && value.translation.width < -80 && store.hasNextChapter {
+                        triggerAutoNextChapter()
+                    }
+                }
+        )
+    }
+
+    @ViewBuilder
+    private var previousChapterPullIndicator: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "arrow.up.circle.fill")
+                .font(.title3)
+                .foregroundStyle(.cyan)
+                .rotationEffect(.degrees(topPullOffset > 70 ? 180 : 0))
+                .animation(.spring(response: 0.3), value: topPullOffset > 70)
+            Text(topPullOffset > 70
+                ? (isEn ? "Release to load previous chapter" : "Suelta para ir al capítulo anterior")
+                : (isEn ? "Pull down for previous chapter" : "Desliza hacia abajo para ir al capítulo anterior"))
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.secondary)
+            if let prev = store.previousChapter {
+                Text(prev.displayName)
+                    .font(.caption2)
+                    .foregroundStyle(.cyan)
+            }
+        }
+        .frame(height: 75)
+        .frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder
+    private var hudOverlayLayer: some View {
+        if store.isHUDVisible && !store.isBufferingChapter {
+            VStack {
+                topHUDBar
+                Spacer()
+                bottomHUDBar
+            }
+            .transition(.opacity.combined(with: .scale(scale: 0.98)))
+        }
+    }
+
+    private var topHUDBar: some View {
+        HStack(spacing: 14) {
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.footnote.weight(.bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 32, height: 32)
+                    .background(Color.white.opacity(0.12), in: Circle())
+            }
+            .buttonStyle(.plain)
+            
+            VStack(spacing: 2) {
+                Text(store.manga?.title ?? (isEn ? "Reader" : "Lector"))
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                
+                Text((isEn ? "Chapter " : "Capítulo ") + "\(store.currentChapterIndex)")
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.cyan)
+            }
+            .frame(maxWidth: .infinity)
+            
+            Menu {
+                Section(isEn ? "Reading Mode" : "Modo de Lectura") {
+                    ForEach(ReaderMode.allCases) { mode in
+                        Button {
+                            store.readerMode = mode
+                            appState.updateReaderMode(mode)
+                        } label: {
+                            Label(mode.rawValue, systemImage: mode.iconName)
+                        }
+                    }
+                }
+                
+                Section(isEn ? "Theme" : "Tema de Fondo") {
+                    ForEach(ReaderTheme.allCases) { theme in
+                        Button {
+                            store.readerTheme = theme
+                            appState.updateReaderTheme(theme)
+                        } label: {
+                            Text(theme.rawValue)
+                        }
+                    }
+                }
+            } label: {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.footnote.weight(.bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 32, height: 32)
+                    .background(Color.white.opacity(0.12), in: Circle())
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .glassCard(Capsule())
+        .padding(.horizontal, 20)
+        .padding(.top, 8)
+    }
+
+    @ViewBuilder
+    private var bottomHUDBar: some View {
+        if !store.pages.isEmpty {
+            VStack(spacing: 10) {
+                HStack(spacing: 12) {
+                    Button {
+                        Task {
+                            await store.goToPreviousChapter(apiClient: apiClient, session: appState.session)
+                            recordHistory()
+                        }
+                    } label: {
+                        Image(systemName: "backward.end.fill")
+                            .font(.subheadline)
+                            .foregroundStyle(store.hasPreviousChapter ? .white : .white.opacity(0.25))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!store.hasPreviousChapter)
+                    
+                    Text("\(store.currentPage)")
+                        .font(.caption.monospacedDigit().weight(.bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 28, alignment: .trailing)
+                    
+                    Slider(
+                        value: Binding(
+                            get: { Double(store.currentPage) },
+                            set: { store.currentPage = Int($0) }
+                        ),
+                        in: 1...Double(max(store.pages.count, 1)),
+                        step: 1
+                    )
+                    .tint(.cyan)
+                    
+                    Text("\(store.pages.count)")
+                        .font(.caption.monospacedDigit().weight(.bold))
+                        .foregroundStyle(.white.opacity(0.7))
+                        .frame(width: 28, alignment: .leading)
+                    
+                    Button {
+                        Task {
+                            await store.goToNextChapter(apiClient: apiClient, session: appState.session)
+                            recordHistory()
+                        }
+                    } label: {
+                        Image(systemName: "forward.end.fill")
+                            .font(.subheadline)
+                            .foregroundStyle(store.hasNextChapter ? .white : .white.opacity(0.25))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!store.hasNextChapter)
+                }
+            }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 12)
+            .glassCard(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .padding(.horizontal, 20)
+            .safeAreaPadding(.bottom, 12)
+        }
+    }
+
+    @ViewBuilder
+    private var bufferingOverlayLayer: some View {
+        if store.isBufferingChapter {
+            ChapterLoadingOverlayView(
+                mangaTitle: store.manga?.title ?? (isEn ? "Manga" : "Manga"),
+                chapterName: store.currentChapter.displayName,
+                chapterIndex: store.currentChapterIndex,
+                totalPages: store.pages.count,
+                isEn: isEn,
+                onDismiss: {
+                    dismiss()
+                }
+            )
+            .zIndex(100)
+        }
+    }
     }
     
     private func recordHistory() {

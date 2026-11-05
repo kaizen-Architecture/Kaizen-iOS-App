@@ -148,6 +148,10 @@ public struct ReadingHomeView: View {
     private func heroCard(_ entry: ReadingHistoryEntry) -> some View {
         let coverURL = entry.coverUrl.flatMap { URL(string: $0) }
         let manga = appState.mangas.first(where: { $0.id == entry.mangaId })
+        let progressVal: Double = entry.progressPercentage
+        let chapterIdxText = "\(entry.chapterIndex)"
+        let pagesText = "\(entry.pageIndex + 1)/\(entry.totalPages)"
+        let subtitle = (isEn ? "Chapter " : "Capítulo ") + chapterIdxText + " · " + (isEn ? "p. " : "pág. ") + pagesText
         
         return ZStack {
             RemoteImage(url: coverURL, token: appState.session?.apiToken, contentMode: .fill)
@@ -169,10 +173,10 @@ public struct ReadingHomeView: View {
                         .font(.title3.weight(.bold))
                         .foregroundStyle(.white)
                         .lineLimit(2)
-                    Text((isEn ? "Chapter " : "Capítulo ") + "\(entry.chapterIndex) · " + (isEn ? "p. " : "pág. ") + "\(entry.pageIndex + 1)/\(entry.totalPages)")
+                    Text(subtitle)
                         .font(.footnote)
                         .foregroundStyle(.white.opacity(0.75))
-                    ProgressView(value: entry.progressPercentage, total: 100)
+                    ProgressView(value: progressVal, total: 100)
                         .tint(.cyan)
                     Button {
                         resumeEntry = entry

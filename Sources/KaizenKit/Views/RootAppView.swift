@@ -153,7 +153,6 @@ struct MainTabsView: View {
             }
         }
         .tabViewStyle(.sidebarAdaptable)
-        .tabBarMinimizeBehavior(.onScrollDown)
         .onChange(of: appState.isManagement) { _, isManagement in
             if !isManagement && selection == .server { selection = .reading }
         }

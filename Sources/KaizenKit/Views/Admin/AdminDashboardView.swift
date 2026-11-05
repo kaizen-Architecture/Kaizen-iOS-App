@@ -432,7 +432,7 @@ public struct AdminDashboardView: View {
     
     @ViewBuilder
     private var failuresSections: some View {
-        Section(isEn ? "Blocked sources" : "Fuentes bloqueadas") {
+        Section {
             if blockedSources.isEmpty {
                 Label(isEn ? "All scrapers are working" : "Todos los scrapers funcionan", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
@@ -456,9 +456,11 @@ public struct AdminDashboardView: View {
                 }
                 .disabled(store.activeAction != nil)
             }
+        } header: {
+            Text(isEn ? "Blocked sources" : "Fuentes bloqueadas")
         }
         
-        Section(isEn ? "Failed downloads (\(store.failedJobs.count))" : "Descargas fallidas (\(store.failedJobs.count))") {
+        Section {
             if store.isLoadingFailedJobs && store.failedJobs.isEmpty {
                 HStack { Spacer(); ProgressView(); Spacer() }
             } else if store.failedJobs.isEmpty {
@@ -515,6 +517,8 @@ public struct AdminDashboardView: View {
                 }
                 .disabled(store.activeAction != nil)
             }
+        } header: {
+            Text(isEn ? "Failed downloads (\(store.failedJobs.count))" : "Descargas fallidas (\(store.failedJobs.count))")
         }
     }
     
