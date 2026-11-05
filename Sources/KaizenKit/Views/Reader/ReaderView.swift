@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Lector Inmersivo de Kaizen (Inspirado en Paperback: Zoom, Scrubber reactivo, HUD Glassmorphism, Bilingüe)
 @MainActor
@@ -16,6 +17,7 @@ public final class ReaderStore {
     public var readerTheme: ReaderTheme = .black
     public var isHUDVisible: Bool = true
     public var isLoading: Bool = false
+    public var isBufferingChapter: Bool = true
     public var errorMessage: String?
     
     public init(
@@ -74,6 +76,9 @@ public final class ReaderStore {
     public func loadPages(apiClient: KaizenAPIClient, session: UserSession?) async {
         guard let session else { return }
         
+        isBufferingChapter = true
+        errorMessage = nil
+        
         // 1. Comprobar si las páginas ya fueron precargadas en segundo plano
         if let cached = await ChapterPrefetchManager.shared.cachedPages(for: currentChapterId), !cached.isEmpty {
             self.pages = cached
@@ -82,49 +87,104 @@ public final class ReaderStore {
             if currentPage > pages.count && !pages.isEmpty {
                 currentPage = 1
             }
-            // Disparar precarga del siguiente capítulo si existe
-            if let next = nextChapter {
-                Task {
-                    await ChapterPrefetchManager.shared.prefetchNextChapter(
-                        mangaId: mangaId,
-                        nextChapter: next,
-                        apiClient: apiClient,
-                        session: session
-                    )
+            
+            // Comprobar si la página inicial ya está en caché de disco o memoria
+            let targetPage = max(min(currentPage, cached.count), 1)
+            let initialUrlStr = cached[targetPage - 1]
+            if let initialUrl = URL(string: initialUrlStr),
+               await ImageLoader.shared.cachedImage(for: initialUrl) != nil {
+                // Página ya disponible de inmediato: abrir sin demora
+                withAnimation(.easeOut(duration: 0.25)) {
+                    self.isBufferingChapter = false
+                }
+            } else {
+                // Descarga prioritaria de la primera página
+                if let initialUrl = URL(string: initialUrlStr) {
+                    _ = await ImageLoader.shared.image(for: initialUrl, token: session.apiToken)
+                }
+                withAnimation(.easeOut(duration: 0.3)) {
+                    self.isBufferingChapter = false
                 }
             }
+            
+            triggerDelayedPrefetch(apiClient: apiClient, session: session)
             return
         }
         
         isLoading = true
-        errorMessage = nil
-        defer { isLoading = false }
         
         do {
-            pages = try await apiClient.fetchChapterPages(
+            let fetchedPages = try await apiClient.fetchChapterPages(
                 serverUrl: session.serverUrl,
                 token: session.apiToken,
                 mangaId: mangaId,
                 chapterId: currentChapterId
             )
-            await ChapterPrefetchManager.shared.storePages(pages, for: currentChapterId)
+            self.pages = fetchedPages
+            await ChapterPrefetchManager.shared.storePages(fetchedPages, for: currentChapterId)
+            
             if currentPage > pages.count && !pages.isEmpty {
                 currentPage = 1
             }
             
-            // Disparar precarga del siguiente capítulo
-            if let next = nextChapter {
-                Task {
-                    await ChapterPrefetchManager.shared.prefetchNextChapter(
-                        mangaId: mangaId,
-                        nextChapter: next,
-                        apiClient: apiClient,
-                        session: session
-                    )
+            // BUFFER PRIORITARIO: Descargar inmediatamente la página actual con máxima prioridad
+            // Al dedicar todo el ancho de banda exclusivamente a la página 1, tarda solo ~200-400ms
+            let targetPage = max(min(currentPage, fetchedPages.count), 1)
+            if !fetchedPages.isEmpty, let firstUrl = URL(string: fetchedPages[targetPage - 1]) {
+                _ = await ImageLoader.shared.image(for: firstUrl, token: session.apiToken)
+            }
+            
+            // Desvanecer la pantalla de preparación para mostrar el lector con la página 1 ya lista
+            withAnimation(.easeOut(duration: 0.35)) {
+                self.isLoading = false
+                self.isBufferingChapter = false
+            }
+            
+            // Pre-cargar la página siguiente en segundo plano para scroll instantáneo
+            if targetPage < fetchedPages.count, let secondUrl = URL(string: fetchedPages[targetPage]) {
+                Task(priority: .userInitiated) {
+                    _ = await ImageLoader.shared.image(for: secondUrl, token: session.apiToken)
                 }
             }
+            
+            triggerDelayedPrefetch(apiClient: apiClient, session: session)
         } catch {
-            errorMessage = error.localizedDescription
+            withAnimation {
+                self.isLoading = false
+                self.isBufferingChapter = false
+                self.errorMessage = error.localizedDescription
+            }
+        }
+    }
+    
+    public func triggerDelayedPrefetch(apiClient: KaizenAPIClient, session: UserSession?) {
+        guard let next = nextChapter else { return }
+        Task(priority: .utility) {
+            // Esperar 3 segundos para no competir con las primeras páginas del capítulo en curso
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            if Task.isCancelled { return }
+            await ChapterPrefetchManager.shared.prefetchNextChapter(
+                mangaId: mangaId,
+                nextChapter: next,
+                apiClient: apiClient,
+                session: session
+            )
+        }
+    }
+    
+    public func prefetchUpcomingPages(from pageIndex: Int, session: UserSession?) {
+        guard let session, !pages.isEmpty else { return }
+        let startIndex = pageIndex
+        let endIndex = min(startIndex + 3, pages.count)
+        guard startIndex < endIndex else { return }
+        
+        let token = session.apiToken
+        let upcomingUrls = Array(pages[startIndex..<endIndex])
+        Task(priority: .utility) {
+            for urlStr in upcomingUrls {
+                guard let url = URL(string: urlStr) else { continue }
+                _ = await ImageLoader.shared.image(for: url, token: token)
+            }
         }
     }
     
@@ -134,6 +194,7 @@ public final class ReaderStore {
         currentChapterIndex = next.index
         currentPage = 1
         pages = []
+        isBufferingChapter = true
         await loadPages(apiClient: apiClient, session: session)
     }
     
@@ -143,6 +204,7 @@ public final class ReaderStore {
         currentChapterIndex = prev.index
         currentPage = 1
         pages = []
+        isBufferingChapter = true
         await loadPages(apiClient: apiClient, session: session)
     }
     
@@ -217,16 +279,9 @@ public struct ReaderView: View {
         ZStack {
             backgroundColor.ignoresSafeArea()
             
-            // Área de Páginas con zoom interactivo
+            // Área de Páginas con zoom interactivo y carga optimizada
             Group {
-                if store.isLoading && store.pages.isEmpty {
-                    VStack(spacing: 14) {
-                        ProgressView().tint(.cyan)
-                        Text(isEn ? "Loading pages from server..." : "Cargando páginas del servidor...")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                } else if store.pages.isEmpty {
+                if store.pages.isEmpty && !store.isBufferingChapter {
                     ContentUnavailableView(
                         isEn ? "No pages found" : "No se encontraron páginas",
                         systemImage: "photo.badge.exclamationmark",
@@ -269,9 +324,13 @@ public struct ReaderView: View {
                                     .frame(height: 0)
                                     
                                     ForEach(Array(store.pages.enumerated()), id: \.offset) { index, urlString in
-                                        ZoomablePageView(
+                                        ReaderPageView(
+                                            pageIndex: index + 1,
+                                            totalPages: store.pages.count,
                                             url: URL(string: urlString),
-                                            token: appState.session?.apiToken
+                                            token: appState.session?.apiToken,
+                                            isEn: isEn,
+                                            readerTheme: store.readerTheme
                                         )
                                         .id(index + 1)
                                     }
@@ -333,9 +392,13 @@ public struct ReaderView: View {
                     case .horizontalLTR, .horizontalRTL:
                         TabView(selection: $store.currentPage) {
                             ForEach(Array(store.pages.enumerated()), id: \.offset) { index, urlString in
-                                ZoomablePageView(
+                                ReaderPageView(
+                                    pageIndex: index + 1,
+                                    totalPages: store.pages.count,
                                     url: URL(string: urlString),
-                                    token: appState.session?.apiToken
+                                    token: appState.session?.apiToken,
+                                    isEn: isEn,
+                                    readerTheme: store.readerTheme
                                 )
                                 .tag(index + 1)
                             }
@@ -381,32 +444,32 @@ public struct ReaderView: View {
             }
             
             // HUD Flotante (Glassmorphism estilo Paperback)
-            if store.isHUDVisible {
+            if store.isHUDVisible && !store.isBufferingChapter {
                 VStack {
-                    // Barra Superior Flotante
+                    // Barra Superior Flotante Liquid Glass
                     HStack(spacing: 14) {
                         Button {
                             dismiss()
                         } label: {
-                            Image(systemName: "chevron.backward")
-                                .font(.headline.weight(.semibold))
+                            Image(systemName: "xmark")
+                                .font(.footnote.weight(.bold))
                                 .foregroundStyle(.white)
-                                .padding(10)
-                                .background(Color.white.opacity(0.14), in: Circle())
+                                .frame(width: 32, height: 32)
+                                .background(Color.white.opacity(0.12), in: Circle())
                         }
+                        .buttonStyle(.plain)
                         
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(spacing: 2) {
                             Text(store.manga?.title ?? (isEn ? "Reader" : "Lector"))
                                 .font(.subheadline.weight(.bold))
                                 .foregroundStyle(.white)
                                 .lineLimit(1)
                             
                             Text((isEn ? "Chapter " : "Capítulo ") + "\(store.currentChapterIndex)")
-                                .font(.caption)
+                                .font(.caption2.weight(.medium))
                                 .foregroundStyle(.cyan)
                         }
-                        
-                        Spacer()
+                        .frame(maxWidth: .infinity)
                         
                         // Menú de Ajustes del Lector
                         Menu {
@@ -433,26 +496,24 @@ public struct ReaderView: View {
                             }
                         } label: {
                             Image(systemName: "slider.horizontal.3")
-                                .font(.headline)
+                                .font(.footnote.weight(.bold))
                                 .foregroundStyle(.white)
-                                .padding(10)
-                                .background(Color.white.opacity(0.14), in: Circle())
+                                .frame(width: 32, height: 32)
+                                .background(Color.white.opacity(0.12), in: Circle())
                         }
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 8)
-                    .background(Color.black.opacity(0.8), in: RoundedRectangle(cornerRadius: 16))
-                    .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.15), lineWidth: 1))
-                    .padding(.horizontal, 16)
-                    .padding(.top, 10)
+                    .glassEffect(.regular.interactive(), in: Capsule())
+                    .padding(.horizontal, 20)
+                    .padding(.top, 8)
                     
                     Spacer()
                     
-                    // Barra Inferior Flotante (Scrubber & Controles de Capítulos)
+                    // Barra Inferior Flotante (Scrubber Liquid Glass)
                     if !store.pages.isEmpty {
-                        VStack(spacing: 8) {
+                        VStack(spacing: 10) {
                             HStack(spacing: 12) {
-                                // Capítulo Anterior
                                 Button {
                                     Task {
                                         await store.goToPreviousChapter(apiClient: apiClient, session: appState.session)
@@ -462,14 +523,14 @@ public struct ReaderView: View {
                                     Image(systemName: "backward.end.fill")
                                         .font(.subheadline)
                                         .foregroundStyle(store.hasPreviousChapter ? .white : .white.opacity(0.25))
-                                        .padding(8)
                                 }
+                                .buttonStyle(.plain)
                                 .disabled(!store.hasPreviousChapter)
                                 
                                 Text("\(store.currentPage)")
                                     .font(.caption.monospacedDigit().weight(.bold))
                                     .foregroundStyle(.white)
-                                    .frame(width: 32, alignment: .trailing)
+                                    .frame(width: 28, alignment: .trailing)
                                 
                                 Slider(
                                     value: Binding(
@@ -483,10 +544,9 @@ public struct ReaderView: View {
                                 
                                 Text("\(store.pages.count)")
                                     .font(.caption.monospacedDigit().weight(.bold))
-                                    .foregroundStyle(.white)
-                                    .frame(width: 32, alignment: .leading)
+                                    .foregroundStyle(.white.opacity(0.7))
+                                    .frame(width: 28, alignment: .leading)
                                 
-                                // Capítulo Siguiente
                                 Button {
                                     Task {
                                         await store.goToNextChapter(apiClient: apiClient, session: appState.session)
@@ -496,20 +556,34 @@ public struct ReaderView: View {
                                     Image(systemName: "forward.end.fill")
                                         .font(.subheadline)
                                         .foregroundStyle(store.hasNextChapter ? .white : .white.opacity(0.25))
-                                        .padding(8)
                                 }
+                                .buttonStyle(.plain)
                                 .disabled(!store.hasNextChapter)
                             }
                         }
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, 18)
                         .padding(.vertical, 12)
-                        .background(Color.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 18))
-                        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.white.opacity(0.18), lineWidth: 1))
-                        .padding(.horizontal, 24)
-                        .safeAreaPadding(.bottom, 16)
+                        .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                        .padding(.horizontal, 20)
+                        .safeAreaPadding(.bottom, 12)
                     }
                 }
                 .transition(.opacity.combined(with: .scale(scale: 0.98)))
+            }
+            
+            // Pantalla inmersiva de transición y carga del capítulo (evita ver páginas a medio cargar)
+            if store.isBufferingChapter {
+                ChapterLoadingOverlayView(
+                    mangaTitle: store.manga?.title ?? (isEn ? "Manga" : "Manga"),
+                    chapterName: store.currentChapter.displayName,
+                    chapterIndex: store.currentChapterIndex,
+                    totalPages: store.pages.count,
+                    isEn: isEn,
+                    onDismiss: {
+                        dismiss()
+                    }
+                )
+                .zIndex(100)
             }
         }
         .alert(isEn ? "Chapter Status" : "Estado del Capítulo", isPresented: Binding(
@@ -529,11 +603,12 @@ public struct ReaderView: View {
             await store.loadPages(apiClient: apiClient, session: appState.session)
             recordHistory()
         }
-        .onChange(of: store.currentPage) { _, _ in
+        .onChange(of: store.currentPage) { _, newPage in
             recordHistory()
             Task {
                 await store.saveProgress(apiClient: apiClient, session: appState.session)
             }
+            store.prefetchUpcomingPages(from: newPage, session: appState.session)
         }
     }
     
@@ -554,10 +629,10 @@ public struct ReaderView: View {
         impact.prepare()
         impact.impactOccurred()
         Task {
-            try? await Task.sleep(nanoseconds: 200_000_000)
+            try? await Task.sleep(nanoseconds: 150_000_000)
             await store.goToNextChapter(apiClient: apiClient, session: appState.session)
             recordHistory()
-            try? await Task.sleep(nanoseconds: 600_000_000)
+            try? await Task.sleep(nanoseconds: 500_000_000)
             isTransitioningChapter = false
         }
     }
@@ -571,7 +646,7 @@ public struct ReaderView: View {
         Task {
             await store.goToPreviousChapter(apiClient: apiClient, session: appState.session)
             recordHistory()
-            try? await Task.sleep(nanoseconds: 600_000_000)
+            try? await Task.sleep(nanoseconds: 500_000_000)
             isTransitioningChapter = false
         }
     }
@@ -584,10 +659,19 @@ private struct ReaderTopOffsetKey: PreferenceKey {
     }
 }
 
-/// Página de Manga con soporte completo para Pinch-to-Zoom y Doble Tap
-private struct ZoomablePageView: View {
+/// Página de Manga inmersiva con proporciones reales, carga asíncrona optimizada,
+/// placeholder elegante con número de página y soporte completo para Pinch-to-Zoom y Doble Tap.
+private struct ReaderPageView: View {
+    let pageIndex: Int
+    let totalPages: Int
     let url: URL?
     let token: String?
+    let isEn: Bool
+    let readerTheme: ReaderTheme
+    
+    @State private var uiImage: UIImage?
+    @State private var isLoading: Bool = false
+    @State private var hasFailed: Bool = false
     
     @State private var scale: CGFloat = 1.0
     @State private var lastScale: CGFloat = 1.0
@@ -595,64 +679,252 @@ private struct ZoomablePageView: View {
     @State private var lastOffset: CGSize = .zero
     
     var body: some View {
-        RemoteImage(
-            url: url,
-            token: token,
-            contentMode: .fit
-        )
-        .scaleEffect(scale)
-        .offset(offset)
-        .gesture(
-            MagnificationGesture()
-                .onChanged { delta in
-                    let newScale = lastScale * delta
-                    scale = max(1.0, min(newScale, 4.0))
-                }
-                .onEnded { _ in
-                    if scale < 1.05 {
+        ZStack {
+            if let uiImage {
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .scaleEffect(scale)
+                    .offset(offset)
+                    .gesture(
+                        MagnificationGesture()
+                            .onChanged { delta in
+                                let newScale = lastScale * delta
+                                scale = max(1.0, min(newScale, 4.0))
+                            }
+                            .onEnded { _ in
+                                if scale < 1.05 {
+                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                        scale = 1.0
+                                        offset = .zero
+                                        lastOffset = .zero
+                                    }
+                                }
+                                lastScale = scale
+                            }
+                    )
+                    .simultaneousGesture(
+                        DragGesture()
+                            .onChanged { value in
+                                if scale > 1.05 {
+                                    offset = CGSize(
+                                        width: lastOffset.width + value.translation.width,
+                                        height: lastOffset.height + value.translation.height
+                                    )
+                                }
+                            }
+                            .onEnded { _ in
+                                if scale <= 1.05 {
+                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                        offset = .zero
+                                        lastOffset = .zero
+                                    }
+                                } else {
+                                    lastOffset = offset
+                                }
+                            }
+                    )
+                    .onTapGesture(count: 2) {
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                            scale = 1.0
-                            offset = .zero
-                            lastOffset = .zero
+                            if scale > 1.2 {
+                                scale = 1.0
+                                lastScale = 1.0
+                                offset = .zero
+                                lastOffset = .zero
+                            } else {
+                                scale = 2.5
+                                lastScale = 2.5
+                            }
                         }
                     }
-                    lastScale = scale
-                }
-        )
-        .simultaneousGesture(
-            DragGesture()
-                .onChanged { value in
-                    if scale > 1.05 {
-                        offset = CGSize(
-                            width: lastOffset.width + value.translation.width,
-                            height: lastOffset.height + value.translation.height
-                        )
+                    .transition(.opacity)
+            } else {
+                // Placeholder con proporción realista de manga (1 : 1.42) para que LazyVStack
+                // no colapse a 20pt y nunca muestre 50 spinners en columna.
+                MangaPagePlaceholderView(
+                    pageIndex: pageIndex,
+                    totalPages: totalPages,
+                    isEn: isEn,
+                    hasFailed: hasFailed,
+                    onRetry: {
+                        Task { await loadPage() }
                     }
-                }
-                .onEnded { _ in
-                    if scale <= 1.05 {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                            offset = .zero
-                            lastOffset = .zero
-                        }
-                    } else {
-                        lastOffset = offset
-                    }
-                }
-        )
-        .onTapGesture(count: 2) {
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                if scale > 1.2 {
-                    scale = 1.0
-                    lastScale = 1.0
-                    offset = .zero
-                    lastOffset = .zero
-                } else {
-                    scale = 2.5
-                    lastScale = 2.5
-                }
+                )
             }
         }
+        .task(id: url) {
+            await loadPage()
+        }
+    }
+    
+    private func loadPage() async {
+        guard let url else {
+            hasFailed = true
+            return
+        }
+        
+        // 1. Revisar caché inmediata en memoria o disco
+        if let cached = await ImageLoader.shared.cachedImage(for: url) {
+            self.uiImage = cached
+            self.hasFailed = false
+            return
+        }
+        
+        isLoading = true
+        hasFailed = false
+        
+        if let img = await ImageLoader.shared.image(for: url, token: token) {
+            withAnimation(.easeIn(duration: 0.2)) {
+                self.uiImage = img
+            }
+        } else {
+            self.hasFailed = true
+        }
+        isLoading = false
+    }
+}
+
+/// Placeholder con altura real y diseño elegante para páginas pendientes de descarga
+private struct MangaPagePlaceholderView: View {
+    let pageIndex: Int
+    let totalPages: Int
+    let isEn: Bool
+    let hasFailed: Bool
+    let onRetry: () -> Void
+    
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color(white: 0.08))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.white.opacity(0.06), lineWidth: 1)
+                )
+            
+            VStack(spacing: 14) {
+                if hasFailed {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 32))
+                        .foregroundStyle(.orange)
+                    
+                    Text(isEn ? "Failed to load page \(pageIndex)" : "Error al cargar la página \(pageIndex)")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.white)
+                    
+                    Button(action: onRetry) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.clockwise")
+                            Text(isEn ? "Retry" : "Reintentar")
+                        }
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(Color.cyan, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    HStack(spacing: 8) {
+                        ProgressView().tint(.cyan)
+                            .controlSize(.small)
+                        Text(totalPages > 0
+                            ? (isEn ? "Page \(pageIndex) of \(totalPages)" : "Página \(pageIndex) de \(totalPages)")
+                            : (isEn ? "Page \(pageIndex)" : "Página \(pageIndex)"))
+                            .font(.caption.monospacedDigit().weight(.semibold))
+                            .foregroundStyle(.white.opacity(0.85))
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(Color.black.opacity(0.65), in: Capsule())
+                    .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 1))
+                }
+            }
+            .padding(24)
+        }
+        .aspectRatio(1 / 1.42, contentMode: .fit)
+        .frame(minHeight: 480, maxHeight: 850)
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 4)
+        .padding(.vertical, 2)
+    }
+}
+
+/// Pantalla inmersiva de transición y preparación del capítulo
+private struct ChapterLoadingOverlayView: View {
+    let mangaTitle: String
+    let chapterName: String
+    let chapterIndex: Int
+    let totalPages: Int
+    let isEn: Bool
+    let onDismiss: () -> Void
+    
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            
+            RadialGradient(
+                colors: [Color.cyan.opacity(0.14), Color.clear],
+                center: .center,
+                startRadius: 20,
+                endRadius: 380
+            )
+            .ignoresSafeArea()
+            
+            VStack(spacing: 24) {
+                Spacer()
+                
+                ZStack {
+                    Circle()
+                        .fill(Color.cyan.opacity(0.12))
+                        .frame(width: 88, height: 88)
+                    
+                    Image(systemName: "book.pages.fill")
+                        .font(.system(size: 38))
+                        .foregroundStyle(.cyan)
+                }
+                
+                VStack(spacing: 8) {
+                    Text(mangaTitle)
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.75))
+                        .lineLimit(1)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 30)
+                    
+                    Text(chapterName.isEmpty ? ((isEn ? "Chapter " : "Capítulo ") + "\(chapterIndex)") : chapterName)
+                        .font(.title2.weight(.bold))
+                        .foregroundStyle(.white)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 24)
+                }
+                
+                VStack(spacing: 12) {
+                    ProgressView()
+                        .tint(.cyan)
+                        .controlSize(.regular)
+                    
+                    Text(totalPages > 0
+                        ? (isEn ? "Preparing \(totalPages) pages..." : "Preparando \(totalPages) páginas...")
+                        : (isEn ? "Loading chapter..." : "Cargando capítulo..."))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.top, 6)
+                
+                Spacer()
+                
+                Button(action: onDismiss) {
+                    Text(isEn ? "Cancel" : "Cancelar")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 12)
+                }
+                .buttonStyle(.plain)
+                .padding(.bottom, 24)
+            }
+        }
+        .transition(.opacity)
     }
 }
 

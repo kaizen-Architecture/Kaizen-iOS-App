@@ -1,289 +1,6 @@
 import SwiftUI
 import Charts
 
-/// Hoja / Drawer en vivo con la Cola de Descargas de Kaizen (`trpc/manga.downloadQueue`)
-public struct LiveDownloadQueueSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    @Environment(AppState.self) private var appState
-    let apiClient: KaizenAPIClient
-    
-    @State private var jobs: [DownloadQueueJob] = []
-    @State private var isLoading: Bool = false
-    @State private var selectedFilter: String = "all" // "all", "active", "waiting", "failed", "completed"
-    @State private var isExecutingAction: Bool = false
-    
-    public init(apiClient: KaizenAPIClient) {
-        self.apiClient = apiClient
-    }
-    
-    private var isEn: Bool {
-        appState.currentLanguage == "en"
-    }
-    
-    private var filteredJobs: [DownloadQueueJob] {
-        if selectedFilter == "all" { return jobs }
-        return jobs.filter { $0.status == selectedFilter }
-    }
-    
-    private var activeCount: Int { jobs.filter { $0.status == "active" }.count }
-    private var waitingCount: Int { jobs.filter { $0.status == "waiting" }.count }
-    private var failedCount: Int { jobs.filter { $0.status == "failed" }.count }
-    private var completedCount: Int { jobs.filter { $0.status == "completed" }.count }
-    
-    public var body: some View {
-        NavigationStack {
-            ZStack {
-                Color.black.ignoresSafeArea()
-                
-                VStack(spacing: 12) {
-                    filterPillsRow
-                    
-                    if isLoading && jobs.isEmpty {
-                        Spacer()
-                        ProgressView().tint(.cyan)
-                        Spacer()
-                    } else if filteredJobs.isEmpty {
-                        Spacer()
-                        ContentUnavailableView(
-                            isEn ? "Download Queue Empty" : "Cola de descargas vacía",
-                            systemImage: "arrow.down.circle",
-                            description: Text(isEn ? "No chapter downloads matching the current filter." : "No hay descargas de capítulos en este estado ahora mismo.")
-                        )
-                        Spacer()
-                    } else {
-                        ScrollView {
-                            LazyVStack(spacing: 10) {
-                                ForEach(filteredJobs) { job in
-                                    queueJobCard(job)
-                                }
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.bottom, 20)
-                        }
-                        .refreshable {
-                            await loadQueue()
-                        }
-                    }
-                    
-                    bottomActionsBar
-                }
-                .padding(.top, 8)
-            }
-            .navigationTitle(isEn ? "Live Download Queue" : "Cola de Descargas en Vivo")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        Task { await loadQueue() }
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                            .foregroundStyle(.cyan)
-                    }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button(isEn ? "Close" : "Cerrar") {
-                        dismiss()
-                    }
-                    .foregroundStyle(.cyan)
-                }
-            }
-            .task {
-                await loadQueue()
-                while !Task.isCancelled {
-                    try? await Task.sleep(nanoseconds: 3_500_000_000)
-                    guard !Task.isCancelled else { break }
-                    await loadQueue(silent: true)
-                }
-            }
-        }
-    }
-    
-    private var filterPillsRow: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                filterPill(id: "all", title: isEn ? "All (\(jobs.count))" : "Todas (\(jobs.count))", tint: .cyan)
-                filterPill(id: "active", title: isEn ? "Downloading (\(activeCount))" : "Descargando (\(activeCount))", tint: .cyan)
-                filterPill(id: "waiting", title: isEn ? "Queued (\(waitingCount))" : "En cola (\(waitingCount))", tint: .indigo)
-                filterPill(id: "failed", title: isEn ? "Failed (\(failedCount))" : "Fallidas (\(failedCount))", tint: .red)
-                filterPill(id: "completed", title: isEn ? "Completed (\(completedCount))" : "Completadas (\(completedCount))", tint: .green)
-            }
-            .padding(.horizontal, 16)
-        }
-    }
-    
-    private func filterPill(id: String, title: String, tint: Color) -> some View {
-        let isSelected = selectedFilter == id
-        return Button {
-            selectedFilter = id
-        } label: {
-            Text(title)
-                .font(.caption.weight(.bold))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(isSelected ? tint : Color.white.opacity(0.08), in: Capsule())
-                .foregroundStyle(isSelected ? Color.black : Color.white)
-        }
-        .buttonStyle(.plain)
-    }
-    
-    private func queueJobCard(_ job: DownloadQueueJob) -> some View {
-        let statusColor = colorForStatus(job.status)
-        let chapterStr = String(format: "%g", job.chapterIndex)
-        
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(job.mangaTitle)
-                        .font(.subheadline.weight(.bold))
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-                    
-                    HStack(spacing: 6) {
-                        Text((isEn ? "Ch. " : "Cap. ") + chapterStr)
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(.cyan)
-                        Text("•")
-                            .foregroundStyle(.secondary)
-                        Text(job.source)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                
-                Spacer()
-                
-                Text(labelForStatus(job))
-                    .font(.caption2.weight(.bold))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(statusColor.opacity(0.18), in: Capsule())
-                    .foregroundStyle(statusColor)
-            }
-            
-            if job.status == "active" {
-                ProgressView(value: Double(max(min(job.progress, 100), 5)) / 100.0)
-                    .tint(.cyan)
-            }
-            
-            if let reason = job.failedReason, !reason.isEmpty, job.status == "failed" {
-                HStack {
-                    Text(reason)
-                        .font(.caption2)
-                        .foregroundStyle(.red)
-                        .lineLimit(2)
-                    Spacer()
-                    Button {
-                        Task {
-                            guard let session = appState.session else { return }
-                            try? await apiClient.retryJob(serverUrl: session.serverUrl, token: session.apiToken, jobId: job.id)
-                            await loadQueue()
-                        }
-                    } label: {
-                        Text(isEn ? "Retry" : "Reintentar")
-                            .font(.caption2.weight(.bold))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Color.cyan.opacity(0.2), in: Capsule())
-                            .foregroundStyle(.cyan)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
-        .padding(12)
-        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(job.status == "active" ? Color.cyan.opacity(0.35) : Color.white.opacity(0.08), lineWidth: 1)
-        )
-    }
-    
-    private var bottomActionsBar: some View {
-        HStack(spacing: 10) {
-            Button {
-                Task {
-                    guard let session = appState.session else { return }
-                    isExecutingAction = true
-                    defer { isExecutingAction = false }
-                    try? await apiClient.retryAllFailedJobs(serverUrl: session.serverUrl, token: session.apiToken)
-                    await loadQueue()
-                }
-            } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: "arrow.clockwise")
-                    Text(isEn ? "Retry Failed" : "Reintentar Fallidas")
-                }
-                .font(.caption.weight(.bold))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
-                .background(Color.orange.opacity(0.18), in: RoundedRectangle(cornerRadius: 10))
-                .foregroundStyle(.orange)
-            }
-            .buttonStyle(.plain)
-            .disabled(isExecutingAction || failedCount == 0)
-            
-            Button {
-                Task {
-                    guard let session = appState.session else { return }
-                    isExecutingAction = true
-                    defer { isExecutingAction = false }
-                    try? await apiClient.cleanQueue(serverUrl: session.serverUrl, token: session.apiToken, type: "completed")
-                    await loadQueue()
-                }
-            } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: "trash")
-                    Text(isEn ? "Clean Completed" : "Limpiar Completadas")
-                }
-                .font(.caption.weight(.bold))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
-                .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
-                .foregroundStyle(.white)
-            }
-            .buttonStyle(.plain)
-            .disabled(isExecutingAction)
-        }
-        .padding(.horizontal, 16)
-        .padding(.bottom, 12)
-    }
-    
-    private func colorForStatus(_ status: String) -> Color {
-        switch status {
-        case "active": return .cyan
-        case "waiting": return .indigo
-        case "failed": return .red
-        case "completed": return .green
-        default: return .secondary
-        }
-    }
-    
-    private func labelForStatus(_ job: DownloadQueueJob) -> String {
-        switch job.status {
-        case "active":
-            return job.progress > 0 ? "\(job.progress)%" : (isEn ? "Downloading" : "Descargando")
-        case "waiting":
-            return isEn ? "Queued" : "En cola"
-        case "failed":
-            return isEn ? "Failed" : "Fallido"
-        case "completed":
-            return isEn ? "Completed" : "Completado"
-        default:
-            return job.status.capitalized
-        }
-    }
-    
-    private func loadQueue(silent: Bool = false) async {
-        guard let session = appState.session else { return }
-        if !silent { isLoading = true }
-        defer { if !silent { isLoading = false } }
-        if let fetched = try? await apiClient.fetchDownloadQueue(serverUrl: session.serverUrl, token: session.apiToken) {
-            self.jobs = fetched
-            appState.downloadQueueJobs = fetched
-        }
-    }
-}
-
 /// Dashboard nativo de Kaizen para el Administrador (KPIs en vivo, Gráfica 14 días, GB por Fuente, Cola en vivo y Últimas Descargas)
 public struct HomeDashboardView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -359,7 +76,7 @@ public struct HomeDashboardView: View {
                     await loadDashboardData()
                 }
             }
-            .navigationTitle(isEn ? "Kaizen Dashboard" : "Dashboard Kaizen")
+            .navigationTitle(isEn ? "Statistics" : "Estadísticas")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -499,11 +216,7 @@ public struct HomeDashboardView: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 14))
-        .overlay(
-            RoundedRectangle(cornerRadius: 14)
-                .stroke(color.opacity(0.22), lineWidth: 1)
-        )
+        .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
     
     // MARK: - 2. Gráfica de Descargas — Últimos 14 Días (Swift Charts)
@@ -552,8 +265,7 @@ public struct HomeDashboardView: View {
             }
         }
         .padding(15)
-        .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.08), lineWidth: 1))
+        .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
     
     // MARK: - 3. Series y Almacenamiento por Fuente (trpc/manga.sourceStats)
@@ -605,8 +317,7 @@ public struct HomeDashboardView: View {
             }
         }
         .padding(15)
-        .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.08), lineWidth: 1))
+        .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
     
     // MARK: - 4. Cola de Descargas en Vivo (trpc/manga.downloadQueue)
@@ -672,8 +383,7 @@ public struct HomeDashboardView: View {
             }
         }
         .padding(15)
-        .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.cyan.opacity(0.22), lineWidth: 1))
+        .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
     
     // MARK: - 5. Últimas Descargas del Servidor (trpc/manga.history)
@@ -734,8 +444,7 @@ public struct HomeDashboardView: View {
             }
         }
         .padding(15)
-        .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.08), lineWidth: 1))
+        .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
     
     // MARK: - Carga de Datos del Dashboard

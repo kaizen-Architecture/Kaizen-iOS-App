@@ -43,19 +43,12 @@ public struct MangaCardView: View {
                 // Badge de capítulos no leídos
                 if manga.unreadCount > 0 {
                     Text("\(manga.unreadCount)")
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 3)
-                        .background(
-                            LinearGradient(
-                                colors: [Color.red, Color.orange],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            in: Capsule()
-                        )
-                        .padding(8)
+                        .font(.caption2.weight(.heavy).monospacedDigit())
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.cyan, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .padding(6)
                 }
                 
                 // Indicador de favorito
@@ -70,19 +63,14 @@ public struct MangaCardView: View {
                 }
             }
             
-            // Título (reserva siempre el espacio de 2 líneas y alinea arriba para que las carátulas no se desnivelen)
+            // Título en una línea (el diseño nativo deja el protagonismo a la portada)
             Text(manga.title)
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(.white)
-                .lineLimit(2, reservesSpace: true)
+                .lineLimit(1)
                 .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
             
-            // Subtítulo con capítulos
-            Text(appState.currentLanguage == "en" ? "\(manga.totalChapters) chapters" : "\(manga.totalChapters) capítulos")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
         }
         .frame(maxHeight: .infinity, alignment: .top)
     }

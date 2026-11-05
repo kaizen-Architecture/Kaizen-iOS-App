@@ -71,9 +71,9 @@ public struct LibraryView: View {
         case .unifiedCatalog:
             return isEn ? "Library" : "Biblioteca"
         case .personalReading:
-            return isEn ? "My Reading" : "Mi Lectura"
+            return isEn ? "Library" : "Biblioteca"
         case .discoverCatalog:
-            return isEn ? "Discover" : "Explorar Catálogo"
+            return isEn ? "Explore" : "Explorar"
         }
     }
     
@@ -337,118 +337,12 @@ public struct LibraryView: View {
                         }
                     }
                     
-                    if appState.isManagement && !appState.libraries.isEmpty {
-                        serverLibrariesMenu
-                    }
                 }
             }
             
-            // Fila 2: Filtros por Tipo (Estado) y Género
-            HStack(spacing: 8) {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        Menu {
-                            Button(isEn ? "All Types" : "Todos los tipos") {
-                                selectedStatus = nil
-                            }
-                            Divider()
-                            ForEach(availableStatuses, id: \.self) { status in
-                                Button(localizedStatus(status)) {
-                                    selectedStatus = status
-                                }
-                            }
-                        } label: {
-                            HStack(spacing: 5) {
-                                Image(systemName: "line.3.horizontal.decrease.circle")
-                                Text(selectedStatus == nil ? (isEn ? "Type: All" : "Tipo: Todos") : localizedStatus(selectedStatus!))
-                                    .fontWeight(.medium)
-                                Image(systemName: "chevron.down")
-                                    .font(.caption2)
-                            }
-                            .font(.caption)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(
-                                selectedStatus != nil ? Color.cyan : Color.white.opacity(0.07),
-                                in: Capsule()
-                            )
-                            .foregroundStyle(selectedStatus != nil ? Color.black : Color.white)
-                        }
-                        
-                        if !availableGenres.isEmpty {
-                            Menu {
-                                Button(isEn ? "All Genres" : "Todos los géneros") {
-                                    selectedGenre = nil
-                                }
-                                Divider()
-                                ForEach(availableGenres, id: \.self) { genre in
-                                    Button(genre) {
-                                        selectedGenre = genre
-                                    }
-                                }
-                            } label: {
-                                HStack(spacing: 5) {
-                                    Image(systemName: "tag")
-                                    Text(selectedGenre == nil ? (isEn ? "Genre: All" : "Género: Todos") : selectedGenre!)
-                                        .fontWeight(.medium)
-                                    Image(systemName: "chevron.down")
-                                        .font(.caption2)
-                                }
-                                .font(.caption)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
-                                .background(
-                                    selectedGenre != nil ? Color.cyan : Color.white.opacity(0.07),
-                                    in: Capsule()
-                                )
-                                .foregroundStyle(selectedGenre != nil ? Color.black : Color.white)
-                            }
-                        }
-                        
-                        if hasActiveFilters {
-                            Button(action: resetFilters) {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "xmark.circle.fill")
-                                    Text(isEn ? "Clear" : "Limpiar")
-                                }
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(.secondary)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 6)
-                            }
-                        }
-                    }
-                }
-            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
-    }
-    
-    private var serverLibrariesMenu: some View {
-        Menu {
-            Button(isEn ? "All Server Libraries" : "Todas las bibliotecas") {
-                selectedLibraryId = nil
-            }
-            Divider()
-            ForEach(appState.libraries) { lib in
-                Button(lib.displayTitle) {
-                    selectedLibraryId = lib.id
-                }
-            }
-            Divider()
-            Button(isEn ? "Add Library..." : "Añadir biblioteca...") {
-                newLibraryPath = ""
-                creationError = nil
-                showCreateLibraryAlert = true
-            }
-        } label: {
-            Image(systemName: selectedLibraryId != nil ? "folder.fill.badge.gearshape" : "folder.badge.gearshape")
-                .font(.headline)
-                .foregroundStyle(selectedLibraryId != nil ? Color.black : Color.cyan)
-                .padding(8)
-                .background(selectedLibraryId != nil ? Color.cyan : Color.white.opacity(0.08), in: Circle())
-        }
     }
     
     @ViewBuilder
@@ -534,57 +428,84 @@ public struct LibraryView: View {
     }
     
     private var toolbarTrailingButtons: some View {
-        HStack(spacing: 10) {
-            if appState.isManagement {
-                Button {
-                    showQueueSheet = true
-                } label: {
-                    let totalQ = appState.activeDownloadCount + appState.waitingDownloadCount
-                    HStack(spacing: 4) {
-                        Image(systemName: "arrow.down.circle.fill")
-                        if totalQ > 0 {
-                            Text("\(totalQ)")
+        HStack(spacing: 4) {
+            Menu {
+                Picker(isEn ? "Status" : "Estado", selection: $selectedStatus) {
+                    Text(isEn ? "All" : "Todos").tag(String?.none)
+                    ForEach(availableStatuses, id: \.self) { status in
+                        Text(localizedStatus(status)).tag(String?.some(status))
+                    }
+                }
+                .pickerStyle(.menu)
+                
+                if !availableGenres.isEmpty {
+                    Picker(isEn ? "Genre" : "Género", selection: $selectedGenre) {
+                        Text(isEn ? "All" : "Todos").tag(String?.none)
+                        ForEach(availableGenres, id: \.self) { genre in
+                            Text(genre).tag(String?.some(genre))
                         }
                     }
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(totalQ > 0 ? Color.cyan : Color.secondary)
+                    .pickerStyle(.menu)
                 }
-            }
-            
-            if mode != .discoverCatalog {
-                Button {
-                    newShelfName = ""
-                    showCreateShelfAlert = true
-                } label: {
-                    Image(systemName: "folder.badge.plus")
-                        .foregroundStyle(.cyan)
+                
+                if appState.isManagement && !appState.libraries.isEmpty {
+                    Picker(isEn ? "Server library" : "Biblioteca del servidor", selection: $selectedLibraryId) {
+                        Text(isEn ? "All" : "Todas").tag(Int?.none)
+                        ForEach(appState.libraries) { lib in
+                            Text(lib.displayTitle).tag(Int?.some(lib.id))
+                        }
+                    }
+                    .pickerStyle(.menu)
                 }
-                .help(isEn ? "New Shelf" : "Nueva Estantería")
-            }
-            
-            Button {
-                Task {
-                    await appState.loadLibrary(client: apiClient, force: true)
+                
+                if hasActiveFilters {
+                    Button(role: .destructive, action: resetFilters) {
+                        Label(isEn ? "Clear filters" : "Quitar filtros", systemImage: "xmark.circle")
+                    }
                 }
             } label: {
-                Image(systemName: "arrow.triangle.2.circlepath")
-                    .foregroundStyle(appState.isLoadingLibrary ? .cyan : .secondary)
+                Image(systemName: hasActiveFilters ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
             }
-            .disabled(appState.isLoadingLibrary)
+            .accessibilityLabel(isEn ? "Filters" : "Filtros")
             
-            if appState.isManagement {
-                Button {
-                    showAddMangaSheet = true
-                } label: {
-                    Label(isEn ? "Add Manga" : "Añadir Manga", systemImage: "plus.circle.fill")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.cyan)
+            Menu {
+                if mode != .discoverCatalog {
+                    Button {
+                        newShelfName = ""
+                        showCreateShelfAlert = true
+                    } label: {
+                        Label(isEn ? "New Shelf" : "Nueva Estantería", systemImage: "folder.badge.plus")
+                    }
                 }
+                
+                if appState.isManagement {
+                    Button {
+                        showAddMangaSheet = true
+                    } label: {
+                        Label(isEn ? "Add Manga" : "Añadir Manga", systemImage: "plus.circle")
+                    }
+                    Button {
+                        newLibraryPath = ""
+                        creationError = nil
+                        showCreateLibraryAlert = true
+                    } label: {
+                        Label(isEn ? "Add Library..." : "Añadir biblioteca...", systemImage: "folder.badge.gearshape")
+                    }
+                }
+                
+                Button {
+                    Task { await appState.loadLibrary(client: apiClient, force: true) }
+                } label: {
+                    Label(isEn ? "Refresh" : "Actualizar", systemImage: "arrow.triangle.2.circlepath")
+                }
+                .disabled(appState.isLoadingLibrary)
+            } label: {
+                Image(systemName: "plus")
             }
+            .accessibilityLabel(isEn ? "Add" : "Añadir")
         }
     }
 }
-
 /// Ficha completa e interactiva de Manga adaptada a iPad (Panel Ocultable/Ampliable y Admin Plegado) y iPhone
 public struct MangaDetailView: View {
     private enum PadPanelMode {
@@ -622,6 +543,7 @@ public struct MangaDetailView: View {
     @State private var configuredSources: [MangaConfiguredSource] = []
     @State private var isLoadingSources: Bool = false
     @State private var showSourcesSheet: Bool = false
+    @State private var showAdminSheet: Bool = false
     @State private var showRedownloadRangeAlert: Bool = false
     @State private var rangeStartChapter: String = "1"
     @State private var rangeEndChapter: String = "10"
@@ -678,7 +600,94 @@ public struct MangaDetailView: View {
         chapters.sorted { $0.index < $1.index }.first { !$0.isRead }
     }
     
-    // Columnas de capítulos cuando el panel izquierdo está oculto (100% pantalla para capítulos)
+    // MARK: - Fondo atmosférico (portada desenfocada) y hoja de administración
+    
+    private var detailBackdrop: some View {
+        ZStack(alignment: .top) {
+            Color.black
+            ZStack {
+                RemoteImage(
+                    url: currentManga.coverUrl.flatMap { URL(string: $0) },
+                    token: appState.session?.apiToken,
+                    contentMode: .fill
+                )
+                .blur(radius: 50)
+                .opacity(0.55)
+                LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
+            }
+            .frame(height: 440)
+            .clipped()
+        }
+        .ignoresSafeArea()
+    }
+    
+    private var adminSheetButton: some View {
+        Button {
+            showAdminSheet = true
+        } label: {
+            HStack {
+                Label(isEn ? "Sources & administration" : "Fuentes y administración", systemImage: "server.rack")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 16)
+            .frame(height: 48)
+            .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+    
+    private var adminSheetContent: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 16) {
+                    sourcesInlineSection
+                    serverControlSection
+                }
+                .padding(16)
+            }
+            .background(Color.black.ignoresSafeArea())
+            .navigationTitle(isEn ? "Server" : "Servidor")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(isEn ? "Done" : "Listo") { showAdminSheet = false }
+                }
+            }
+        .sheet(isPresented: $showSourcesSheet) {
+            MangaSourcesManagementSheet(manga: currentManga, apiClient: apiClient) {
+                Task { await loadDetail() }
+            }
+        }
+        .alert(isEn ? "Redownload Chapter Range" : "Redescargar Rango de Capítulos", isPresented: $showRedownloadRangeAlert) {
+            TextField(isEn ? "Start Chapter (e.g. 1)" : "Capítulo Inicio (ej: 1)", text: $rangeStartChapter)
+            TextField(isEn ? "End Chapter (e.g. 20)" : "Capítulo Fin (ej: 20)", text: $rangeEndChapter)
+            Button(isEn ? "Redownload" : "Redescargar") {
+                executeRedownloadRange()
+            }
+            Button(isEn ? "Cancel" : "Cancelar", role: .cancel) {}
+        } message: {
+            Text(isEn ? "Re-queues all chapters in this range for redownload on Kaizen server." : "Encola la redescarga completa de los capítulos seleccionados en el servidor Kaizen.")
+        }
+        .alert(isEn ? "Delete Series from Kaizen" : "Eliminar Manga de Kaizen", isPresented: $showDeleteMangaAlert) {
+            Button(isEn ? "Delete from Server & Disk" : "Eliminar de Servidor y Disco", role: .destructive) {
+                executeDeleteManga(deleteFiles: true)
+            }
+            Button(isEn ? "Unlink Only (Keep Files)" : "Solo Desvincular (Conservar Archivos)") {
+                executeDeleteManga(deleteFiles: false)
+            }
+            Button(isEn ? "Cancel" : "Cancelar", role: .cancel) {}
+        } message: {
+            Text(isEn ? "This will remove the series from your Kaizen library." : "Esto eliminará la serie de tu catálogo de Kaizen.")
+        }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+    }
+        // Columnas de capítulos cuando el panel izquierdo está oculto (100% pantalla para capítulos)
     private let fullWidthChapterColumns = [
         GridItem(.adaptive(minimum: 320, maximum: 540), spacing: 12)
     ]
@@ -708,7 +717,7 @@ public struct MangaDetailView: View {
     
     public var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            detailBackdrop
             
             if isPad {
                 HStack(alignment: .top, spacing: 0) {
@@ -725,8 +734,7 @@ public struct MangaDetailView: View {
                                 synopsisCardSection
                                 
                                 if appState.isManagement {
-                                    sourcesInlineSection
-                                    serverControlSection
+                                    adminSheetButton
                                 }
                             }
                             .padding(18)
@@ -765,9 +773,7 @@ public struct MangaDetailView: View {
                             .padding(.horizontal, 16)
                         
                         if appState.isManagement {
-                            sourcesInlineSection
-                                .padding(.horizontal, 16)
-                            serverControlSection
+                            adminSheetButton
                                 .padding(.horizontal, 16)
                         }
                         
@@ -841,20 +847,8 @@ public struct MangaDetailView: View {
                 Task { await loadDetail() }
             }
         }
-        .sheet(isPresented: $showSourcesSheet) {
-            MangaSourcesManagementSheet(manga: currentManga, apiClient: apiClient) {
-                Task { await loadDetail() }
-            }
-        }
-        .alert(isEn ? "Redownload Chapter Range" : "Redescargar Rango de Capítulos", isPresented: $showRedownloadRangeAlert) {
-            TextField(isEn ? "Start Chapter (e.g. 1)" : "Capítulo Inicio (ej: 1)", text: $rangeStartChapter)
-            TextField(isEn ? "End Chapter (e.g. 20)" : "Capítulo Fin (ej: 20)", text: $rangeEndChapter)
-            Button(isEn ? "Redownload" : "Redescargar") {
-                executeRedownloadRange()
-            }
-            Button(isEn ? "Cancel" : "Cancelar", role: .cancel) {}
-        } message: {
-            Text(isEn ? "Re-queues all chapters in this range for redownload on Kaizen server." : "Encola la redescarga completa de los capítulos seleccionados en el servidor Kaizen.")
+        .sheet(isPresented: $showAdminSheet) {
+            adminSheetContent
         }
         .alert(isEn ? "Delete Chapter" : "Eliminar Capítulo", isPresented: $showDeleteChapterAlert) {
             Button(isEn ? "Delete File & Chapter" : "Eliminar Capítulo y Archivo", role: .destructive) {
@@ -867,17 +861,6 @@ public struct MangaDetailView: View {
             if let ch = chapterToDelete {
                 Text(isEn ? "Are you sure you want to delete \(ch.displayName)? The physical file on the server will be deleted." : "¿Seguro que quieres borrar el \(ch.displayName)? El archivo se borrará permanentemente del servidor.")
             }
-        }
-        .alert(isEn ? "Delete Series from Kaizen" : "Eliminar Manga de Kaizen", isPresented: $showDeleteMangaAlert) {
-            Button(isEn ? "Delete from Server & Disk" : "Eliminar de Servidor y Disco", role: .destructive) {
-                executeDeleteManga(deleteFiles: true)
-            }
-            Button(isEn ? "Unlink Only (Keep Files)" : "Solo Desvincular (Conservar Archivos)") {
-                executeDeleteManga(deleteFiles: false)
-            }
-            Button(isEn ? "Cancel" : "Cancelar", role: .cancel) {}
-        } message: {
-            Text(isEn ? "This will remove the series from your Kaizen library." : "Esto eliminará la serie de tu catálogo de Kaizen.")
         }
         .alert(isEn ? "New Reading Library" : "Nueva Librería de Lectura", isPresented: $showCreateShelfAlert) {
             TextField(isEn ? "e.g. Masterpieces, Re-read, Top Tier..." : "Ej: Obras maestras, Relecturas, Favoritos...", text: $newShelfName)
@@ -898,57 +881,14 @@ public struct MangaDetailView: View {
     // MARK: - Menú Toolbar de Administrador
     
     private var adminToolbarMenu: some View {
-        Menu {
-            Section(isEn ? "Server Control" : "Control de Servidor") {
-                Button {
-                    showSourcesSheet = true
-                } label: {
-                    Label(isEn ? "Manga Sources..." : "Gestionar Fuentes...", systemImage: "antenna.radiowaves.left.and.right")
-                }
-                
-                Button {
-                    rangeStartChapter = "1"
-                    rangeEndChapter = "\(max(chapters.count, 10))"
-                    showRedownloadRangeAlert = true
-                } label: {
-                    Label(isEn ? "Redownload Chapter Range..." : "Redescargar Rango...", systemImage: "arrow.triangle.2.circlepath")
-                }
-                
-                Button {
-                    auditMangaIntegrity()
-                } label: {
-                    Label(isEn ? "Audit Files Integrity" : "Auditar Integridad", systemImage: "checkmark.shield")
-                }
-                
-                Button {
-                    toggleMangaLock()
-                } label: {
-                    Label(
-                        currentManga.isLocked ? (isEn ? "Unlock Manga Updates" : "Desbloquear Actualizaciones") : (isEn ? "Lock Manga Updates" : "Bloquear Actualizaciones"),
-                        systemImage: currentManga.isLocked ? "lock.open" : "lock"
-                    )
-                }
-            }
-            
-            Divider()
-            
-            Section {
-                Button(role: .destructive) {
-                    showDeleteMangaAlert = true
-                } label: {
-                    Label(isEn ? "Delete Manga from Server..." : "Eliminar Manga del Servidor...", systemImage: "trash")
-                }
-            }
+        Button {
+            showAdminSheet = true
         } label: {
-            Image(systemName: "wrench.and.screwdriver.fill")
-                .font(.subheadline)
-                .foregroundStyle(.cyan)
-                .padding(8)
-                .background(Color.cyan.opacity(0.15), in: Circle())
+            Image(systemName: "wrench.and.screwdriver")
         }
+        .accessibilityLabel(isEn ? "Server tools" : "Herramientas de servidor")
     }
-    
-    // MARK: - Mini-Dock Lateral cuando la Ficha está Oculta en iPad
+        // MARK: - Mini-Dock Lateral cuando la Ficha está Oculta en iPad
     
     private var collapsedLeftDock: some View {
         VStack(spacing: 16) {

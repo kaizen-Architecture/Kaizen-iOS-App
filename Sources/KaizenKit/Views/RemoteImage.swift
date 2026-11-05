@@ -2,15 +2,17 @@ import SwiftUI
 import UIKit
 import CryptoKit
 
-/// Descarga imágenes del servidor Kaizen enviando el API Token con caché de doble capa (memoria + disco).
+/// Descarga imágenes del servidor Kaizen enviando el API Token con caché de doble capa (memoria + disco)
+/// y deduplicación de tareas en vuelo para no saturar la red ni el servidor.
 actor ImageLoader {
     static let shared = ImageLoader()
     private let memoryCache = NSCache<NSURL, UIImage>()
     private let diskCacheDir: URL
+    private var inFlightTasks: [URL: Task<UIImage?, Never>] = [:]
     
     init() {
-        memoryCache.countLimit = 200
-        memoryCache.totalCostLimit = 150 * 1024 * 1024 // 150 MB
+        memoryCache.countLimit = 250
+        memoryCache.totalCostLimit = 200 * 1024 * 1024 // 200 MB
         
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         diskCacheDir = caches.appendingPathComponent("KaizenImages", isDirectory: true)
@@ -40,21 +42,36 @@ actor ImageLoader {
             return cached
         }
         
-        var request = URLRequest(url: url)
-        request.timeoutInterval = 25
-        if let token, !token.isEmpty {
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        // Evitar duplicar descargas simultáneas de la misma URL
+        if let existing = inFlightTasks[url] {
+            return await existing.value
         }
         
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
-              (response as? HTTPURLResponse)?.statusCode == 200,
-              let image = UIImage(data: data) else { return nil }
+        let diskFile = diskPath(for: url)
+        let memCache = memoryCache
+        let cacheKey = url as NSURL
         
-        memoryCache.setObject(image, forKey: url as NSURL, cost: data.count)
-        let file = diskPath(for: url)
-        try? data.write(to: file, options: .atomic)
+        let task = Task<UIImage?, Never> {
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 20
+            request.cachePolicy = .returnCacheDataElseLoad
+            if let token, !token.isEmpty {
+                request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            }
+            
+            guard let (data, response) = try? await URLSession.shared.data(for: request),
+                  (response as? HTTPURLResponse)?.statusCode == 200,
+                  let image = UIImage(data: data) else { return nil }
+            
+            memCache.setObject(image, forKey: cacheKey, cost: data.count)
+            try? data.write(to: diskFile, options: .atomic)
+            return image
+        }
         
-        return image
+        inFlightTasks[url] = task
+        let result = await task.value
+        inFlightTasks.removeValue(forKey: url)
+        return result
     }
 }
 
@@ -79,6 +96,7 @@ public struct RemoteImage: View {
                 Image(uiImage: uiImage)
                     .resizable()
                     .aspectRatio(contentMode: contentMode)
+                    .transition(.opacity)
             } else if failed {
                 ZStack {
                     Color.white.opacity(0.06)
@@ -109,7 +127,9 @@ public struct RemoteImage: View {
         
         failed = false
         if let image = await ImageLoader.shared.image(for: url, token: token) {
-            uiImage = image
+            withAnimation(.easeIn(duration: 0.2)) {
+                uiImage = image
+            }
         } else {
             failed = true
         }

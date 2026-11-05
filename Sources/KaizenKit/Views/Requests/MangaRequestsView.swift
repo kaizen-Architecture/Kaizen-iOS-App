@@ -69,226 +69,228 @@ public final class MangaRequestsStore {
     }
 }
 
+private enum RequestFilter: String, CaseIterable, Identifiable {
+    case pending, approved, rejected
+    var id: String { rawValue }
+}
+
 public struct MangaRequestsView: View {
     @Environment(AppState.self) private var appState
     @State private var store = MangaRequestsStore()
+    @State private var filter: RequestFilter = .pending
+    @State private var showNewRequest = false
     let apiClient: KaizenAPIClient
     
     public init(apiClient: KaizenAPIClient) {
         self.apiClient = apiClient
     }
     
-    private var isEn: Bool {
-        appState.currentLanguage == "en"
+    private var isEn: Bool { appState.currentLanguage == "en" }
+    
+    private func bucket(_ status: String) -> RequestFilter {
+        switch status.uppercased() {
+        case "PENDING": return .pending
+        case "APPROVED", "DOWNLOADING", "AVAILABLE": return .approved
+        default: return .rejected
+        }
+    }
+    
+    private var pendingCount: Int {
+        store.requests.filter { bucket($0.status) == .pending }.count
+    }
+    
+    private var visibleRequests: [MangaRequestItem] {
+        store.requests.filter { bucket($0.status) == filter }
+    }
+    
+    private func title(for filter: RequestFilter) -> String {
+        switch filter {
+        case .pending: return isEn ? "Pending" : "Pendientes"
+        case .approved: return isEn ? "Approved" : "Aprobadas"
+        case .rejected: return isEn ? "Rejected" : "Rechazadas"
+        }
     }
     
     public var body: some View {
         NavigationStack {
-            ZStack {
-                Color.black.ignoresSafeArea()
-                
-                VStack(spacing: 16) {
-                    // Tarjeta superior para solicitar nueva serie
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text(isEn ? "Request New Series to Kaizen" : "Solicitar nueva serie a Kaizen")
-                            .font(.headline)
-                            .foregroundStyle(.white)
-                        
-                        TextField(isEn ? "Manga title (AniList / MangaDex)..." : "Título del manga (AniList / MangaDex)...", text: $store.titleInput)
-                            .textFieldStyle(.plain)
-                            .padding(12)
-                            .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
-                        
-                        HStack {
-                            Text(isEn ? "Start Chapter:" : "Capítulo inicio:")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                            
-                            Stepper("\(store.startChapterInput)", value: $store.startChapterInput, in: 1...2000)
-                                .fixedSize()
-                            
-                            Spacer()
-                            
-                            Button {
-                                Task { await store.submitRequest(apiClient: apiClient, session: appState.session, isEn: isEn) }
-                            } label: {
-                                if store.isSubmitting {
-                                    ProgressView().tint(.black)
-                                } else {
-                                    Text(isEn ? "Request" : "Solicitar")
-                                        .font(.subheadline.weight(.semibold))
-                                        .padding(.horizontal, 16)
-                                        .padding(.vertical, 8)
-                                        .background(Color.cyan, in: RoundedRectangle(cornerRadius: 8))
-                                        .foregroundStyle(.black)
-                                }
-                            }
-                            .disabled(store.isSubmitting || store.titleInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        }
-                        
-                        if let error = store.errorMessage {
-                            Text(error)
-                                .font(.caption)
-                                .foregroundStyle(.red)
-                        }
-                        if let success = store.successMessage {
-                            Text(success)
-                                .font(.caption)
-                                .foregroundStyle(.green)
+            List {
+                Section {
+                    Picker("", selection: $filter) {
+                        ForEach(RequestFilter.allCases) { f in
+                            Text(title(for: f)).tag(f)
                         }
                     }
-                    .padding(16)
-                    .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 16))
-                    .padding(.horizontal)
-                    
-                    // Lista de peticiones
-                    if store.isLoading && store.requests.isEmpty {
-                        Spacer()
-                        ProgressView().tint(.cyan)
-                        Spacer()
-                    } else if store.requests.isEmpty {
-                        Spacer()
-                        ContentUnavailableView(
-                            isEn ? "No Requests Found" : "Sin peticiones registradas",
-                            systemImage: "tray",
-                            description: Text(isEn ? "When you or other readers request manga, they will appear here with live status." : "Cuando solicites series o las soliciten otros usuarios en Kaizen, aparecerán aquí con su estado en vivo.")
-                        )
-                        Spacer()
-                    } else {
-                        List {
-                            Section(isEn ? "Pending & Active Requests (\(store.requests.count))" : "Peticiones en Curso (\(store.requests.count))") {
-                                ForEach(store.requests) { req in
-                                    HStack(spacing: 12) {
-                                        Image(systemName: "book.closed.fill")
-                                            .font(.title2)
-                                            .foregroundStyle(.cyan)
-                                        
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text(req.title)
-                                                .font(.headline)
-                                                .foregroundStyle(.white)
-                                            
-                                            HStack(spacing: 6) {
-                                                Text((isEn ? "From Ch. " : "Desde Cap. ") + "\(req.startChapter)")
-                                                    .font(.caption2)
-                                                    .foregroundStyle(.secondary)
-                                                if let username = req.username {
-                                                    Text("•")
-                                                        .font(.caption2)
-                                                        .foregroundStyle(.secondary)
-                                                    Text(username)
-                                                        .font(.caption2)
-                                                        .foregroundStyle(.secondary)
-                                                }
-                                            }
-                                        }
-                                        
-                                        Spacer()
-                                        
-                                        statusBadge(for: req.status)
-                                    }
-                                    .padding(.vertical, 4)
-                                    .contextMenu {
-                                        if appState.isManagement {
-                                            Button {
-                                                Task { await store.updateStatus(apiClient: apiClient, session: appState.session, requestId: req.id, status: "APPROVED") }
-                                            } label: {
-                                                Label(isEn ? "Approve Request" : "Aprobar Solicitud", systemImage: "checkmark.circle.fill")
-                                            }
-                                            
-                                            Button {
-                                                Task { await store.updateStatus(apiClient: apiClient, session: appState.session, requestId: req.id, status: "DOWNLOADING") }
-                                            } label: {
-                                                Label(isEn ? "Mark as Downloading" : "Poner a Descargar", systemImage: "arrow.down.circle.fill")
-                                            }
-                                            
-                                            Button(role: .destructive) {
-                                                Task { await store.updateStatus(apiClient: apiClient, session: appState.session, requestId: req.id, status: "REJECTED") }
-                                            } label: {
-                                                Label(isEn ? "Reject Request" : "Rechazar Solicitud", systemImage: "xmark.circle.fill")
-                                            }
-                                        }
-                                    }
-                                    .swipeActions(edge: .trailing) {
-                                        if appState.isManagement {
-                                            Button {
-                                                Task { await store.updateStatus(apiClient: apiClient, session: appState.session, requestId: req.id, status: "APPROVED") }
-                                            } label: {
-                                                Label(isEn ? "Approve" : "Aprobar", systemImage: "checkmark")
-                                            }
-                                            .tint(.green)
-                                            
-                                            Button {
-                                                Task { await store.updateStatus(apiClient: apiClient, session: appState.session, requestId: req.id, status: "REJECTED") }
-                                            } label: {
-                                                Label(isEn ? "Reject" : "Rechazar", systemImage: "xmark")
-                                            }
-                                            .tint(.red)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        .scrollContentBackground(.hidden)
-                        .refreshable {
-                            await store.loadRequests(apiClient: apiClient, session: appState.session)
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                }
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets())
+                
+                if store.isLoading && store.requests.isEmpty {
+                    HStack { Spacer(); ProgressView(); Spacer() }
+                        .listRowBackground(Color.clear)
+                } else if visibleRequests.isEmpty {
+                    ContentUnavailableView(
+                        isEn ? "No requests" : "Sin peticiones",
+                        systemImage: "tray",
+                        description: Text(isEn ? "Nothing here yet." : "Aquí no hay nada todavía.")
+                    )
+                    .listRowBackground(Color.clear)
+                } else {
+                    Section {
+                        ForEach(visibleRequests) { req in
+                            requestCard(req)
                         }
                     }
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(Color.black.ignoresSafeArea())
             .navigationTitle(isEn ? "Requests" : "Peticiones")
+            .navigationSubtitle(pendingCount > 0 ? (isEn ? "\(pendingCount) pending" : "\(pendingCount) pendientes") : "")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    InAppLanguageToggle(apiClient: apiClient)
+                    Button { showNewRequest = true } label: { Image(systemName: "plus") }
+                        .accessibilityLabel(isEn ? "New request" : "Nueva petición")
                 }
+            }
+            .refreshable {
+                await store.loadRequests(apiClient: apiClient, session: appState.session)
             }
             .task {
                 await store.loadRequests(apiClient: apiClient, session: appState.session)
             }
+            .sheet(isPresented: $showNewRequest) {
+                newRequestSheet
+            }
         }
     }
     
+    // MARK: - Tarjeta
+    
+    private func requestCard(_ req: MangaRequestItem) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                Text(String(req.title.prefix(1)).uppercased())
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 44, height: 62)
+                    .background(
+                        LinearGradient(colors: [.indigo, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing),
+                        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    )
+                
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(req.title)
+                        .font(.headline)
+                        .foregroundStyle(.white)
+                        .lineLimit(2)
+                    HStack(spacing: 4) {
+                        if let username = req.username {
+                            Text("@\(username)")
+                        }
+                        Text("· " + (isEn ? "from Ch. " : "desde cap. ") + "\(req.startChapter)")
+                    }
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+                if bucket(req.status) != .pending {
+                    statusBadge(for: req.status)
+                }
+            }
+            
+            if appState.isManagement && bucket(req.status) == .pending {
+                HStack(spacing: 10) {
+                    Button {
+                        Task { await store.updateStatus(apiClient: apiClient, session: appState.session, requestId: req.id, status: "APPROVED") }
+                    } label: {
+                        Label(isEn ? "Approve" : "Aprobar", systemImage: "checkmark")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.glassProminent)
+                    .tint(.cyan)
+                    
+                    Button {
+                        Task { await store.updateStatus(apiClient: apiClient, session: appState.session, requestId: req.id, status: "REJECTED") }
+                    } label: {
+                        Label(isEn ? "Reject" : "Rechazar", systemImage: "xmark")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.glass)
+                }
+                .font(.subheadline.weight(.semibold))
+            }
+        }
+        .padding(.vertical, 6)
+        .contextMenu {
+            if appState.isManagement {
+                Button {
+                    Task { await store.updateStatus(apiClient: apiClient, session: appState.session, requestId: req.id, status: "DOWNLOADING") }
+                } label: {
+                    Label(isEn ? "Mark as downloading" : "Poner a descargar", systemImage: "arrow.down.circle")
+                }
+            }
+        }
+    }
+    
+    // MARK: - Nueva petición
+    
+    private var newRequestSheet: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField(isEn ? "Manga title" : "Título del manga", text: $store.titleInput)
+                    Stepper(
+                        (isEn ? "Start chapter: " : "Capítulo inicio: ") + "\(store.startChapterInput)",
+                        value: $store.startChapterInput,
+                        in: 1...2000
+                    )
+                } footer: {
+                    if let error = store.errorMessage {
+                        Text(error).foregroundStyle(.red)
+                    } else if let success = store.successMessage {
+                        Text(success).foregroundStyle(.green)
+                    }
+                }
+            }
+            .navigationTitle(isEn ? "New request" : "Nueva petición")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(isEn ? "Cancel" : "Cancelar") { showNewRequest = false }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(isEn ? "Request" : "Solicitar") {
+                        Task {
+                            await store.submitRequest(apiClient: apiClient, session: appState.session, isEn: isEn)
+                            if store.errorMessage == nil { showNewRequest = false }
+                        }
+                    }
+                    .disabled(store.isSubmitting || store.titleInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+        .presentationDetents([.medium])
+    }
+    
+    // MARK: - Estado
+    
     @ViewBuilder
     private func statusBadge(for status: String) -> some View {
-        switch status.uppercased() {
-        case "PENDING":
-            Text(isEn ? "Pending" : "Pendiente")
-                .font(.caption2.weight(.bold))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Color.orange.opacity(0.2), in: Capsule())
-                .foregroundStyle(.orange)
-        case "APPROVED":
-            Text(isEn ? "Approved" : "Aprobado")
-                .font(.caption2.weight(.bold))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Color.green.opacity(0.2), in: Capsule())
-                .foregroundStyle(.green)
-        case "DOWNLOADING":
-            HStack(spacing: 4) {
-                ProgressView().tint(.cyan).scaleEffect(0.7)
-                Text(isEn ? "Downloading" : "Descargando")
-                    .font(.caption2.weight(.bold))
+        let (text, color): (String, Color) = {
+            switch status.uppercased() {
+            case "APPROVED": return (isEn ? "Approved" : "Aprobada", .green)
+            case "DOWNLOADING": return (isEn ? "Downloading" : "Descargando", .cyan)
+            case "AVAILABLE": return (isEn ? "Available" : "Disponible", .blue)
+            default: return (isEn ? "Rejected" : "Rechazada", .red)
             }
+        }()
+        Text(text)
+            .font(.caption2.weight(.bold))
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
-            .background(Color.cyan.opacity(0.2), in: Capsule())
-            .foregroundStyle(.cyan)
-        case "AVAILABLE":
-            Text(isEn ? "Available" : "Disponible")
-                .font(.caption2.weight(.bold))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Color.blue.opacity(0.2), in: Capsule())
-                .foregroundStyle(.blue)
-        default:
-            Text(status)
-                .font(.caption2.weight(.bold))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Color.red.opacity(0.2), in: Capsule())
-                .foregroundStyle(.red)
-        }
+            .background(color.opacity(0.2), in: Capsule())
+            .foregroundStyle(color)
     }
 }
