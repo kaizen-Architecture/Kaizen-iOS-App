@@ -2,7 +2,6 @@ import SwiftUI
 
 public struct KaizenGlassToken {
     public static let regular = KaizenGlassToken()
-    public var interactive: KaizenGlassToken { self }
     public func interactive() -> KaizenGlassToken { self }
 }
 
