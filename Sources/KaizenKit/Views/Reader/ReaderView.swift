@@ -635,7 +635,6 @@ public struct ReaderView: View {
             .zIndex(100)
         }
     }
-    }
     
     private func recordHistory() {
         guard let targetManga = store.manga ?? appState.mangas.first(where: { $0.id == store.mangaId }) else { return }

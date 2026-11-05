@@ -1,5 +1,10 @@
 import SwiftUI
 
+public struct KaizenGlassToken {
+    public static let regular = KaizenGlassToken()
+    public var interactive: KaizenGlassToken { self }
+}
+
 /// Extensión de compatibilidad para estilos Liquid Glass en Xcode 16 / iOS 17-18
 /// Proporciona un acabado translúcido idéntico con ultraThinMaterial y bordes sutiles.
 public extension View {
@@ -12,7 +17,7 @@ public extension View {
     }
     
     @ViewBuilder
-    func glassEffect<S: Shape>(_ style: Any? = nil, in shape: S) -> some View {
+    func glassEffect<S: Shape>(_ token: KaizenGlassToken = .regular, in shape: S) -> some View {
         self.glassCard(shape)
     }
 }

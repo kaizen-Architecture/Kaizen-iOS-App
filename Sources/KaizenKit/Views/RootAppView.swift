@@ -133,26 +133,33 @@ struct MainTabsView: View {
     
     var body: some View {
         TabView(selection: $selection) {
-            Tab(isEn ? "Reading" : "Leyendo", systemImage: "book.pages.fill", value: AppTab.reading) {
-                ReadingHomeView(apiClient: apiClient)
-            }
+            ReadingHomeView(apiClient: apiClient)
+                .tabItem {
+                    Label(isEn ? "Reading" : "Leyendo", systemImage: "book.pages.fill")
+                }
+                .tag(AppTab.reading)
             
-            Tab(isEn ? "Library" : "Biblioteca", systemImage: "books.vertical.fill", value: AppTab.library) {
-                LibraryView(apiClient: apiClient, mode: .personalReading)
-            }
+            LibraryView(apiClient: apiClient, mode: .personalReading)
+                .tabItem {
+                    Label(isEn ? "Library" : "Biblioteca", systemImage: "books.vertical.fill")
+                }
+                .tag(AppTab.library)
             
-            Tab(isEn ? "Explore" : "Explorar", systemImage: "safari.fill", value: AppTab.explore) {
-                LibraryView(apiClient: apiClient, mode: appState.isManagement ? .unifiedCatalog : .discoverCatalog)
-            }
+            LibraryView(apiClient: apiClient, mode: appState.isManagement ? .unifiedCatalog : .discoverCatalog)
+                .tabItem {
+                    Label(isEn ? "Explore" : "Explorar", systemImage: "safari.fill")
+                }
+                .tag(AppTab.explore)
             
             if appState.isManagement {
-                Tab(isEn ? "Server" : "Servidor", systemImage: "server.rack", value: AppTab.server) {
-                    ServerHubView(apiClient: apiClient)
-                }
-                .badge(appState.activeDownloadCount)
+                ServerHubView(apiClient: apiClient)
+                    .tabItem {
+                        Label(isEn ? "Server" : "Servidor", systemImage: "server.rack")
+                    }
+                    .tag(AppTab.server)
+                    .badge(appState.activeDownloadCount)
             }
         }
-        .tabViewStyle(.sidebarAdaptable)
         .onChange(of: appState.isManagement) { _, isManagement in
             if !isManagement && selection == .server { selection = .reading }
         }
