@@ -3,6 +3,7 @@ import SwiftUI
 public struct KaizenGlassToken {
     public static let regular = KaizenGlassToken()
     public var interactive: KaizenGlassToken { self }
+    public func interactive() -> KaizenGlassToken { self }
 }
 
 /// Extensión de compatibilidad para estilos Liquid Glass en Xcode 16 / iOS 17-18
