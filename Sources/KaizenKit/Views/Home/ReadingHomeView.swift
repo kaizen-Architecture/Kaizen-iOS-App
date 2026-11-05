@@ -65,6 +65,9 @@ public struct ReadingHomeView: View {
             .background(Color.black.ignoresSafeArea())
             .navigationTitle(isEn ? "Reading" : "Leyendo")
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    InAppLanguageToggle(apiClient: apiClient)
+                }
                 ToolbarItem(placement: .topBarTrailing) { profileMenu }
             }
             .navigationDestination(for: Manga.self) { manga in

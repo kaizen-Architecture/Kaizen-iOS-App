@@ -224,8 +224,13 @@ public struct AdminDashboardView: View {
     @State private var showLiveQueueSheet = false
     let apiClient: KaizenAPIClient
     
-    public init(apiClient: KaizenAPIClient) {
+    public var isEmbedded: Bool = false
+    public var defaultSection: AdminSection? = nil
+    
+    public init(apiClient: KaizenAPIClient, isEmbedded: Bool = false, defaultSection: AdminSection? = nil) {
         self.apiClient = apiClient
+        self.isEmbedded = isEmbedded
+        self.defaultSection = defaultSection
     }
     
     private var isEn: Bool { appState.currentLanguage == "en" }
@@ -249,35 +254,48 @@ public struct AdminDashboardView: View {
     }
     
     public var body: some View {
-        NavigationStack {
-            Group {
-                if !appState.isManagement {
-                    ContentUnavailableView(
-                        isEn ? "Access Restricted" : "Acceso Restringido",
-                        systemImage: "lock.shield",
-                        description: Text(isEn ? "Only available for Kaizen administrators." : "Solo disponible para administradores de Kaizen.")
-                    )
-                } else {
-                    content
+        if isEmbedded {
+            content
+                .task {
+                    if let defaultSection {
+                        store.selectedSection = defaultSection
+                    }
+                    await store.refreshAllData(apiClient: apiClient, session: appState.session)
                 }
-            }
-            .background(Color.black.ignoresSafeArea())
-            .navigationTitle(isEn ? "Operations" : "Operaciones")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { showAddMangaSheet = true } label: { Image(systemName: "plus") }
-                        .accessibilityLabel(isEn ? "Add Manga" : "Añadir Manga")
+        } else {
+            NavigationStack {
+                Group {
+                    if !appState.isManagement {
+                        ContentUnavailableView(
+                            isEn ? "Access Restricted" : "Acceso Restringido",
+                            systemImage: "lock.shield",
+                            description: Text(isEn ? "Only available for Kaizen administrators." : "Solo disponible para administradores de Kaizen.")
+                        )
+                    } else {
+                        content
+                    }
                 }
-            }
-            .sheet(isPresented: $showAddMangaSheet) {
-                AddMangaRemoteSheet(apiClient: apiClient)
-            }
-            .sheet(isPresented: $showLiveQueueSheet) {
-                LiveDownloadQueueSheet(apiClient: apiClient)
-            }
-            .task {
-                await store.refreshAllData(apiClient: apiClient, session: appState.session)
+                .background(Color.black.ignoresSafeArea())
+                .navigationTitle(isEn ? "Operations" : "Operaciones")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button { showAddMangaSheet = true } label: { Image(systemName: "plus") }
+                            .accessibilityLabel(isEn ? "Add Manga" : "Añadir Manga")
+                    }
+                }
+                .sheet(isPresented: $showAddMangaSheet) {
+                    AddMangaRemoteSheet(apiClient: apiClient)
+                }
+                .sheet(isPresented: $showLiveQueueSheet) {
+                    LiveDownloadQueueSheet(apiClient: apiClient)
+                }
+                .task {
+                    if let defaultSection {
+                        store.selectedSection = defaultSection
+                    }
+                    await store.refreshAllData(apiClient: apiClient, session: appState.session)
+                }
             }
         }
     }
@@ -294,18 +312,20 @@ public struct AdminDashboardView: View {
                     .foregroundStyle(.red)
             }
             
-            Section {
-                Picker("", selection: $store.selectedSection) {
-                    ForEach(AdminSection.allCases) { section in
-                        Text(section.label(isEn: isEn, failureCount: store.totalFailuresCount, sourceCount: store.sources.count))
-                            .tag(section)
+            if !isEmbedded || defaultSection == nil {
+                Section {
+                    Picker("", selection: $store.selectedSection) {
+                        ForEach(AdminSection.allCases) { section in
+                            Text(section.label(isEn: isEn, failureCount: store.totalFailuresCount, sourceCount: store.sources.count))
+                                .tag(section)
+                        }
                     }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets())
             }
-            .listRowBackground(Color.clear)
-            .listRowInsets(EdgeInsets())
             
             switch store.selectedSection {
             case .operations: operationsSections

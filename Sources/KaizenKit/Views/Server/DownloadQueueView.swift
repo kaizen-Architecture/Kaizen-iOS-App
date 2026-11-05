@@ -15,9 +15,11 @@ public struct LiveDownloadQueueSheet: View {
     @State private var isLoading = false
     @State private var filter: QueueFilter = .all
     @State private var isExecutingAction = false
+    public var isEmbedded: Bool = false
     
-    public init(apiClient: KaizenAPIClient) {
+    public init(apiClient: KaizenAPIClient, isEmbedded: Bool = false) {
         self.apiClient = apiClient
+        self.isEmbedded = isEmbedded
     }
     
     private var isEn: Bool { appState.currentLanguage == "en" }
@@ -38,82 +40,138 @@ public struct LiveDownloadQueueSheet: View {
     }
     
     public var body: some View {
-        NavigationStack {
-            List {
+        if isEmbedded {
+            queueList
+                .refreshable { await loadQueue() }
+                .task {
+                    await loadQueue()
+                    while !Task.isCancelled {
+                        try? await Task.sleep(for: .seconds(3.5))
+                        guard !Task.isCancelled else { break }
+                        await loadQueue(silent: true)
+                    }
+                }
+        } else {
+            NavigationStack {
+                queueList
+                    .navigationTitle(isEn ? "Download queue" : "Cola de descargas")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button(isEn ? "Done" : "Listo") { dismiss() }
+                        }
+                        ToolbarItemGroup(placement: .bottomBar) {
+                            queueActionButtons
+                        }
+                    }
+                    .refreshable { await loadQueue() }
+                    .task {
+                        await loadQueue()
+                        while !Task.isCancelled {
+                            try? await Task.sleep(for: .seconds(3.5))
+                            guard !Task.isCancelled else { break }
+                            await loadQueue(silent: true)
+                        }
+                    }
+            }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
+    }
+    
+    @ViewBuilder
+    private var queueActionButtons: some View {
+        Button {
+            perform { session in
+                try await apiClient.retryAllFailedJobs(serverUrl: session.serverUrl, token: session.apiToken)
+            }
+        } label: {
+            Label(isEn ? "Retry failed" : "Reintentar fallidas", systemImage: "arrow.clockwise")
+        }
+        .disabled(isExecutingAction || failedCount == 0)
+        
+        Spacer()
+        
+        Button {
+            perform { session in
+                try await apiClient.cleanQueue(serverUrl: session.serverUrl, token: session.apiToken, type: "completed")
+            }
+        } label: {
+            Label(isEn ? "Clear completed" : "Limpiar completadas", systemImage: "trash")
+        }
+        .disabled(isExecutingAction)
+    }
+    
+    private var queueList: some View {
+        List {
+            Section {
+                Picker("", selection: $filter) {
+                    ForEach(QueueFilter.allCases) { f in
+                        Text(title(for: f)).tag(f)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+            }
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets())
+            
+            if isEmbedded {
                 Section {
-                    Picker("", selection: $filter) {
-                        ForEach(QueueFilter.allCases) { f in
-                            Text(title(for: f)).tag(f)
+                    HStack(spacing: 12) {
+                        Button {
+                            perform { session in
+                                try await apiClient.retryAllFailedJobs(serverUrl: session.serverUrl, token: session.apiToken)
+                            }
+                        } label: {
+                            Label(isEn ? "Retry failed" : "Reintentar fallidas", systemImage: "arrow.clockwise")
+                                .font(.footnote.weight(.semibold))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 8)
                         }
+                        .buttonStyle(.glass)
+                        .disabled(isExecutingAction || failedCount == 0)
+                        
+                        Button {
+                            perform { session in
+                                try await apiClient.cleanQueue(serverUrl: session.serverUrl, token: session.apiToken, type: "completed")
+                            }
+                        } label: {
+                            Label(isEn ? "Clear completed" : "Limpiar completadas", systemImage: "trash")
+                                .font(.footnote.weight(.semibold))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 8)
+                        }
+                        .buttonStyle(.glass)
+                        .disabled(isExecutingAction)
                     }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
                 }
-                .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets())
-                
-                if filteredJobs.isEmpty {
-                    if isLoading && jobs.isEmpty {
-                        HStack { Spacer(); ProgressView(); Spacer() }
-                            .listRowBackground(Color.clear)
-                    } else {
-                        ContentUnavailableView(
-                            isEn ? "Queue is empty" : "Cola vacía",
-                            systemImage: "arrow.down.circle",
-                            description: Text(isEn ? "No downloads in this state." : "No hay descargas en este estado.")
-                        )
+            }
+            
+            if filteredJobs.isEmpty {
+                if isLoading && jobs.isEmpty {
+                    HStack { Spacer(); ProgressView(); Spacer() }
                         .listRowBackground(Color.clear)
-                    }
                 } else {
-                    Section {
-                        ForEach(filteredJobs) { job in
-                            jobRow(job)
-                        }
-                    }
+                    ContentUnavailableView(
+                        isEn ? "Queue is empty" : "Cola vacía",
+                        systemImage: "arrow.down.circle",
+                        description: Text(isEn ? "No downloads in this state." : "No hay descargas en este estado.")
+                    )
+                    .listRowBackground(Color.clear)
                 }
-            }
-            .scrollContentBackground(.hidden)
-            .background(Color.black.ignoresSafeArea())
-            .navigationTitle(isEn ? "Download queue" : "Cola de descargas")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button(isEn ? "Done" : "Listo") { dismiss() }
-                }
-                ToolbarItemGroup(placement: .bottomBar) {
-                    Button {
-                        perform { session in
-                            try await apiClient.retryAllFailedJobs(serverUrl: session.serverUrl, token: session.apiToken)
-                        }
-                    } label: {
-                        Label(isEn ? "Retry failed" : "Reintentar fallidas", systemImage: "arrow.clockwise")
+            } else {
+                Section {
+                    ForEach(filteredJobs) { job in
+                        jobRow(job)
                     }
-                    .disabled(isExecutingAction || failedCount == 0)
-                    
-                    Spacer()
-                    
-                    Button {
-                        perform { session in
-                            try await apiClient.cleanQueue(serverUrl: session.serverUrl, token: session.apiToken, type: "completed")
-                        }
-                    } label: {
-                        Label(isEn ? "Clear completed" : "Limpiar completadas", systemImage: "trash")
-                    }
-                    .disabled(isExecutingAction)
-                }
-            }
-            .refreshable { await loadQueue() }
-            .task {
-                await loadQueue()
-                while !Task.isCancelled {
-                    try? await Task.sleep(for: .seconds(3.5))
-                    guard !Task.isCancelled else { break }
-                    await loadQueue(silent: true)
                 }
             }
         }
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
+        .scrollContentBackground(.hidden)
+        .background(Color.black.ignoresSafeArea())
     }
     
     // MARK: - Fila

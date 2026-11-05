@@ -17,8 +17,11 @@ public struct HomeDashboardView: View {
     @State private var showQueueSheet: Bool = false
     @State private var showAddMangaSheet: Bool = false
     
-    public init(apiClient: KaizenAPIClient) {
+    public var isEmbedded: Bool = false
+    
+    public init(apiClient: KaizenAPIClient, isEmbedded: Bool = false) {
         self.apiClient = apiClient
+        self.isEmbedded = isEmbedded
     }
     
     private var isEn: Bool {
@@ -38,93 +41,112 @@ public struct HomeDashboardView: View {
     }
     
     public var body: some View {
-        NavigationStack {
-            ZStack {
-                Color.black.ignoresSafeArea()
-                
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 18) {
-                        kpiCardsGrid
-                        
-                        if isPad {
-                            HStack(alignment: .top, spacing: 16) {
-                                VStack(spacing: 16) {
-                                    downloads14DaysChartCard
-                                    sourceStorageCard
-                                }
-                                .frame(maxWidth: .infinity)
-                                
-                                VStack(spacing: 16) {
-                                    liveDownloadQueueCard
-                                    recentServerDownloadsCard
-                                }
-                                .frame(maxWidth: .infinity)
-                            }
-                        } else {
-                            VStack(spacing: 16) {
-                                liveDownloadQueueCard
-                                downloads14DaysChartCard
-                                sourceStorageCard
-                                recentServerDownloadsCard
-                            }
-                        }
-                    }
-                    .padding(16)
-                    .padding(.bottom, 28)
-                }
+        if isEmbedded {
+            dashboardScrollContent
                 .refreshable {
                     await loadDashboardData()
                 }
-            }
-            .navigationTitle(isEn ? "Statistics" : "Estadísticas")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    HStack(spacing: 10) {
-                        Button {
-                            showQueueSheet = true
-                        } label: {
-                            HStack(spacing: 5) {
-                                Image(systemName: "arrow.down.circle.fill")
-                                Text("\(activityStats.active + activityStats.queued)")
-                            }
-                            .font(.caption.weight(.bold))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(Color.cyan.opacity(0.16), in: Capsule())
-                            .foregroundStyle(.cyan)
-                        }
-                        
-                        if appState.isManagement {
-                            Button {
-                                showAddMangaSheet = true
-                            } label: {
-                                Label(isEn ? "Add Manga" : "Añadir Manga", systemImage: "plus.circle.fill")
-                                    .font(.subheadline.weight(.semibold))
+                .task {
+                    await loadDashboardData()
+                    while !Task.isCancelled {
+                        try? await Task.sleep(nanoseconds: 5_000_000_000)
+                        guard !Task.isCancelled else { break }
+                        await refreshLiveQueueOnly()
+                    }
+                }
+        } else {
+            NavigationStack {
+                dashboardScrollContent
+                    .navigationTitle(isEn ? "Statistics" : "Estadísticas")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            HStack(spacing: 10) {
+                                Button {
+                                    showQueueSheet = true
+                                } label: {
+                                    HStack(spacing: 5) {
+                                        Image(systemName: "arrow.down.circle.fill")
+                                        Text("\(activityStats.active + activityStats.queued)")
+                                    }
+                                    .font(.caption.weight(.bold))
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 5)
+                                    .background(Color.cyan.opacity(0.16), in: Capsule())
                                     .foregroundStyle(.cyan)
+                                }
+                                
+                                if appState.isManagement {
+                                    Button {
+                                        showAddMangaSheet = true
+                                    } label: {
+                                        Label(isEn ? "Add Manga" : "Añadir Manga", systemImage: "plus.circle.fill")
+                                            .font(.subheadline.weight(.semibold))
+                                            .foregroundStyle(.cyan)
+                                    }
+                                }
                             }
                         }
                     }
-                }
-            }
-            .sheet(isPresented: $showQueueSheet) {
-                LiveDownloadQueueSheet(apiClient: apiClient)
-            }
-            .sheet(isPresented: $showAddMangaSheet) {
-                AddMangaRemoteSheet(apiClient: apiClient) {
-                    Task {
-                        await appState.loadLibrary(client: apiClient, force: true)
+                    .sheet(isPresented: $showQueueSheet) {
+                        LiveDownloadQueueSheet(apiClient: apiClient)
+                    }
+                    .sheet(isPresented: $showAddMangaSheet) {
+                        AddMangaRemoteSheet(apiClient: apiClient) {
+                            Task {
+                                await appState.loadLibrary(client: apiClient, force: true)
+                                await loadDashboardData()
+                            }
+                        }
+                    }
+                    .refreshable {
                         await loadDashboardData()
                     }
-                }
+                    .task {
+                        await loadDashboardData()
+                        while !Task.isCancelled {
+                            try? await Task.sleep(nanoseconds: 5_000_000_000)
+                            guard !Task.isCancelled else { break }
+                            await refreshLiveQueueOnly()
+                        }
+                    }
             }
-            .task {
-                await loadDashboardData()
-                while !Task.isCancelled {
-                    try? await Task.sleep(nanoseconds: 5_000_000_000)
-                    guard !Task.isCancelled else { break }
-                    await refreshLiveQueueOnly()
+        }
+    }
+    
+    private var dashboardScrollContent: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    kpiCardsGrid
+                    
+                    if isPad {
+                        HStack(alignment: .top, spacing: 16) {
+                            VStack(spacing: 16) {
+                                downloads14DaysChartCard
+                                sourceStorageCard
+                            }
+                            .frame(maxWidth: .infinity)
+                            
+                            VStack(spacing: 16) {
+                                liveDownloadQueueCard
+                                recentServerDownloadsCard
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                    } else {
+                        VStack(spacing: 16) {
+                            liveDownloadQueueCard
+                            downloads14DaysChartCard
+                            sourceStorageCard
+                            recentServerDownloadsCard
+                        }
+                    }
                 }
+                .padding(16)
+                .padding(.bottom, 28)
             }
         }
     }

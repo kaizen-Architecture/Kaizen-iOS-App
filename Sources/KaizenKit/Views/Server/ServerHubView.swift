@@ -1,131 +1,184 @@
 import SwiftUI
 
-/// Pestaña "Servidor" (solo gestión): estado resumido y accesos al resto de herramientas de administración.
-public struct ServerHubView: View {
-    private enum Destination: String, Identifiable {
-        case dashboard, operations, queue, requests, aiStudio
-        var id: String { rawValue }
+public enum ServerSection: String, CaseIterable, Identifiable {
+    case status
+    case queue
+    case scrapers
+    case requests
+    case operations
+    
+    public var id: String { rawValue }
+    
+    public func title(isEn: Bool) -> String {
+        switch self {
+        case .status: return isEn ? "Status" : "Estado"
+        case .queue: return isEn ? "Queue" : "Colas"
+        case .scrapers: return isEn ? "Sources" : "Fuentes"
+        case .requests: return isEn ? "Requests" : "Peticiones"
+        case .operations: return isEn ? "Operations" : "Operaciones"
+        }
     }
     
+    public var icon: String {
+        switch self {
+        case .status: return "chart.bar.xaxis"
+        case .queue: return "arrow.down.circle.fill"
+        case .scrapers: return "globe.badge.chevron.backward"
+        case .requests: return "tray.and.arrow.down.fill"
+        case .operations: return "server.rack"
+        }
+    }
+}
+
+/// Centro de Control Remoto del Servidor Kaizen (Estación de trabajo en pantalla completa)
+/// Diseñado para iPhone e iPad (horizontal y vertical) con submenú interactivo Liquid Glass.
+public struct ServerHubView: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(AppState.self) private var appState
     let apiClient: KaizenAPIClient
     
-    @State private var destination: Destination?
+    @State private var selectedSection: ServerSection = .status
+    @State private var showAIStudio = false
+    @State private var showAddMangaSheet = false
     
     public init(apiClient: KaizenAPIClient) {
         self.apiClient = apiClient
     }
     
     private var isEn: Bool { appState.currentLanguage == "en" }
+    private var isPad: Bool { horizontalSizeClass == .regular }
+    
+    private func badge(for section: ServerSection) -> Int {
+        switch section {
+        case .queue:
+            return appState.activeDownloadCount + appState.waitingDownloadCount
+        default:
+            return 0
+        }
+    }
     
     public var body: some View {
         NavigationStack {
-            List {
-                Section {
-                    HStack(spacing: 10) {
-                        summaryCard(
-                            title: isEn ? "Downloading" : "Descargando",
-                            value: "\(appState.activeDownloadCount)",
-                            caption: "\(appState.waitingDownloadCount) " + (isEn ? "queued" : "en cola"),
-                            tint: .cyan
-                        )
-                        summaryCard(
-                            title: isEn ? "Series" : "Series",
-                            value: "\(appState.mangas.count)",
-                            caption: isEn ? "in library" : "en biblioteca",
-                            tint: .white
-                        )
-                    }
-                    .listRowInsets(EdgeInsets())
-                    .listRowBackground(Color.clear)
-                } header: {
-                    HStack(spacing: 6) {
-                        Circle().fill(.green).frame(width: 8, height: 8)
-                        Text((appState.session?.serverUrl.host() ?? "Kaizen") + " · " + (isEn ? "Online" : "En línea"))
-                    }
-                    .textCase(nil)
-                    .font(.footnote.weight(.semibold))
-                }
+            VStack(spacing: 0) {
+                // Submenú de cápsulas Liquid Glass
+                submenuPillBar
                 
-                Section(isEn ? "Monitor" : "Monitorizar") {
-                    row(.queue, icon: "arrow.down.circle.fill", tint: .cyan,
-                        title: isEn ? "Live download queue" : "Cola de descargas",
-                        subtitle: isEn ? "Active, queued and failed jobs" : "Activas, en cola y fallidas")
-                    row(.dashboard, icon: "chart.bar.xaxis", tint: .indigo,
-                        title: isEn ? "Statistics" : "Estadísticas",
-                        subtitle: isEn ? "14-day activity and storage" : "Actividad 14 días y espacio")
+                // Workstation en pantalla completa según sección seleccionada
+                ZStack {
+                    switch selectedSection {
+                    case .status:
+                        HomeDashboardView(apiClient: apiClient, isEmbedded: true)
+                            .transition(.opacity)
+                    case .queue:
+                        LiveDownloadQueueSheet(apiClient: apiClient, isEmbedded: true)
+                            .transition(.opacity)
+                    case .scrapers:
+                        AdminDashboardView(apiClient: apiClient, isEmbedded: true, defaultSection: .sources)
+                            .transition(.opacity)
+                    case .requests:
+                        MangaRequestsView(apiClient: apiClient, isEmbedded: true)
+                            .transition(.opacity)
+                    case .operations:
+                        AdminDashboardView(apiClient: apiClient, isEmbedded: true, defaultSection: .operations)
+                            .transition(.opacity)
+                    }
                 }
-                
-                Section(isEn ? "Manage" : "Gestionar") {
-                    row(.operations, icon: "server.rack", tint: .teal,
-                        title: isEn ? "Operations & sources" : "Operaciones y fuentes",
-                        subtitle: isEn ? "Sync, scrapers, failures" : "Sincronizar, scrapers, fallos")
-                    row(.requests, icon: "tray.and.arrow.down.fill", tint: .orange,
-                        title: isEn ? "Requests" : "Peticiones",
-                        subtitle: isEn ? "Approve or reject user requests" : "Aprobar o rechazar peticiones")
-                    row(.aiStudio, icon: "sparkles", tint: .purple,
-                        title: "AI Studio",
-                        subtitle: isEn ? "Assistant tools" : "Herramientas del asistente")
-                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .scrollContentBackground(.hidden)
             .background(Color.black.ignoresSafeArea())
-            .navigationTitle(isEn ? "Server" : "Servidor")
-            .task { await appState.refreshDownloadQueue(client: apiClient) }
-            .refreshable { await appState.refreshDownloadQueue(client: apiClient) }
-            .sheet(item: $destination) { item in
-                switch item {
-                case .dashboard: HomeDashboardView(apiClient: apiClient)
-                case .operations: AdminDashboardView(apiClient: apiClient)
-                case .queue: LiveDownloadQueueSheet(apiClient: apiClient)
-                case .requests: MangaRequestsView(apiClient: apiClient)
-                case .aiStudio: AIStudioView(apiClient: apiClient)
+            .navigationTitle(isEn ? "Server Hub" : "Servidor")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    InAppLanguageToggle(apiClient: apiClient)
                 }
+                ToolbarItem(placement: .topBarTrailing) {
+                    HStack(spacing: 10) {
+                        Button {
+                            showAIStudio = true
+                        } label: {
+                            Image(systemName: "sparkles")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.purple)
+                                .padding(6)
+                                .background(Color.purple.opacity(0.18), in: Circle())
+                        }
+                        .accessibilityLabel("AI Studio")
+                        
+                        Button {
+                            showAddMangaSheet = true
+                        } label: {
+                            Image(systemName: "plus")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.cyan)
+                                .padding(6)
+                                .background(Color.cyan.opacity(0.18), in: Circle())
+                        }
+                        .accessibilityLabel(isEn ? "Add Manga" : "Añadir Manga")
+                    }
+                }
+            }
+            .sheet(isPresented: $showAIStudio) {
+                AIStudioView(apiClient: apiClient)
+            }
+            .sheet(isPresented: $showAddMangaSheet) {
+                AddMangaRemoteSheet(apiClient: apiClient)
+            }
+            .task {
+                await appState.refreshDownloadQueue(client: apiClient)
             }
         }
     }
     
-    private func summaryCard(title: String, value: String, caption: String, tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(.footnote.weight(.medium))
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.largeTitle.weight(.bold))
-                .foregroundStyle(tint)
-                .contentTransition(.numericText())
-            Text(caption)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-    }
+    // MARK: - Submenú de Cápsulas Liquid Glass
     
-    private func row(_ target: Destination, icon: String, tint: Color, title: String, subtitle: String) -> some View {
-        Button {
-            destination = target
-        } label: {
-            HStack(spacing: 14) {
-                Image(systemName: icon)
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 32, height: 32)
-                    .background(tint.gradient, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title).foregroundStyle(.white)
-                    Text(subtitle)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+    private var submenuPillBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(ServerSection.allCases) { sec in
+                    let isSelected = selectedSection == sec
+                    let count = badge(for: sec)
+                    
+                    Button {
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
+                            selectedSection = sec
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: sec.icon)
+                                .font(.caption.weight(.semibold))
+                            Text(sec.title(isEn: isEn))
+                                .font(.caption.weight(.semibold))
+                            if count > 0 {
+                                Text("\(count)")
+                                    .font(.caption2.weight(.bold))
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(isSelected ? Color.black.opacity(0.35) : Color.cyan, in: Capsule())
+                                    .foregroundStyle(isSelected ? Color.white : Color.black)
+                            }
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(
+                            isSelected ? AnyShapeStyle(Color.cyan) : AnyShapeStyle(.ultraThinMaterial),
+                            in: Capsule()
+                        )
+                        .foregroundStyle(isSelected ? Color.black : Color.white)
+                        .overlay(
+                            Capsule().stroke(isSelected ? Color.clear : Color.white.opacity(0.14), lineWidth: 1)
+                        )
+                    }
+                    .buttonStyle(.plain)
                 }
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.tertiary)
             }
-            .contentShape(Rectangle())
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .frame(maxWidth: isPad ? .infinity : nil, alignment: isPad ? .center : .leading)
         }
-        .buttonStyle(.plain)
+        .background(Color.black.opacity(0.85))
+        .overlay(alignment: .bottom) {
+            Divider().background(Color.white.opacity(0.08))
+        }
     }
 }

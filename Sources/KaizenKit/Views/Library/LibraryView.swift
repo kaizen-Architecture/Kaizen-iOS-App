@@ -192,6 +192,9 @@ public struct LibraryView: View {
             .navigationTitle(navigationTitleText)
             .searchable(text: $searchText, prompt: isEn ? "Search title, author, genre..." : "Buscar título, autor, género...")
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    InAppLanguageToggle(apiClient: apiClient)
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     toolbarTrailingButtons
                 }

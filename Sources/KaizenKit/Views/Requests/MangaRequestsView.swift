@@ -80,9 +80,11 @@ public struct MangaRequestsView: View {
     @State private var filter: RequestFilter = .pending
     @State private var showNewRequest = false
     let apiClient: KaizenAPIClient
+    public var isEmbedded: Bool = false
     
-    public init(apiClient: KaizenAPIClient) {
+    public init(apiClient: KaizenAPIClient, isEmbedded: Bool = false) {
         self.apiClient = apiClient
+        self.isEmbedded = isEmbedded
     }
     
     private var isEn: Bool { appState.currentLanguage == "en" }
@@ -112,57 +114,90 @@ public struct MangaRequestsView: View {
     }
     
     public var body: some View {
-        NavigationStack {
-            List {
-                Section {
-                    Picker("", selection: $filter) {
-                        ForEach(RequestFilter.allCases) { f in
-                            Text(title(for: f)).tag(f)
+        if isEmbedded {
+            requestsListContent
+                .refreshable {
+                    await store.loadRequests(apiClient: apiClient, session: appState.session)
+                }
+                .task {
+                    await store.loadRequests(apiClient: apiClient, session: appState.session)
+                }
+                .sheet(isPresented: $showNewRequest) {
+                    newRequestSheet
+                }
+        } else {
+            NavigationStack {
+                requestsListContent
+                    .navigationTitle(isEn ? "Requests" : "Peticiones")
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button { showNewRequest = true } label: { Image(systemName: "plus") }
+                                .accessibilityLabel(isEn ? "New request" : "Nueva petición")
                         }
                     }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                }
-                .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets())
-                
-                if store.isLoading && store.requests.isEmpty {
-                    HStack { Spacer(); ProgressView(); Spacer() }
-                        .listRowBackground(Color.clear)
-                } else if visibleRequests.isEmpty {
-                    ContentUnavailableView(
-                        isEn ? "No requests" : "Sin peticiones",
-                        systemImage: "tray",
-                        description: Text(isEn ? "Nothing here yet." : "Aquí no hay nada todavía.")
-                    )
-                    .listRowBackground(Color.clear)
-                } else {
-                    Section {
-                        ForEach(visibleRequests) { req in
-                            requestCard(req)
-                        }
+                    .refreshable {
+                        await store.loadRequests(apiClient: apiClient, session: appState.session)
                     }
-                }
-            }
-            .scrollContentBackground(.hidden)
-            .background(Color.black.ignoresSafeArea())
-            .navigationTitle(isEn ? "Requests" : "Peticiones")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { showNewRequest = true } label: { Image(systemName: "plus") }
-                        .accessibilityLabel(isEn ? "New request" : "Nueva petición")
-                }
-            }
-            .refreshable {
-                await store.loadRequests(apiClient: apiClient, session: appState.session)
-            }
-            .task {
-                await store.loadRequests(apiClient: apiClient, session: appState.session)
-            }
-            .sheet(isPresented: $showNewRequest) {
-                newRequestSheet
+                    .task {
+                        await store.loadRequests(apiClient: apiClient, session: appState.session)
+                    }
+                    .sheet(isPresented: $showNewRequest) {
+                        newRequestSheet
+                    }
             }
         }
+    }
+    
+    private var requestsListContent: some View {
+        List {
+            Section {
+                Picker("", selection: $filter) {
+                    ForEach(RequestFilter.allCases) { f in
+                        Text(title(for: f)).tag(f)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+            }
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets())
+            
+            if isEmbedded {
+                Section {
+                    Button {
+                        showNewRequest = true
+                    } label: {
+                        Label(isEn ? "Request New Manga" : "Solicitar Nuevo Manga", systemImage: "plus.circle.fill")
+                            .font(.subheadline.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                    }
+                    .buttonStyle(.glass)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+                }
+            }
+            
+            if store.isLoading && store.requests.isEmpty {
+                HStack { Spacer(); ProgressView(); Spacer() }
+                    .listRowBackground(Color.clear)
+            } else if visibleRequests.isEmpty {
+                ContentUnavailableView(
+                    isEn ? "No requests" : "Sin peticiones",
+                    systemImage: "tray",
+                    description: Text(isEn ? "Nothing here yet." : "Aquí no hay nada todavía.")
+                )
+                .listRowBackground(Color.clear)
+            } else {
+                Section {
+                    ForEach(visibleRequests) { req in
+                        requestCard(req)
+                    }
+                }
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .background(Color.black.ignoresSafeArea())
     }
     
     // MARK: - Tarjeta
