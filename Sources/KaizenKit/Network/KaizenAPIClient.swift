@@ -340,8 +340,9 @@ public actor KaizenAPIClient {
             let mangaDict = dict["manga"] as? [String: Any]
             let mangaTitle = (mangaDict?["title"] as? String) ?? fileName ?? "Manga"
             
+            let mangaId = dict["mangaId"] as? Int
             var coverUrl: String?
-            if let mangaId = dict["mangaId"] as? Int {
+            if let mangaId {
                 coverUrl = "\(baseStr)/api/v1/mangas/\(mangaId)/cover"
             } else if let meta = mangaDict?["metadata"] as? [String: Any],
                       let rawCover = meta["cover"] as? String,
@@ -354,6 +355,7 @@ public actor KaizenAPIClient {
                 fileName: fileName,
                 size: size,
                 createdAt: createdAt,
+                mangaId: mangaId,
                 mangaTitle: mangaTitle,
                 coverUrl: coverUrl
             )

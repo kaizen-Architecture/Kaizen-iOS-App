@@ -281,7 +281,11 @@ public struct ReadingHomeView: View {
     
     @ViewBuilder
     private func recentItemCell(item: KaizenServerRecentDownload) -> some View {
-        if let matched = appState.mangas.first(where: { $0.id == item.mangaId }) {
+        let matched = appState.mangas.first(where: {
+            if let mid = item.mangaId, $0.id == mid { return true }
+            return $0.title.localizedCaseInsensitiveCompare(item.mangaTitle) == .orderedSame
+        })
+        if let matched {
             NavigationLink(value: matched) {
                 recentDownloadRow(item)
             }

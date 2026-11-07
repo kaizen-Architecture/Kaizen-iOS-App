@@ -615,6 +615,7 @@ public struct KaizenServerRecentDownload: Identifiable, Codable, Sendable, Equat
     public let fileName: String?
     public let size: Int?
     public let createdAt: String?
+    public let mangaId: Int?
     public let mangaTitle: String
     public let coverUrl: String?
     
@@ -624,6 +625,7 @@ public struct KaizenServerRecentDownload: Identifiable, Codable, Sendable, Equat
         fileName: String? = nil,
         size: Int? = nil,
         createdAt: String? = nil,
+        mangaId: Int? = nil,
         mangaTitle: String,
         coverUrl: String? = nil
     ) {
@@ -632,6 +634,7 @@ public struct KaizenServerRecentDownload: Identifiable, Codable, Sendable, Equat
         self.fileName = fileName
         self.size = size
         self.createdAt = createdAt
+        self.mangaId = mangaId
         self.mangaTitle = mangaTitle
         self.coverUrl = coverUrl
     }
