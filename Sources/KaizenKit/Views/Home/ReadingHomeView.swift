@@ -139,7 +139,7 @@ public struct ReadingHomeView: View {
         } label: {
             Text(String((appState.session?.username ?? "K").prefix(2)).uppercased())
                 .font(.caption.weight(.bold))
-                .foregroundStyle(.cyan)
+                .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
                 .frame(width: 32, height: 32)
                 .glassEffect(.regular.interactive(), in: Circle())
         }
@@ -165,7 +165,7 @@ public struct ReadingHomeView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text(isEn ? "CONTINUE READING" : "CONTINUAR LEYENDO")
                     .font(.caption2.weight(.bold))
-                    .foregroundStyle(.cyan)
+                    .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
                 
                 Text(entry.mangaTitle)
                     .font(.headline.weight(.bold))
@@ -177,7 +177,7 @@ public struct ReadingHomeView: View {
                     .foregroundStyle(.white.opacity(0.75))
                 
                 ProgressView(value: progressVal, total: 100)
-                    .tint(.cyan)
+                    .tint(Color(red: 0.2, green: 0.8, blue: 0.9))
                     .padding(.vertical, 2)
                 
                 Button {
@@ -273,7 +273,7 @@ public struct ReadingHomeView: View {
                                 .lineLimit(1)
                             Text((isEn ? "Chapter " : "Capítulo ") + String(format: "%g", item.index))
                                 .font(.footnote)
-                                .foregroundStyle(.cyan)
+                                .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
                         }
                         Spacer()
                         if let size = item.formattedSize {

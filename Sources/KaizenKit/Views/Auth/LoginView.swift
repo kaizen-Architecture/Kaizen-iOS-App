@@ -70,7 +70,7 @@ public struct LoginView: View {
             .scaledToFit()
             .frame(width: 168, height: 168)
             .clipShape(RoundedRectangle(cornerRadius: 36, style: .continuous))
-            .shadow(color: .cyan.opacity(0.25), radius: 24, y: 10)
+            .shadow(color: Color(red: 0.2, green: 0.8, blue: 0.9).opacity(0.25), radius: 24, y: 10)
             .accessibilityLabel("Kaizen")
     }
     
@@ -107,10 +107,10 @@ public struct LoginView: View {
                         .foregroundStyle(.secondary)
                 } icon: {
                     Image(systemName: "checkmark.shield")
-                        .foregroundStyle(.cyan)
+                        .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
                 }
             }
-            .tint(.cyan)
+            .tint(Color(red: 0.2, green: 0.8, blue: 0.9))
             .padding(.vertical, 2)
             
             if let errorMessage {
@@ -140,7 +140,7 @@ public struct LoginView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
                 .background(
-                    LinearGradient(colors: [.cyan, .blue], startPoint: .leading, endPoint: .trailing),
+                    LinearGradient(colors: [Color(red: 0.2, green: 0.8, blue: 0.9), .blue], startPoint: .leading, endPoint: .trailing),
                     in: RoundedRectangle(cornerRadius: 12)
                 )
                 .foregroundStyle(.black)
@@ -172,7 +172,7 @@ public struct LoginView: View {
                 .font(.caption.weight(.semibold))
                 .padding(.horizontal, 16)
                 .padding(.vertical, 6)
-                .background(selected ? Color.cyan : Color.clear, in: Capsule())
+                .background(selected ? Color(red: 0.2, green: 0.8, blue: 0.9) : Color.clear, in: Capsule())
                 .foregroundStyle(selected ? Color.black : Color.white)
         }
     }

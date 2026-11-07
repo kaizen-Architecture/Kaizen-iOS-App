@@ -72,8 +72,8 @@ public struct HomeDashboardView: View {
                                     .font(.caption.weight(.bold))
                                     .padding(.horizontal, 10)
                                     .padding(.vertical, 5)
-                                    .background(Color.kaizenCyan.opacity(0.16), in: Capsule())
-                                    .foregroundStyle(.kaizenCyan)
+                                    .background(Color(red: 0.2, green: 0.8, blue: 0.9).opacity(0.16), in: Capsule())
+                                    .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
                                 }
                                 
                                 if appState.isManagement {
@@ -82,7 +82,7 @@ public struct HomeDashboardView: View {
                                     } label: {
                                         Label(isEn ? "Add Manga" : "Añadir Manga", systemImage: "plus.circle.fill")
                                             .font(.subheadline.weight(.semibold))
-                                            .foregroundStyle(.kaizenCyan)
+                                            .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
                                     }
                                 }
                             }
@@ -167,7 +167,7 @@ public struct HomeDashboardView: View {
                     value: "\(activityStats.active)",
                     subtitle: isEn ? "View live queue →" : "Ver cola en vivo →",
                     icon: "arrow.down.circle.fill",
-                    color: .kaizenCyan
+                    color: Color(red: 0.2, green: 0.8, blue: 0.9)
                 )
             }
             .buttonStyle(.plain)
@@ -259,7 +259,7 @@ public struct HomeDashboardView: View {
                 
                 Text("\(total14d) " + (isEn ? "ch." : "caps."))
                     .font(.caption.weight(.bold))
-                    .foregroundStyle(.kaizenCyan)
+                    .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
             }
             
             if activityHistory.isEmpty {
@@ -276,7 +276,7 @@ public struct HomeDashboardView: View {
                     )
                     .foregroundStyle(
                         LinearGradient(
-                            colors: [.kaizenCyan, .indigo],
+                            colors: [Color(red: 0.2, green: 0.8, blue: 0.9), .indigo],
                             startPoint: .top,
                             endPoint: .bottom
                         )
@@ -329,10 +329,10 @@ public struct HomeDashboardView: View {
                                 Spacer()
                                 Text(stat.formattedSize)
                                     .font(.caption.weight(.bold))
-                                    .foregroundStyle(.kaizenCyan)
+                                    .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
                             }
                             ProgressView(value: min(max(ratio, 0.04), 1.0))
-                                .tint(.kaizenCyan)
+                                .tint(Color(red: 0.2, green: 0.8, blue: 0.9))
                         }
                     }
                 }
@@ -362,7 +362,7 @@ public struct HomeDashboardView: View {
                     } label: {
                         Text(isEn ? "Full Queue (\(queueJobs.count)) →" : "Ver todas (\(queueJobs.count)) →")
                             .font(.caption.weight(.bold))
-                            .foregroundStyle(.kaizenCyan)
+                            .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
                     }
                     .buttonStyle(.plain)
                 }
@@ -393,7 +393,7 @@ public struct HomeDashboardView: View {
                                 }
                                 Spacer()
                                 if job.status == "active" {
-                                    Badge(text: "\(max(job.progress, 1))%", color: .kaizenCyan)
+                                    Badge(text: "\(max(job.progress, 1))%", color: Color(red: 0.2, green: 0.8, blue: 0.9))
                                 } else {
                                     Badge(text: isEn ? "Queued" : "En cola", color: .indigo)
                                 }
@@ -446,7 +446,7 @@ public struct HomeDashboardView: View {
                                     HStack(spacing: 6) {
                                         Text((isEn ? "Chapter " : "Capítulo ") + String(format: "%g", item.index))
                                             .font(.caption2.weight(.semibold))
-                                            .foregroundStyle(.kaizenCyan)
+                                            .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
                                         if let sz = item.formattedSize {
                                             Text("• \(sz)")
                                                 .font(.caption2)

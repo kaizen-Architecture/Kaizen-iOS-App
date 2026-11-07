@@ -40,7 +40,7 @@ public struct MangaSourcesManagementSheet: View {
                 
                 if isLoading {
                     VStack(spacing: 12) {
-                        ProgressView().tint(.kaizenCyan)
+                        ProgressView().tint(Color(red: 0.2, green: 0.8, blue: 0.9))
                         Text(isEn ? "Loading sources..." : "Cargando fuentes...")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
@@ -94,7 +94,7 @@ public struct MangaSourcesManagementSheet: View {
                                         } label: {
                                             Image(systemName: "ellipsis.circle")
                                                 .font(.title3)
-                                                .foregroundStyle(.kaizenCyan)
+                                                .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
                                                 .padding(6)
                                         }
                                     }
@@ -129,7 +129,7 @@ public struct MangaSourcesManagementSheet: View {
                     } label: {
                         Label(isEn ? "Add Source" : "Añadir Fuente", systemImage: "plus")
                             .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.kaizenCyan)
+                            .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
                     }
                 }
             }
@@ -154,7 +154,7 @@ public struct MangaSourcesManagementSheet: View {
                         .foregroundStyle(.white.opacity(0.6))
                     
                     if availableScrapers.isEmpty {
-                        ProgressView().tint(.kaizenCyan)
+                        ProgressView().tint(Color(red: 0.2, green: 0.8, blue: 0.9))
                     } else {
                         Picker("Scraper", selection: $selectedScraper) {
                             ForEach(availableScrapers, id: \.self) { scraper in
@@ -162,7 +162,7 @@ public struct MangaSourcesManagementSheet: View {
                             }
                         }
                         .pickerStyle(.menu)
-                        .tint(.kaizenCyan)
+                        .tint(Color(red: 0.2, green: 0.8, blue: 0.9))
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -199,7 +199,7 @@ public struct MangaSourcesManagementSheet: View {
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
-                    .background(Color.kaizenCyan, in: RoundedRectangle(cornerRadius: 10))
+                    .background(Color(red: 0.2, green: 0.8, blue: 0.9), in: RoundedRectangle(cornerRadius: 10))
                     .foregroundStyle(.black)
                     .disabled(isSearching || searchKeyword.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
@@ -215,7 +215,7 @@ public struct MangaSourcesManagementSheet: View {
                 // Resultados
                 if isSearching {
                     Spacer()
-                    ProgressView(isEn ? "Searching source..." : "Buscando en la fuente...").tint(.kaizenCyan)
+                    ProgressView(isEn ? "Searching source..." : "Buscando en la fuente...").tint(Color(red: 0.2, green: 0.8, blue: 0.9))
                     Spacer()
                 } else if searchResults.isEmpty {
                     Spacer()
@@ -247,7 +247,7 @@ public struct MangaSourcesManagementSheet: View {
                                         HStack(spacing: 6) {
                                             Text(result.source)
                                                 .font(.caption2.weight(.bold))
-                                                .foregroundStyle(.kaizenCyan)
+                                                .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
                                             
                                             Text("•")
                                                 .foregroundStyle(.white.opacity(0.6))
@@ -261,11 +261,11 @@ public struct MangaSourcesManagementSheet: View {
                                     Spacer()
                                     
                                     if isAdding {
-                                        ProgressView().tint(.kaizenCyan)
+                                        ProgressView().tint(Color(red: 0.2, green: 0.8, blue: 0.9))
                                     } else {
                                         Image(systemName: "plus.circle.fill")
                                             .font(.title3)
-                                            .foregroundStyle(.kaizenCyan)
+                                            .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
                                     }
                                 }
                                 .padding(.horizontal, 16)

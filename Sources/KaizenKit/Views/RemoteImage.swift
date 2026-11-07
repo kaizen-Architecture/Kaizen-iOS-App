@@ -107,7 +107,7 @@ public struct RemoteImage: View {
             } else {
                 ZStack {
                     Color.white.opacity(0.05)
-                    ProgressView().tint(.cyan)
+                    ProgressView().tint(Color(red: 0.2, green: 0.8, blue: 0.9))
                 }
             }
         }

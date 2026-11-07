@@ -23,7 +23,7 @@ public struct MangaCardView: View {
                 .aspectRatio(2/3, contentMode: .fit)
                 .overlay(alignment: .bottom) {
                     if manga.safeReadingPercentage > 0 {
-                        ProgressBarGlow(progress: min(max(manga.safeReadingPercentage / 100.0, 0), 1), color: .kaizenCyan, height: 4)
+                        ProgressBarGlow(progress: min(max(manga.safeReadingPercentage / 100.0, 0), 1), color: Color(red: 0.2, green: 0.8, blue: 0.9), height: 4)
                             .padding(.horizontal, 8)
                             .padding(.bottom, 8)
                     }
@@ -36,7 +36,7 @@ public struct MangaCardView: View {
                         .foregroundStyle(.black)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
-                        .background(Color.kaizenCyan, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .background(Color(red: 0.2, green: 0.8, blue: 0.9), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                         .padding(8)
                 }
                 

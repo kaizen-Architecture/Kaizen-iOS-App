@@ -397,7 +397,7 @@ public struct AdminDashboardView: View {
         Section(isEn ? "Library" : "Biblioteca") {
             actionRow(title: isEn ? "Check new chapters" : "Comprobar capítulos",
                       subtitle: isEn ? "Runs the crawler on every series" : "Lanza el crawler en todas las series",
-                      icon: "arrow.triangle.2.circlepath", color: .cyan, key: "syncAll") {
+                      icon: "arrow.triangle.2.circlepath", color: Color(red: 0.2, green: 0.8, blue: 0.9), key: "syncAll") {
                 await run("syncAll", ok: "¡Comprobación lanzada en todas las series!", okEn: "Chapter check launched on all series!") { c, s in
                     try await c.syncAllMangas(serverUrl: s.serverUrl, token: s.apiToken)
                 }
@@ -499,7 +499,7 @@ public struct AdminDashboardView: View {
                             Spacer()
                             Text((isEn ? "Ch. " : "Cap. ") + String(format: "%g", job.chapterIndex))
                                 .font(.footnote.weight(.semibold))
-                                .foregroundStyle(.cyan)
+                                .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
                         }
                         HStack(spacing: 6) {
                             Text(job.source).font(.footnote).foregroundStyle(.secondary)
@@ -524,7 +524,7 @@ public struct AdminDashboardView: View {
                         } label: {
                             Label(isEn ? "Retry" : "Reintentar", systemImage: "arrow.clockwise")
                         }
-                        .tint(.cyan)
+                        .tint(Color(red: 0.2, green: 0.8, blue: 0.9))
                     }
                 }
                 Button {
@@ -619,7 +619,7 @@ public struct AdminDashboardView: View {
             SecondaryButton(
                 title: isEn ? "Sync sources from GitHub" : "Sincronizar fuentes desde GitHub",
                 systemImage: "arrow.down.doc",
-                tint: .kaizenCyan
+                tint: Color(red: 0.2, green: 0.8, blue: 0.9)
             ) {
                 Task { await store.syncSources(apiClient: apiClient, session: appState.session, isEn: isEn) }
             }
@@ -655,7 +655,7 @@ public struct AdminDashboardView: View {
                         }
                     ))
                     .labelsHidden()
-                    .tint(.kaizenCyan)
+                    .tint(Color(red: 0.2, green: 0.8, blue: 0.9))
                 }
             }
             .padding(.horizontal, 16)
@@ -696,7 +696,7 @@ public struct AdminDashboardView: View {
                         Spacer()
                         Text(job.status == "active" ? "\(max(job.progress, 1))%" : job.status.capitalized)
                             .font(.footnote.weight(.semibold))
-                            .foregroundStyle(job.status == "active" ? Color.cyan : (job.status == "failed" ? Color.red : Color.secondary))
+                            .foregroundStyle(job.status == "active" ? Color(red: 0.2, green: 0.8, blue: 0.9) : (job.status == "failed" ? Color.red : Color.secondary))
                     }
                 }
             }
@@ -718,7 +718,7 @@ public struct AdminDashboardView: View {
                         } else {
                             Text("\(queue.active) · \(queue.waiting) · \(queue.failed)")
                                 .font(.footnote.monospacedDigit())
-                                .foregroundStyle(queue.failed > 0 ? Color.red : Color.cyan)
+                                .foregroundStyle(queue.failed > 0 ? Color.red : Color(red: 0.2, green: 0.8, blue: 0.9))
                         }
                     }
                 }

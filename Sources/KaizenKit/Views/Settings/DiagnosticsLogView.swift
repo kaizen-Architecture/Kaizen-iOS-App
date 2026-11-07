@@ -136,8 +136,8 @@ public struct DiagnosticsLogView: View {
                                 .font(.caption.weight(.semibold))
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 10)
-                                .background(Color.cyan.opacity(0.2), in: RoundedRectangle(cornerRadius: 10))
-                                .foregroundStyle(.cyan)
+                                .background(Color(red: 0.2, green: 0.8, blue: 0.9).opacity(0.2), in: RoundedRectangle(cornerRadius: 10))
+                                .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
                             }
                         }
                         

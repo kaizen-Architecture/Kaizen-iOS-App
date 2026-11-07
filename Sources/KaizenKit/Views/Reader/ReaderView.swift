@@ -379,10 +379,10 @@ public struct ReaderView: View {
                     
                     if store.hasNextChapter {
                         VStack(spacing: 10) {
-                            ProgressView().tint(.cyan)
+                            ProgressView().tint(Color(red: 0.2, green: 0.8, blue: 0.9))
                             Text(isEn ? "Scrolling to next chapter..." : "Deslizando al siguiente capítulo...")
                                 .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.cyan)
+                                .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
                             if let next = store.nextChapter {
                                 Text(next.displayName)
                                     .font(.caption)
@@ -467,7 +467,7 @@ public struct ReaderView: View {
         VStack(spacing: 8) {
             Image(systemName: "arrow.up.circle.fill")
                 .font(.title3)
-                .foregroundStyle(.cyan)
+                .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
                 .rotationEffect(.degrees(topPullOffset > 70 ? 180 : 0))
                 .animation(.spring(response: 0.3), value: topPullOffset > 70)
             Text(topPullOffset > 70
@@ -478,7 +478,7 @@ public struct ReaderView: View {
             if let prev = store.previousChapter {
                 Text(prev.displayName)
                     .font(.caption2)
-                    .foregroundStyle(.cyan)
+                    .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
             }
         }
         .frame(height: 75)
@@ -519,7 +519,7 @@ public struct ReaderView: View {
 
                     Text((isEn ? "Chapter " : "Capítulo ") + "\(store.currentChapterIndex)")
                         .font(.caption2.weight(.medium))
-                        .foregroundStyle(.kaizenCyan)
+                        .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
                 }
                 .frame(maxWidth: .infinity)
                 
@@ -593,7 +593,7 @@ public struct ReaderView: View {
                             in: 1...Double(max(store.pages.count, 1)),
                             step: 1
                         )
-                        .tint(.kaizenCyan)
+                        .tint(Color(red: 0.2, green: 0.8, blue: 0.9))
 
                         Text("\(store.pages.count)")
                             .font(.caption.monospacedDigit().weight(.bold))
@@ -848,12 +848,12 @@ private struct MangaPagePlaceholderView: View {
                         .foregroundStyle(.black)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
-                        .background(Color.cyan, in: Capsule())
+                        .background(Color(red: 0.2, green: 0.8, blue: 0.9), in: Capsule())
                     }
                     .buttonStyle(.plain)
                 } else {
                     HStack(spacing: 8) {
-                        ProgressView().tint(.cyan)
+                        ProgressView().tint(Color(red: 0.2, green: 0.8, blue: 0.9))
                             .controlSize(.small)
                         Text(totalPages > 0
                             ? (isEn ? "Page \(pageIndex) of \(totalPages)" : "Página \(pageIndex) de \(totalPages)")
@@ -891,7 +891,7 @@ private struct ChapterLoadingOverlayView: View {
             Color.black.ignoresSafeArea()
             
             RadialGradient(
-                colors: [Color.cyan.opacity(0.14), Color.clear],
+                colors: [Color(red: 0.2, green: 0.8, blue: 0.9).opacity(0.14), Color.clear],
                 center: .center,
                 startRadius: 20,
                 endRadius: 380
@@ -903,12 +903,12 @@ private struct ChapterLoadingOverlayView: View {
                 
                 ZStack {
                     Circle()
-                        .fill(Color.cyan.opacity(0.12))
+                        .fill(Color(red: 0.2, green: 0.8, blue: 0.9).opacity(0.12))
                         .frame(width: 88, height: 88)
                     
                     Image(systemName: "book.pages.fill")
                         .font(.system(size: 38))
-                        .foregroundStyle(.cyan)
+                        .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
                 }
                 
                 VStack(spacing: 8) {
@@ -928,7 +928,7 @@ private struct ChapterLoadingOverlayView: View {
                 
                 VStack(spacing: 12) {
                     ProgressView()
-                        .tint(.cyan)
+                        .tint(Color(red: 0.2, green: 0.8, blue: 0.9))
                         .controlSize(.regular)
                     
                     Text(totalPages > 0
@@ -969,7 +969,7 @@ private struct EndOfChapterCard: View {
         VStack(spacing: 16) {
             Image(systemName: "checkmark.seal.fill")
                 .font(.system(size: 46))
-                .foregroundStyle(.cyan)
+                .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
             
             VStack(spacing: 4) {
                 Text((isEn ? "Finished Chapter " : "Fin del Capítulo ") + "\(currentChapterIndex)")
@@ -991,8 +991,8 @@ private struct EndOfChapterCard: View {
                     .foregroundStyle(.black)
                     .frame(maxWidth: 440)
                     .frame(height: 56)
-                    .background(Color.cyan, in: Capsule())
-                    .shadow(color: Color.cyan.opacity(0.35), radius: 10, y: 4)
+                    .background(Color(red: 0.2, green: 0.8, blue: 0.9), in: Capsule())
+                    .shadow(color: Color(red: 0.2, green: 0.8, blue: 0.9).opacity(0.35), radius: 10, y: 4)
                 }
                 .buttonStyle(.plain)
                 .padding(.horizontal, 20)
@@ -1048,7 +1048,7 @@ private struct EndOfChapterSlide: View {
                 
                 Image(systemName: "checkmark.seal.fill")
                     .font(.system(size: 64))
-                    .foregroundStyle(.cyan)
+                    .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
                 
                 VStack(spacing: 8) {
                     Text((isEn ? "Completed Chapter " : "Capítulo Finalizado: ") + "\(currentChapterIndex)")
@@ -1072,8 +1072,8 @@ private struct EndOfChapterSlide: View {
                         .foregroundStyle(.black)
                         .frame(maxWidth: 380)
                         .frame(height: 56)
-                        .background(Color.cyan, in: Capsule())
-                        .shadow(color: Color.cyan.opacity(0.4), radius: 10, y: 5)
+                        .background(Color(red: 0.2, green: 0.8, blue: 0.9), in: Capsule())
+                        .shadow(color: Color(red: 0.2, green: 0.8, blue: 0.9).opacity(0.4), radius: 10, y: 5)
                     }
                     .buttonStyle(.plain)
                     .padding(.top, 12)

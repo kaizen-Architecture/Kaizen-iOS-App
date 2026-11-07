@@ -168,7 +168,7 @@ public struct MangaRequestsView: View {
                     SecondaryButton(
                         title: isEn ? "Request New Manga" : "Solicitar Nuevo Manga",
                         systemImage: "plus.circle.fill",
-                        tint: .kaizenCyan
+                        tint: Color(red: 0.2, green: 0.8, blue: 0.9)
                     ) {
                         showNewRequest = true
                     }
@@ -210,7 +210,7 @@ public struct MangaRequestsView: View {
                         .foregroundStyle(.white)
                         .frame(width: 44, height: 62)
                         .background(
-                            LinearGradient(colors: [.indigo, .kaizenCyan], startPoint: .topLeading, endPoint: .bottomTrailing),
+                            LinearGradient(colors: [.indigo, Color(red: 0.2, green: 0.8, blue: 0.9)], startPoint: .topLeading, endPoint: .bottomTrailing),
                             in: RoundedRectangle(cornerRadius: 10, style: .continuous)
                         )
 
@@ -309,7 +309,7 @@ public struct MangaRequestsView: View {
         let (text, color): (String, Color) = {
             switch status.uppercased() {
             case "APPROVED": return (isEn ? "Approved" : "Aprobada", .green)
-            case "DOWNLOADING": return (isEn ? "Downloading" : "Descargando", .kaizenCyan)
+            case "DOWNLOADING": return (isEn ? "Downloading" : "Descargando", Color(red: 0.2, green: 0.8, blue: 0.9))
             case "AVAILABLE": return (isEn ? "Available" : "Disponible", .blue)
             default: return (isEn ? "Rejected" : "Rechazada", .red)
             }

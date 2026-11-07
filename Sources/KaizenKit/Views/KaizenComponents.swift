@@ -8,7 +8,7 @@ public struct GlassCard<Content: View>: View {
     let content: Content
 
     public init(@ViewBuilder content: () -> Content) {
-        self.content = content
+        self.content = content()
     }
 
     public var body: some View {
@@ -45,10 +45,10 @@ public struct PrimaryButton: View {
             .frame(maxWidth: .infinity)
             .frame(height: 48)
             .background(
-                LinearGradient(colors: [.kaizenCyan, .blue], startPoint: .leading, endPoint: .trailing),
+                LinearGradient(colors: [Color(red: 0.2, green: 0.8, blue: 0.9), .blue], startPoint: .leading, endPoint: .trailing),
                 in: RoundedRectangle(cornerRadius: 14)
             )
-            .shadow(color: isGlowing ? Color.kaizenCyan.opacity(0.4) : .clear, radius: 8, y: 4)
+            .shadow(color: isGlowing ? Color(red: 0.2, green: 0.8, blue: 0.9).opacity(0.4) : .clear, radius: 8, y: 4)
         }
         .buttonStyle(.plain)
     }
@@ -127,7 +127,7 @@ public struct StatusDot: View {
     private var color: Color {
         switch status {
         case .waiting: return .gray
-        case .active: return .kaizenCyan
+        case .active: return Color(red: 0.2, green: 0.8, blue: 0.9)
         case .completed: return .green
         case .failed: return .red
         }
@@ -156,7 +156,7 @@ public struct SegmentedGlass: View {
                         .foregroundStyle(selectedIndex == index ? .black : .white)
                         .padding(.vertical, 8)
                         .frame(maxWidth: .infinity)
-                        .background(selectedIndex == index ? Color.kaizenCyan : Color.clear, in: Capsule())
+                        .background(selectedIndex == index ? Color(red: 0.2, green: 0.8, blue: 0.9) : Color.clear, in: Capsule())
                 }
                 .buttonStyle(.plain)
             }
@@ -230,4 +230,8 @@ public extension View {
             }
         )
     }
+}
+
+public extension ShapeStyle where Self == Color {
+    static var kaizenCyan: Color { Color.kaizenCyan }
 }

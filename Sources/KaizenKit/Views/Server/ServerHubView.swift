@@ -110,9 +110,9 @@ public struct ServerHubView: View {
                         } label: {
                             Image(systemName: "plus")
                                 .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.cyan)
+                                .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
                                 .padding(6)
-                                .background(Color.cyan.opacity(0.18), in: Circle())
+                                .background(Color(red: 0.2, green: 0.8, blue: 0.9).opacity(0.18), in: Circle())
                         }
                         .accessibilityLabel(isEn ? "Add Manga" : "Añadir Manga")
                     }
@@ -154,14 +154,14 @@ public struct ServerHubView: View {
                                     .font(.caption2.weight(.bold))
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 2)
-                                    .background(isSelected ? Color.black.opacity(0.35) : Color.cyan, in: Capsule())
+                                    .background(isSelected ? Color.black.opacity(0.35) : Color(red: 0.2, green: 0.8, blue: 0.9), in: Capsule())
                                     .foregroundStyle(isSelected ? Color.white : Color.black)
                             }
                         }
                         .padding(.horizontal, 14)
                         .padding(.vertical, 8)
                         .background(
-                            isSelected ? AnyShapeStyle(Color.cyan) : AnyShapeStyle(.ultraThinMaterial),
+                            isSelected ? AnyShapeStyle(Color(red: 0.2, green: 0.8, blue: 0.9)) : AnyShapeStyle(.ultraThinMaterial),
                             in: Capsule()
                         )
                         .foregroundStyle(isSelected ? Color.black : Color.white)

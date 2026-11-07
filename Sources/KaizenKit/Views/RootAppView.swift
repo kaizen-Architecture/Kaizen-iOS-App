@@ -40,7 +40,7 @@ public struct InAppLanguageToggle: View {
             .font(.caption2.weight(.bold))
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
-            .background(appState.currentLanguage == "es" ? Color.cyan : Color.clear, in: Capsule())
+            .background(appState.currentLanguage == "es" ? Color(red: 0.2, green: 0.8, blue: 0.9) : Color.clear, in: Capsule())
             .foregroundStyle(appState.currentLanguage == "es" ? Color.black : Color.white.opacity(0.8))
             
             Button("EN") {
@@ -49,7 +49,7 @@ public struct InAppLanguageToggle: View {
             .font(.caption2.weight(.bold))
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
-            .background(appState.currentLanguage == "en" ? Color.cyan : Color.clear, in: Capsule())
+            .background(appState.currentLanguage == "en" ? Color(red: 0.2, green: 0.8, blue: 0.9) : Color.clear, in: Capsule())
             .foregroundStyle(appState.currentLanguage == "en" ? Color.black : Color.white.opacity(0.8))
         }
         .padding(2)
@@ -85,7 +85,7 @@ public struct AdminReaderModeSwitch: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 6)
-                    .background(!appState.simulateReaderMode ? Color.cyan : Color.clear, in: Capsule())
+                    .background(!appState.simulateReaderMode ? Color(red: 0.2, green: 0.8, blue: 0.9) : Color.clear, in: Capsule())
                     .foregroundStyle(!appState.simulateReaderMode ? Color.black : Color.secondary)
                 }
                 .buttonStyle(.plain)
