@@ -124,6 +124,23 @@ public struct Manga: Identifiable, Decodable, Sendable, Equatable, Hashable {
         }
     }
     
+    /// Indica si la publicación de la serie ha finalizado por completo
+    public var isCompleted: Bool {
+        guard let s = status?.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) else { return false }
+        return s == "completed" || s == "finished" || s == "complete" || s == "finalizado" || s == "completado"
+    }
+    
+    /// Indica si la publicación de la serie se encuentra en pausa temporal (Hiatus)
+    public var isHiatus: Bool {
+        guard let s = status?.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) else { return false }
+        return s == "hiatus" || s == "pausado" || s == "en pausa"
+    }
+    
+    /// Indica si la serie continúa en emisión activa
+    public var isOngoing: Bool {
+        !isCompleted && !isHiatus
+    }
+    
     public var safeReadingPercentage: Double {
         if readingPercentage.isNaN || readingPercentage.isInfinite { return 0.0 }
         return min(max(readingPercentage, 0.0), 100.0)

@@ -386,13 +386,14 @@ public final class AppState {
         let isEn = currentLanguage == "en"
         let targets: [Manga]
         if let targetMangas, !targetMangas.isEmpty {
-            targets = targetMangas
+            targets = targetMangas.filter { !$0.isCompleted }
         } else {
-            // Mangas relevantes: los que están en progreso, leídos o favoritos
+            // Mangas relevantes: los que están en progreso o activos (excluyendo series finalizadas)
             let relevant = mangas.filter { m in
-                m.isFavorite || m.unreadCount > 0 || m.readingPercentage > 0 || history.contains { $0.mangaId == m.id }
+                guard !m.isCompleted else { return false }
+                return m.isFavorite || m.unreadCount > 0 || m.readingPercentage > 0 || history.contains { $0.mangaId == m.id }
             }
-            targets = relevant.isEmpty ? Array(mangas.prefix(15)) : Array(relevant.prefix(25))
+            targets = relevant.isEmpty ? Array(mangas.filter { !$0.isCompleted }.prefix(15)) : Array(relevant.prefix(25))
         }
         
         guard !targets.isEmpty else {

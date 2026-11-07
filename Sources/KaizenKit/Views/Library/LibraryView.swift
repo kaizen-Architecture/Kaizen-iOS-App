@@ -4,6 +4,7 @@ public enum LibraryFilter: String, CaseIterable, Identifiable {
     case all = "Todos"
     case reading = "Leyendo"
     case caughtUp = "Al día"
+    case completed = "Completadas"
     case favorites = "Favoritos"
     
     public var id: String { rawValue }
@@ -13,7 +14,23 @@ public enum LibraryFilter: String, CaseIterable, Identifiable {
         case .all: return language == "en" ? "All" : "Todos"
         case .reading: return language == "en" ? "Reading" : "Leyendo"
         case .caughtUp: return language == "en" ? "Caught Up" : "Al día"
+        case .completed: return language == "en" ? "Completed" : "Completadas"
         case .favorites: return language == "en" ? "Favorites" : "Favoritos"
+        }
+    }
+}
+
+public enum CaughtUpSubFilter: String, CaseIterable, Identifiable {
+    case all, ongoing, completed, hiatus
+    public var id: String { rawValue }
+    
+    public func label(language: String) -> String {
+        let isEn = language == "en"
+        switch self {
+        case .all: return isEn ? "All" : "Todas"
+        case .ongoing: return isEn ? "Publishing" : "En emisión"
+        case .completed: return isEn ? "Completed" : "Finalizadas"
+        case .hiatus: return isEn ? "Hiatus" : "En pausa"
         }
     }
 }
@@ -33,6 +50,7 @@ public struct LibraryView: View {
     let mode: LibraryDisplayMode
     
     @State private var selectedFilter: LibraryFilter
+    @State private var caughtUpSubFilter: CaughtUpSubFilter = .all
     @State private var selectedShelfId: UUID? = nil
     @State private var selectedLibraryId: Int? = nil
     @State private var selectedStatus: String? = nil
@@ -178,7 +196,26 @@ public struct LibraryView: View {
                         || manga.readingPercentage > 0
                         || inHistory
                     let noUnread = manga.unreadCount == 0 && manga.totalChapters > 0
-                    matchesFilterOrShelf = (hasStarted && noUnread) || (manga.readingPercentage >= 100 && manga.unreadCount == 0)
+                    let isCaughtUpBase = (hasStarted && noUnread) || (manga.readingPercentage >= 100 && manga.unreadCount == 0)
+                    
+                    if !isCaughtUpBase {
+                        matchesFilterOrShelf = false
+                    } else {
+                        switch caughtUpSubFilter {
+                        case .all:
+                            matchesFilterOrShelf = true
+                        case .ongoing:
+                            matchesFilterOrShelf = manga.isOngoing
+                        case .completed:
+                            matchesFilterOrShelf = manga.isCompleted
+                        case .hiatus:
+                            matchesFilterOrShelf = manga.isHiatus
+                        }
+                    }
+                case .completed:
+                    let inHistory = appState.history.contains { $0.mangaId == manga.id }
+                    let hasRead = manga.readingPercentage >= 100 || (manga.totalChapters > 0 && manga.unreadCount == 0) || inHistory
+                    matchesFilterOrShelf = manga.isCompleted && hasRead
                 case .favorites:
                     matchesFilterOrShelf = manga.isFavorite
                 }
@@ -285,6 +322,12 @@ public struct LibraryView: View {
                                             } else if filter == .reading {
                                                 Image(systemName: "play.fill")
                                                     .font(.caption2)
+                                            } else if filter == .caughtUp {
+                                                Image(systemName: "checkmark.circle.fill")
+                                                    .font(.caption2)
+                                            } else if filter == .completed {
+                                                Image(systemName: "flag.checkered")
+                                                    .font(.caption2)
                                             }
                                             Text(filter.label(language: appState.currentLanguage))
                                         }
@@ -355,9 +398,65 @@ public struct LibraryView: View {
                 }
             }
             
+            if mode != .discoverCatalog && selectedShelfId == nil && selectedFilter == .caughtUp {
+                caughtUpSubFilterBar
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
+    }
+    
+    private var caughtUpSubFilterBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(CaughtUpSubFilter.allCases) { sub in
+                    let isSelected = (caughtUpSubFilter == sub)
+                    let count = countForCaughtUp(sub: sub)
+                    
+                    Button {
+                        withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
+                            caughtUpSubFilter = sub
+                        }
+                    } label: {
+                        HStack(spacing: 5) {
+                            Text(sub.label(language: appState.currentLanguage))
+                            Text("(\(count))")
+                                .font(.caption2.weight(.bold))
+                                .opacity(0.8)
+                        }
+                        .font(.caption.weight(.medium))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 5)
+                        .background(
+                            isSelected ? Color.cyan : Color.white.opacity(0.06),
+                            in: Capsule()
+                        )
+                        .foregroundStyle(isSelected ? Color.black : Color.white)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.top, 2)
+        }
+    }
+    
+    private func countForCaughtUp(sub: CaughtUpSubFilter) -> Int {
+        appState.mangas.filter { manga in
+            let inHistory = appState.history.contains { $0.mangaId == manga.id }
+            let hasStarted = (manga.totalChapters > 0 && manga.totalChapters > manga.unreadCount)
+                || manga.readingPercentage > 0
+                || inHistory
+            let noUnread = manga.unreadCount == 0 && manga.totalChapters > 0
+            let isCaughtUpBase = (hasStarted && noUnread) || (manga.readingPercentage >= 100 && manga.unreadCount == 0)
+            guard isCaughtUpBase else { return false }
+            
+            switch sub {
+            case .all: return true
+            case .ongoing: return manga.isOngoing
+            case .completed: return manga.isCompleted
+            case .hiatus: return manga.isHiatus
+            }
+        }.count
     }
     
     @ViewBuilder
