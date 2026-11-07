@@ -62,7 +62,7 @@ public struct ReadingHomeView: View {
                 .frame(maxWidth: 900)
                 .frame(maxWidth: .infinity, alignment: .top)
             }
-            .background(Color.black.ignoresSafeArea())
+            .ambientGlowBackground()
             .navigationTitle(isEn ? "Reading" : "Leyendo")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {

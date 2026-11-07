@@ -31,7 +31,8 @@ public enum ServerSection: String, CaseIterable, Identifiable {
 }
 
 /// Centro de Control Remoto del Servidor Kaizen (Estación de trabajo en pantalla completa)
-/// Diseñado para iPhone e iPad (horizontal y vertical) con submenú interactivo Liquid Glass.
+/// Diseñado para iPhone e iPad (horizontal y vertical) con submenú interactivo Liquid Glass
+/// y navegación por gestos de deslizamiento horizontal (Swipe paging).
 public struct ServerHubView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(AppState.self) private var appState
@@ -60,32 +61,30 @@ public struct ServerHubView: View {
     public var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // Submenú de cápsulas Liquid Glass
+                // Submenú de cápsulas Liquid Glass sincronizado con el scroll horizontal
                 submenuPillBar
                 
-                // Workstation en pantalla completa según sección seleccionada
-                ZStack {
-                    switch selectedSection {
-                    case .status:
-                        HomeDashboardView(apiClient: apiClient, isEmbedded: true)
-                            .transition(.opacity)
-                    case .queue:
-                        LiveDownloadQueueSheet(apiClient: apiClient, isEmbedded: true)
-                            .transition(.opacity)
-                    case .scrapers:
-                        AdminDashboardView(apiClient: apiClient, isEmbedded: true, defaultSection: .sources)
-                            .transition(.opacity)
-                    case .requests:
-                        MangaRequestsView(apiClient: apiClient, isEmbedded: true)
-                            .transition(.opacity)
-                    case .operations:
-                        AdminDashboardView(apiClient: apiClient, isEmbedded: true, defaultSection: .operations)
-                            .transition(.opacity)
-                    }
+                // Workstation en pantalla completa con soporte de deslizamiento táctil horizontal (Swipe)
+                TabView(selection: $selectedSection) {
+                    HomeDashboardView(apiClient: apiClient, isEmbedded: true)
+                        .tag(ServerSection.status)
+                    
+                    LiveDownloadQueueSheet(apiClient: apiClient, isEmbedded: true)
+                        .tag(ServerSection.queue)
+                    
+                    AdminDashboardView(apiClient: apiClient, isEmbedded: true, defaultSection: .sources)
+                        .tag(ServerSection.scrapers)
+                    
+                    MangaRequestsView(apiClient: apiClient, isEmbedded: true)
+                        .tag(ServerSection.requests)
+                    
+                    AdminDashboardView(apiClient: apiClient, isEmbedded: true, defaultSection: .operations)
+                        .tag(ServerSection.operations)
                 }
+                .tabViewStyle(.page(indexDisplayMode: .never))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .background(Color.black.ignoresSafeArea())
+            .ambientGlowBackground()
             .navigationTitle(isEn ? "Server Hub" : "Servidor")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -130,55 +129,72 @@ public struct ServerHubView: View {
         }
     }
     
-    // MARK: - Submenú de Cápsulas Liquid Glass
+    // MARK: - Submenú de Cápsulas Liquid Glass con Auto-Scroll
     
     private var submenuPillBar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(ServerSection.allCases) { sec in
-                    let isSelected = selectedSection == sec
-                    let count = badge(for: sec)
-                    
-                    Button {
-                        withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
-                            selectedSection = sec
-                        }
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: sec.icon)
-                                .font(.caption.weight(.semibold))
-                            Text(sec.title(isEn: isEn))
-                                .font(.caption.weight(.semibold))
-                            if count > 0 {
-                                Text("\(count)")
-                                    .font(.caption2.weight(.bold))
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(isSelected ? Color.black.opacity(0.35) : Color.cyan, in: Capsule())
-                                    .foregroundStyle(isSelected ? Color.white : Color.black)
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(ServerSection.allCases) { sec in
+                        let isSelected = selectedSection == sec
+                        let count = badge(for: sec)
+                        
+                        Button {
+                            withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
+                                selectedSection = sec
                             }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: sec.icon)
+                                    .font(.caption.weight(.semibold))
+                                Text(sec.title(isEn: isEn))
+                                    .font(.caption.weight(.semibold))
+                                if count > 0 {
+                                    Text("\(count)")
+                                        .font(.caption2.weight(.bold))
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(isSelected ? Color.black.opacity(0.35) : Color.cyan, in: Capsule())
+                                        .foregroundStyle(isSelected ? Color.white : Color.black)
+                                }
+                            }
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(
+                                isSelected ? AnyShapeStyle(Color.cyan) : AnyShapeStyle(.ultraThinMaterial),
+                                in: Capsule()
+                            )
+                            .foregroundStyle(isSelected ? Color.black : Color.white)
+                            .overlay(
+                                Capsule().stroke(
+                                    LinearGradient(
+                                        colors: isSelected
+                                            ? [Color.white.opacity(0.55), Color.clear]
+                                            : [Color.white.opacity(0.24), Color.white.opacity(0.06)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ),
+                                    lineWidth: 1
+                                )
+                            )
                         }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .background(
-                            isSelected ? AnyShapeStyle(Color.cyan) : AnyShapeStyle(.ultraThinMaterial),
-                            in: Capsule()
-                        )
-                        .foregroundStyle(isSelected ? Color.black : Color.white)
-                        .overlay(
-                            Capsule().stroke(isSelected ? Color.clear : Color.white.opacity(0.14), lineWidth: 1)
-                        )
+                        .buttonStyle(.plain)
+                        .id(sec)
                     }
-                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .frame(maxWidth: isPad ? .infinity : nil, alignment: isPad ? .center : .leading)
+            }
+            .background(Color.black.opacity(0.85))
+            .overlay(alignment: .bottom) {
+                Divider().background(Color.white.opacity(0.08))
+            }
+            .onChange(of: selectedSection) { _, newSec in
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    proxy.scrollTo(newSec, anchor: .center)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .frame(maxWidth: isPad ? .infinity : nil, alignment: isPad ? .center : .leading)
-        }
-        .background(Color.black.opacity(0.85))
-        .overlay(alignment: .bottom) {
-            Divider().background(Color.white.opacity(0.08))
         }
     }
 }
