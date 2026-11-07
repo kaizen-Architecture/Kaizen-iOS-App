@@ -65,24 +65,28 @@ public struct ServerHubView: View {
                 submenuPillBar
                 
                 // Workstation en pantalla completa con soporte de deslizamiento táctil horizontal (Swipe)
-                TabView(selection: $selectedSection) {
-                    HomeDashboardView(apiClient: apiClient, isEmbedded: true)
-                        .tag(ServerSection.status)
-                    
-                    LiveDownloadQueueSheet(apiClient: apiClient, isEmbedded: true)
-                        .tag(ServerSection.queue)
-                    
-                    AdminDashboardView(apiClient: apiClient, isEmbedded: true, defaultSection: .sources)
-                        .tag(ServerSection.scrapers)
-                    
-                    MangaRequestsView(apiClient: apiClient, isEmbedded: true)
-                        .tag(ServerSection.requests)
-                    
-                    AdminDashboardView(apiClient: apiClient, isEmbedded: true, defaultSection: .operations)
-                        .tag(ServerSection.operations)
+                ZStack {
+                    switch selectedSection {
+                    case .status:
+                        HomeDashboardView(apiClient: apiClient, isEmbedded: true)
+                    case .queue:
+                        LiveDownloadQueueSheet(apiClient: apiClient, isEmbedded: true)
+                    case .scrapers:
+                        AdminDashboardView(apiClient: apiClient, isEmbedded: true, defaultSection: .sources)
+                    case .requests:
+                        MangaRequestsView(apiClient: apiClient, isEmbedded: true)
+                    case .operations:
+                        AdminDashboardView(apiClient: apiClient, isEmbedded: true, defaultSection: .operations)
+                    }
                 }
-                .tabViewStyle(.page(indexDisplayMode: .never))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 25)
+                        .onEnded { value in
+                            handleSwipe(translation: value.translation)
+                        }
+                )
             }
             .ambientGlowBackground()
             .navigationTitle(isEn ? "Server Hub" : "Servidor")
@@ -123,8 +127,38 @@ public struct ServerHubView: View {
             .sheet(isPresented: $showAddMangaSheet) {
                 AddMangaRemoteSheet(apiClient: apiClient)
             }
+            .navigationDestination(for: Manga.self) { manga in
+                MangaDetailView(manga: manga, apiClient: apiClient)
+            }
             .task {
                 await appState.refreshDownloadQueue(client: apiClient)
+            }
+        }
+    }
+    
+    // MARK: - Gestos de Deslizamiento Horizontal (Swipe Paging)
+    
+    private func handleSwipe(translation: CGSize) {
+        let horizontal = translation.width
+        let vertical = translation.height
+        
+        // Intención clara horizontal (> 35 pt y componente horizontal mayor que vertical)
+        guard abs(horizontal) > 35, abs(horizontal) > abs(vertical) * 1.2 else { return }
+        
+        let all = ServerSection.allCases
+        guard let currentIndex = all.firstIndex(of: selectedSection) else { return }
+        
+        if horizontal < 0 {
+            // Deslizar hacia la izquierda -> avanzar sección
+            let nextIndex = min(currentIndex + 1, all.count - 1)
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                selectedSection = all[nextIndex]
+            }
+        } else {
+            // Deslizar hacia la derecha -> retroceder sección
+            let prevIndex = max(currentIndex - 1, 0)
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                selectedSection = all[prevIndex]
             }
         }
     }

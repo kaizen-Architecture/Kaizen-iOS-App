@@ -34,6 +34,12 @@ public final class AppState {
     // Modo de previsualización Admin <-> Reader sin cerrar sesión
     public var simulateReaderMode: Bool = false
     
+    // Búsqueda y actualización de nuevos capítulos en servidor con barra de progreso
+    public var isCheckingForNewChapters: Bool = false
+    public var chapterCheckProgress: Double = 0.0
+    public var chapterCheckStatusMessage: String? = nil
+    public var chapterCheckToastMessage: String? = nil
+    
     public var isAuthenticated: Bool {
         session != nil
     }
@@ -366,6 +372,86 @@ public final class AppState {
                 userId: current.id,
                 language: language
             )
+        }
+    }
+    
+    // MARK: - Sincronización inteligente de nuevos capítulos (Pull-to-refresh)
+    
+    public func checkForNewChapters(client: KaizenAPIClient, targetMangas: [Manga]? = nil) async {
+        guard let session, !isCheckingForNewChapters else { return }
+        
+        let isEn = currentLanguage == "en"
+        let targets: [Manga]
+        if let targetMangas, !targetMangas.isEmpty {
+            targets = targetMangas
+        } else {
+            // Mangas relevantes: los que están en progreso, leídos o favoritos
+            let relevant = mangas.filter { m in
+                m.isFavorite || m.unreadCount > 0 || m.readingPercentage > 0 || history.contains { $0.mangaId == m.id }
+            }
+            targets = relevant.isEmpty ? Array(mangas.prefix(15)) : Array(relevant.prefix(25))
+        }
+        
+        guard !targets.isEmpty else {
+            await loadLibrary(client: client, force: true)
+            return
+        }
+        
+        isCheckingForNewChapters = true
+        chapterCheckProgress = 0.0
+        chapterCheckToastMessage = nil
+        
+        // Guardar conteos iniciales
+        let initialTotals: [Int: (total: Int, unread: Int)] = Dictionary(
+            uniqueKeysWithValues: targets.map { ($0.id, ($0.totalChapters, $0.unreadCount)) }
+        )
+        
+        var completed = 0
+        let totalCount = targets.count
+        
+        for manga in targets {
+            chapterCheckStatusMessage = isEn 
+                ? "Checking series (\(completed + 1)/\(totalCount))..." 
+                : "Buscando capítulos (\(completed + 1)/\(totalCount))..."
+            
+            // Petición al crawler del servidor para esta serie
+            try? await client.syncManga(serverUrl: session.serverUrl, token: session.apiToken, mangaId: manga.id)
+            
+            completed += 1
+            chapterCheckProgress = Double(completed) / Double(totalCount)
+        }
+        
+        // Recargar biblioteca con los datos más recientes del servidor
+        await loadLibrary(client: client, force: true)
+        
+        // Comprobar si hubo capítulos nuevos
+        var updatedCount = 0
+        for manga in mangas where initialTotals[manga.id] != nil {
+            if let initial = initialTotals[manga.id] {
+                if manga.totalChapters > initial.total || manga.unreadCount > initial.unread {
+                    updatedCount += 1
+                }
+            }
+        }
+        
+        isCheckingForNewChapters = false
+        chapterCheckStatusMessage = nil
+        
+        if updatedCount > 0 {
+            chapterCheckToastMessage = isEn 
+                ? "🎉 \(updatedCount) \(updatedCount == 1 ? "series updated" : "series updated") with new chapters!" 
+                : "🎉 ¡\(updatedCount) \(updatedCount == 1 ? "serie actualizada" : "series actualizadas") con capítulos nuevos!"
+        } else {
+            chapterCheckToastMessage = isEn 
+                ? "✓ All series are up to date" 
+                : "✓ Todas las series están al día"
+        }
+        
+        Task {
+            try? await Task.sleep(for: .seconds(3.5))
+            if !Task.isCancelled {
+                self.chapterCheckToastMessage = nil
+            }
         }
     }
 }

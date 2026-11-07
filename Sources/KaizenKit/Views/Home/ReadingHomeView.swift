@@ -27,8 +27,15 @@ public struct ReadingHomeView: View {
     
     private var inProgress: [Manga] {
         appState.mangas
-            .filter { $0.safeReadingPercentage > 0 && $0.safeReadingPercentage < 100 }
-            .prefix(12)
+            .filter { manga in
+                let inHistory = appState.history.contains { $0.mangaId == manga.id }
+                let hasStarted = (manga.totalChapters > manga.unreadCount && manga.totalChapters > 0)
+                    || (manga.safeReadingPercentage > 0 && manga.safeReadingPercentage < 100)
+                    || inHistory
+                let hasUnread = manga.unreadCount > 0 || manga.safeReadingPercentage < 100
+                return hasStarted && hasUnread
+            }
+            .prefix(16)
             .map { $0 }
     }
     
@@ -63,6 +70,9 @@ public struct ReadingHomeView: View {
                 .frame(maxWidth: .infinity, alignment: .top)
             }
             .ambientGlowBackground()
+            .overlay(alignment: .top) {
+                SyncProgressBanner()
+            }
             .navigationTitle(isEn ? "Reading" : "Leyendo")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -78,7 +88,7 @@ public struct ReadingHomeView: View {
                 await loadRecent()
             }
             .refreshable {
-                await appState.loadLibrary(client: apiClient, force: true)
+                await appState.checkForNewChapters(client: apiClient)
                 await loadRecent()
             }
             .sheet(item: $sheet) { item in
@@ -158,7 +168,7 @@ public struct ReadingHomeView: View {
         
         return HStack(spacing: 16) {
             RemoteImage(url: coverURL, token: appState.session?.apiToken, contentMode: .fill)
-                .frame(width: 88, height: 130)
+                .frame(width: 88, height: 128)
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .shadow(color: .black.opacity(0.45), radius: 8, y: 4)
             
@@ -194,19 +204,19 @@ public struct ReadingHomeView: View {
             Spacer(minLength: 0)
         }
         .padding(16)
+        .frame(height: 160)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background {
-            GeometryReader { geo in
-                ZStack {
-                    Color.black
-                    RemoteImage(url: coverURL, token: appState.session?.apiToken, contentMode: .fill)
-                        .frame(width: geo.size.width, height: geo.size.height)
-                        .clipped()
-                        .blur(radius: 35)
-                        .scaleEffect(1.2)
-                        .overlay(Color.black.opacity(0.55))
-                }
+            ZStack {
+                Color.black
+                RemoteImage(url: coverURL, token: appState.session?.apiToken, contentMode: .fill)
+                    .frame(height: 160)
+                    .clipped()
+                    .blur(radius: 35)
+                    .scaleEffect(1.25)
+                    .overlay(Color.black.opacity(0.65))
             }
+            .clipped()
         }
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(
@@ -257,32 +267,17 @@ public struct ReadingHomeView: View {
             
             VStack(spacing: 0) {
                 ForEach(Array(recentDownloads.prefix(5).enumerated()), id: \.element.id) { offset, item in
-                    HStack(spacing: 12) {
-                        RemoteImage(
-                            url: item.coverUrl.flatMap { URL(string: $0) },
-                            token: appState.session?.apiToken,
-                            contentMode: .fill
-                        )
-                        .frame(width: 40, height: 58)
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                        
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(item.mangaTitle)
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.white)
-                                .lineLimit(1)
-                            Text((isEn ? "Chapter " : "Capítulo ") + String(format: "%g", item.index))
-                                .font(.footnote)
-                                .foregroundStyle(.cyan)
-                        }
-                        Spacer()
-                        if let size = item.formattedSize {
-                            Text(size)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                    let matchedManga = appState.mangas.first(where: { $0.id == item.mangaId })
+                    Group {
+                        if let matchedManga {
+                            NavigationLink(value: matchedManga) {
+                                recentDownloadRow(item)
+                            }
+                            .buttonStyle(.plain)
+                        } else {
+                            recentDownloadRow(item)
                         }
                     }
-                    .padding(12)
                     
                     if offset < min(recentDownloads.count, 5) - 1 {
                         Divider().padding(.leading, 64)
@@ -291,6 +286,38 @@ public struct ReadingHomeView: View {
             }
             .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         }
+    }
+    
+    private func recentDownloadRow(_ item: KaizenServerRecentDownload) -> some View {
+        HStack(spacing: 12) {
+            RemoteImage(
+                url: item.coverUrl.flatMap { URL(string: $0) },
+                token: appState.session?.apiToken,
+                contentMode: .fill
+            )
+            .frame(width: 40, height: 58)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.mangaTitle)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                Text((isEn ? "Chapter " : "Capítulo ") + String(format: "%g", item.index))
+                    .font(.footnote)
+                    .foregroundStyle(.cyan)
+            }
+            Spacer()
+            if let size = item.formattedSize {
+                Text(size)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Image(systemName: "chevron.right")
+                .font(.caption2)
+                .foregroundStyle(.secondary.opacity(0.6))
+        }
+        .padding(12)
     }
     
     private func loadRecent() async {

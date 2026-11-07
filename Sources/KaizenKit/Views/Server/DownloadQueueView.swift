@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Hoja nativa con la cola de descargas del servidor (`trpc/manga.downloadQueue`).
 public struct LiveDownloadQueueSheet: View {
-    private enum QueueFilter: String, CaseIterable, Identifiable {
+    public enum QueueFilter: String, CaseIterable, Identifiable {
         case all, active, waiting, failed
         var id: String { rawValue }
     }
@@ -13,13 +13,16 @@ public struct LiveDownloadQueueSheet: View {
     
     @State private var jobs: [DownloadQueueJob] = []
     @State private var isLoading = false
-    @State private var filter: QueueFilter = .all
+    @State private var filter: QueueFilter
     @State private var isExecutingAction = false
+    @State private var selectedMangaForSources: Manga? = nil
+    @State private var selectedMangaForDetail: Manga? = nil
     public var isEmbedded: Bool = false
     
-    public init(apiClient: KaizenAPIClient, isEmbedded: Bool = false) {
+    public init(apiClient: KaizenAPIClient, isEmbedded: Bool = false, initialFilter: QueueFilter = .all) {
         self.apiClient = apiClient
         self.isEmbedded = isEmbedded
+        self._filter = State(initialValue: initialFilter)
     }
     
     private var isEn: Bool { appState.currentLanguage == "en" }
@@ -172,12 +175,33 @@ public struct LiveDownloadQueueSheet: View {
         }
         .scrollContentBackground(.hidden)
         .background(Color.black.ignoresSafeArea())
+        .sheet(item: $selectedMangaForSources) { manga in
+            MangaSourcesManagementSheet(manga: manga, apiClient: apiClient) {
+                Task {
+                    await loadQueue()
+                }
+            }
+        }
+        .sheet(item: $selectedMangaForDetail) { manga in
+            NavigationStack {
+                MangaDetailView(manga: manga, apiClient: apiClient)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button(isEn ? "Done" : "Listo") {
+                                selectedMangaForDetail = nil
+                            }
+                        }
+                    }
+            }
+        }
     }
     
     // MARK: - Fila
     
     private func jobRow(_ job: DownloadQueueJob) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let matchedManga = appState.mangas.first(where: { $0.id == job.mangaId })
+        
+        return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 12) {
                 Image(systemName: icon(for: job.status))
                     .font(.body.weight(.semibold))
@@ -213,18 +237,62 @@ public struct LiveDownloadQueueSheet: View {
                         .foregroundStyle(.red)
                         .lineLimit(2)
                 }
+                
+                HStack(spacing: 8) {
+                    Button {
+                        perform { session in
+                            try await apiClient.retryJob(serverUrl: session.serverUrl, token: session.apiToken, jobId: job.id)
+                        }
+                    } label: {
+                        Label(isEn ? "Retry" : "Reintentar", systemImage: "arrow.clockwise")
+                            .font(.footnote.weight(.semibold))
+                    }
+                    .buttonStyle(.glass)
+                    
+                    if let matchedManga {
+                        Button {
+                            selectedMangaForSources = matchedManga
+                        } label: {
+                            Label(isEn ? "Sources" : "Fuentes", systemImage: "network")
+                                .font(.footnote.weight(.semibold))
+                        }
+                        .buttonStyle(.glass)
+                        
+                        Button {
+                            selectedMangaForDetail = matchedManga
+                        } label: {
+                            Label(isEn ? "Series" : "Serie", systemImage: "book.pages")
+                                .font(.footnote.weight(.semibold))
+                        }
+                        .buttonStyle(.glass)
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 4)
+        .contextMenu {
+            if job.status == "failed" {
                 Button {
                     perform { session in
                         try await apiClient.retryJob(serverUrl: session.serverUrl, token: session.apiToken, jobId: job.id)
                     }
                 } label: {
-                    Label(isEn ? "Retry" : "Reintentar", systemImage: "arrow.clockwise")
-                        .font(.footnote.weight(.semibold))
+                    Label(isEn ? "Retry download" : "Reintentar descarga", systemImage: "arrow.clockwise")
                 }
-                .buttonStyle(.glass)
+            }
+            if let matchedManga {
+                Button {
+                    selectedMangaForSources = matchedManga
+                } label: {
+                    Label(isEn ? "Change / Add Source" : "Cambiar / Añadir fuente", systemImage: "network")
+                }
+                Button {
+                    selectedMangaForDetail = matchedManga
+                } label: {
+                    Label(isEn ? "Open Series" : "Abrir serie", systemImage: "books.vertical")
+                }
             }
         }
-        .padding(.vertical, 4)
     }
     
     private func color(for status: String) -> Color {

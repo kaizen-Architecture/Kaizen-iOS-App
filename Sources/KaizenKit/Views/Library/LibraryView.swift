@@ -167,9 +167,18 @@ public struct LibraryView: View {
                     }
                 case .reading:
                     let inHistory = appState.history.contains { $0.mangaId == manga.id }
-                    matchesFilterOrShelf = (manga.readingPercentage > 0 && manga.readingPercentage < 100) || (inHistory && manga.readingPercentage < 100)
+                    let hasStarted = (manga.totalChapters > manga.unreadCount && manga.totalChapters > 0)
+                        || (manga.readingPercentage > 0 && manga.readingPercentage < 100)
+                        || inHistory
+                    let hasUnread = manga.unreadCount > 0 || manga.readingPercentage < 100
+                    matchesFilterOrShelf = hasStarted && hasUnread
                 case .caughtUp:
-                    matchesFilterOrShelf = manga.readingPercentage >= 100
+                    let inHistory = appState.history.contains { $0.mangaId == manga.id }
+                    let hasStarted = (manga.totalChapters > 0 && manga.totalChapters > manga.unreadCount)
+                        || manga.readingPercentage > 0
+                        || inHistory
+                    let noUnread = manga.unreadCount == 0 && manga.totalChapters > 0
+                    matchesFilterOrShelf = (hasStarted && noUnread) || (manga.readingPercentage >= 100 && manga.unreadCount == 0)
                 case .favorites:
                     matchesFilterOrShelf = manga.isFavorite
                 }
@@ -188,6 +197,9 @@ public struct LibraryView: View {
                     topFilterBars
                     mainCatalogContent
                 }
+            }
+            .overlay(alignment: .top) {
+                SyncProgressBanner()
             }
             .navigationTitle(navigationTitleText)
             .searchable(text: $searchText, prompt: isEn ? "Search title, author, genre..." : "Buscar título, autor, género...")
@@ -425,7 +437,7 @@ public struct LibraryView: View {
                 .padding(.bottom, 24)
             }
             .refreshable {
-                await appState.loadLibrary(client: apiClient, force: true)
+                await appState.checkForNewChapters(client: apiClient)
             }
         }
     }

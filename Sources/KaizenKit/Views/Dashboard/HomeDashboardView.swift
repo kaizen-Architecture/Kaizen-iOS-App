@@ -15,6 +15,7 @@ public struct HomeDashboardView: View {
     
     @State private var isLoading: Bool = false
     @State private var showQueueSheet: Bool = false
+    @State private var queueInitialFilter: LiveDownloadQueueSheet.QueueFilter = .all
     @State private var showAddMangaSheet: Bool = false
     
     public var isEmbedded: Bool = false
@@ -89,7 +90,7 @@ public struct HomeDashboardView: View {
                         }
                     }
                     .sheet(isPresented: $showQueueSheet) {
-                        LiveDownloadQueueSheet(apiClient: apiClient)
+                        LiveDownloadQueueSheet(apiClient: apiClient, initialFilter: queueInitialFilter)
                     }
                     .sheet(isPresented: $showAddMangaSheet) {
                         AddMangaRemoteSheet(apiClient: apiClient) {
@@ -160,6 +161,7 @@ public struct HomeDashboardView: View {
         
         return LazyVGrid(columns: columns, spacing: 10) {
             Button {
+                queueInitialFilter = .active
                 showQueueSheet = true
             } label: {
                 kpiStatBox(
@@ -173,6 +175,7 @@ public struct HomeDashboardView: View {
             .buttonStyle(.plain)
             
             Button {
+                queueInitialFilter = .waiting
                 showQueueSheet = true
             } label: {
                 kpiStatBox(
@@ -194,6 +197,7 @@ public struct HomeDashboardView: View {
             )
             
             Button {
+                queueInitialFilter = .failed
                 showQueueSheet = true
             } label: {
                 kpiStatBox(
@@ -427,46 +431,63 @@ public struct HomeDashboardView: View {
             } else {
                 VStack(spacing: 8) {
                     ForEach(recentDownloads.prefix(6)) { item in
-                        HStack(spacing: 10) {
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(Color.white.opacity(0.08))
-                                .frame(width: 34, height: 48)
-                                .overlay {
-                                    RemoteImage(
-                                        url: item.coverUrl.flatMap { URL(string: $0) },
-                                        token: appState.session?.apiToken,
-                                        contentMode: .fill
-                                    )
+                        let matchedManga = appState.mangas.first(where: { $0.id == item.mangaId })
+                        Group {
+                            if let matchedManga {
+                                NavigationLink(value: matchedManga) {
+                                    recentServerDownloadRow(item)
                                 }
-                                .clipShape(RoundedRectangle(cornerRadius: 6))
-                            
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(item.mangaTitle)
-                                    .font(.caption.weight(.bold))
-                                    .foregroundStyle(.white)
-                                    .lineLimit(1)
-                                
-                                HStack(spacing: 6) {
-                                    Text((isEn ? "Chapter " : "Capítulo ") + String(format: "%g", item.index))
-                                        .font(.caption2.weight(.semibold))
-                                        .foregroundStyle(.cyan)
-                                    if let sz = item.formattedSize {
-                                        Text("• \(sz)")
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
+                                .buttonStyle(.plain)
+                            } else {
+                                recentServerDownloadRow(item)
                             }
-                            Spacer()
                         }
-                        .padding(8)
-                        .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 10))
                     }
                 }
             }
         }
         .padding(15)
         .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+    }
+    
+    private func recentServerDownloadRow(_ item: KaizenServerRecentDownload) -> some View {
+        HStack(spacing: 10) {
+            RoundedRectangle(cornerRadius: 6)
+                .fill(Color.white.opacity(0.08))
+                .frame(width: 34, height: 48)
+                .overlay {
+                    RemoteImage(
+                        url: item.coverUrl.flatMap { URL(string: $0) },
+                        token: appState.session?.apiToken,
+                        contentMode: .fill
+                    )
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.mangaTitle)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                
+                HStack(spacing: 6) {
+                    Text((isEn ? "Chapter " : "Capítulo ") + String(format: "%g", item.index))
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.cyan)
+                    if let sz = item.formattedSize {
+                        Text("• \(sz)")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.caption2)
+                .foregroundStyle(.secondary.opacity(0.6))
+        }
+        .padding(8)
+        .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 10))
     }
     
     // MARK: - Carga de Datos del Dashboard

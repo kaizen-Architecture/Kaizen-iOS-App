@@ -46,6 +46,16 @@ jobs:
             -scheme Kaizen \
             -destination "generic/platform=iOS Simulator" \
             CODE_SIGNING_ALLOWED=NO || true
+
+      - name: Inject Build Number
+        run: |
+          BUILD_NUM="${{ github.run_number }}"
+          BASE_VER=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" App/Info.plist 2>/dev/null || echo "1.2.0")
+          echo "BUILD_NUM=$BUILD_NUM" >> $GITHUB_ENV
+          echo "BASE_VER=$BASE_VER" >> $GITHUB_ENV
+          echo "Setting CFBundleVersion to $BUILD_NUM in App/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUM" App/Info.plist || /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $BUILD_NUM" App/Info.plist
+
       - name: Build Release App for iOS Device (arm64)
         run: |
           xcodebuild clean build \
@@ -56,23 +66,22 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
+            CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
             CONFIGURATION_BUILD_DIR=$PWD/build/Release-iphoneos
 
       - name: Package IPA for AltStore
         run: |
-          VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" App/Info.plist 2>/dev/null || echo "1.2.0")
-          echo "APP_VERSION=$VERSION" >> $GITHUB_ENV
-          echo "Packaging version: $VERSION"
+          echo "Packaging version: ${BASE_VER} (Build ${BUILD_NUM})"
           mkdir -p Payload
           cp -r build/Release-iphoneos/Kaizen.app Payload/
-          zip -r "Kaizen_v${VERSION}.ipa" Payload
-          cp "Kaizen_v${VERSION}.ipa" Kaizen.ipa
-          echo "Kaizen_v${VERSION}.ipa and Kaizen.ipa packaged successfully."
+          zip -r "Kaizen_v${BASE_VER}_b${BUILD_NUM}.ipa" Payload
+          cp "Kaizen_v${BASE_VER}_b${BUILD_NUM}.ipa" Kaizen.ipa
+          echo "Kaizen_v${BASE_VER}_b${BUILD_NUM}.ipa and Kaizen.ipa packaged successfully."
 
       - name: Upload IPA Artifact for Sideloading
         uses: actions/upload-artifact@v4
         with:
-          name: Kaizen-v${{ env.APP_VERSION || '1.2.0' }}-IPA
+          name: Kaizen-v${{ env.BASE_VER }}-b${{ env.BUILD_NUM }}-IPA
           path: |
             Kaizen_v*.ipa
             Kaizen.ipa
@@ -83,7 +92,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'latest' }}
-          name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'Kaizen iOS (Latest Build)' }}
+          name: Kaizen iOS v${{ env.BASE_VER }} (Build ${{ env.BUILD_NUM }})
           prerelease: ${{ !startsWith(github.ref, 'refs/tags/v') }}
           generate_release_notes: true
           files: |
