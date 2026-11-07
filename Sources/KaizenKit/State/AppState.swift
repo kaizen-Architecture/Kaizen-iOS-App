@@ -34,6 +34,9 @@ public final class AppState {
     // Modo de previsualización Admin <-> Reader sin cerrar sesión
     public var simulateReaderMode: Bool = false
     
+    // Pestaña principal activa ("reading", "library", "explore", "server")
+    public var selectedMainTab: String = "reading"
+    
     // Búsqueda y actualización de nuevos capítulos en servidor con barra de progreso
     public var isCheckingForNewChapters: Bool = false
     public var chapterCheckProgress: Double = 0.0

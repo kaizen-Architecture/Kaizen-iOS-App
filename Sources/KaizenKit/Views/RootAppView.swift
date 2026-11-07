@@ -118,53 +118,98 @@ public struct AdminReaderModeSwitch: View {
 
 // MARK: - Navegación principal adaptativa (iPhone: barra flotante · iPad: barra lateral)
 
-private enum AppTab: Hashable {
-    case reading, library, explore, server
-}
-
 struct MainTabsView: View {
     @Environment(AppState.self) private var appState
     let apiClient: KaizenAPIClient
-    @State private var selection: AppTab = .reading
     
     private var isEn: Bool {
         appState.currentLanguage == "en"
     }
     
+    private var availableTabs: [String] {
+        appState.isManagement
+            ? ["reading", "library", "explore", "server"]
+            : ["reading", "library", "explore"]
+    }
+    
     var body: some View {
-        TabView(selection: $selection) {
+        TabView(selection: Binding(
+            get: { appState.selectedMainTab },
+            set: { appState.selectedMainTab = $0 }
+        )) {
             ReadingHomeView(apiClient: apiClient)
                 .tabItem {
                     Label(isEn ? "Reading" : "Leyendo", systemImage: "book.pages.fill")
                 }
-                .tag(AppTab.reading)
+                .tag("reading")
             
             LibraryView(apiClient: apiClient, mode: .personalReading)
                 .tabItem {
                     Label(isEn ? "Library" : "Biblioteca", systemImage: "books.vertical.fill")
                 }
-                .tag(AppTab.library)
+                .tag("library")
             
             LibraryView(apiClient: apiClient, mode: appState.isManagement ? .unifiedCatalog : .discoverCatalog)
                 .tabItem {
                     Label(isEn ? "Explore" : "Explorar", systemImage: "safari.fill")
                 }
-                .tag(AppTab.explore)
+                .tag("explore")
             
             if appState.isManagement {
                 ServerHubView(apiClient: apiClient)
                     .tabItem {
                         Label(isEn ? "Server" : "Servidor", systemImage: "server.rack")
                     }
-                    .tag(AppTab.server)
+                    .tag("server")
                     .badge(appState.activeDownloadCount)
             }
         }
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 35)
+                .onEnded { value in
+                    handleMainTabSwipe(value: value)
+                }
+        )
         .onChange(of: appState.isManagement) { _, isManagement in
-            if !isManagement && selection == .server { selection = .reading }
+            if !isManagement && appState.selectedMainTab == "server" {
+                appState.selectedMainTab = "reading"
+            }
         }
         .task {
             await appState.refreshDownloadQueue(client: apiClient)
+        }
+    }
+    
+    // MARK: - Desplazamiento Horizontal entre Pestañas Principales (Swipe Paging)
+    
+    private func handleMainTabSwipe(value: DragGesture.Value) {
+        let horizontal = value.translation.width
+        let vertical = value.translation.height
+        
+        // Si estamos en server, ServerHubView gestiona su propio submenú interno
+        guard appState.selectedMainTab != "server" else { return }
+        
+        // Reservar el borde izquierdo (< 30 pt) para el gesto nativo de navegación hacia atrás en NavigationStack
+        guard value.startLocation.x > 30 else { return }
+        
+        // Intención clara horizontal (> 35 pt y componente horizontal mayor que vertical)
+        guard abs(horizontal) > 35, abs(horizontal) > abs(vertical) * 1.2 else { return }
+        
+        let tabs = availableTabs
+        guard let currentIndex = tabs.firstIndex(of: appState.selectedMainTab) else { return }
+        
+        if horizontal < 0 {
+            // Deslizar hacia la izquierda -> avanzar a la siguiente pestaña (Reading -> Library -> Explore -> Server)
+            let nextIndex = min(currentIndex + 1, tabs.count - 1)
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                appState.selectedMainTab = tabs[nextIndex]
+            }
+        } else {
+            // Deslizar hacia la derecha -> retroceder a la pestaña previa (Server -> Explore -> Library -> Reading)
+            let prevIndex = max(currentIndex - 1, 0)
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                appState.selectedMainTab = tabs[prevIndex]
+            }
         }
     }
 }

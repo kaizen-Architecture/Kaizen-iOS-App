@@ -155,10 +155,16 @@ public struct ServerHubView: View {
                 selectedSection = all[nextIndex]
             }
         } else {
-            // Deslizar hacia la derecha -> retroceder sección
-            let prevIndex = max(currentIndex - 1, 0)
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
-                selectedSection = all[prevIndex]
+            // Deslizar hacia la derecha -> retroceder sección o volver a pestaña Explorar
+            if currentIndex == 0 {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                    appState.selectedMainTab = "explore"
+                }
+            } else {
+                let prevIndex = max(currentIndex - 1, 0)
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                    selectedSection = all[prevIndex]
+                }
             }
         }
     }
