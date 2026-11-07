@@ -35,7 +35,7 @@ public struct GlassButtonStyle: ButtonStyle {
             .padding(.vertical, 8)
             .background(
                 isProminent
-                    ? AnyShapeStyle(Color.cyan)
+                    ? AnyShapeStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
                     : AnyShapeStyle(.ultraThinMaterial),
                 in: Capsule()
             )

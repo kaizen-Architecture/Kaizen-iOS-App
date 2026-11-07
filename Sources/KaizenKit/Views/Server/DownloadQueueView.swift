@@ -203,7 +203,7 @@ public struct LiveDownloadQueueSheet: View {
             
             if job.status == "active" {
                 ProgressView(value: Double(min(max(job.progress, 3), 100)), total: 100)
-                    .tint(.cyan)
+                    .tint(Color(red: 0.2, green: 0.8, blue: 0.9))
             }
             
             if job.status == "failed" {
@@ -229,7 +229,7 @@ public struct LiveDownloadQueueSheet: View {
     
     private func color(for status: String) -> Color {
         switch status {
-        case "active": return .cyan
+        case "active": return Color(red: 0.2, green: 0.8, blue: 0.9)
         case "waiting": return .indigo
         case "failed": return .red
         case "completed": return .green

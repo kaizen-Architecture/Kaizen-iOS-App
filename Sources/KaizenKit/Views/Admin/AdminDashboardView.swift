@@ -397,7 +397,7 @@ public struct AdminDashboardView: View {
         Section(isEn ? "Library" : "Biblioteca") {
             actionRow(title: isEn ? "Check new chapters" : "Comprobar capítulos",
                       subtitle: isEn ? "Runs the crawler on every series" : "Lanza el crawler en todas las series",
-                      icon: "arrow.triangle.2.circlepath", color: .cyan, key: "syncAll") {
+                      icon: "arrow.triangle.2.circlepath", color: Color(red: 0.2, green: 0.8, blue: 0.9), key: "syncAll") {
                 await run("syncAll", ok: "¡Comprobación lanzada en todas las series!", okEn: "Chapter check launched on all series!") { c, s in
                     try await c.syncAllMangas(serverUrl: s.serverUrl, token: s.apiToken)
                 }
@@ -462,11 +462,13 @@ public struct AdminDashboardView: View {
                         Circle().fill(.red).frame(width: 8, height: 8)
                         Text(src.name).foregroundStyle(.white)
                         Spacer()
-                        Button(isEn ? "Reactivate" : "Reactivar") {
+                        SecondaryButton(
+                            title: isEn ? "Reactivate" : "Reactivar",
+                            systemImage: nil,
+                            tint: .white
+                        ) {
                             Task { await store.toggleSource(source: src, apiClient: apiClient, session: appState.session) }
                         }
-                        .buttonStyle(.glass)
-                        .font(.footnote.weight(.semibold))
                     }
                 }
                 Button {
@@ -497,7 +499,7 @@ public struct AdminDashboardView: View {
                             Spacer()
                             Text((isEn ? "Ch. " : "Cap. ") + String(format: "%g", job.chapterIndex))
                                 .font(.footnote.weight(.semibold))
-                                .foregroundStyle(.cyan)
+                                .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
                         }
                         HStack(spacing: 6) {
                             Text(job.source).font(.footnote).foregroundStyle(.secondary)
@@ -522,7 +524,7 @@ public struct AdminDashboardView: View {
                         } label: {
                             Label(isEn ? "Retry" : "Reintentar", systemImage: "arrow.clockwise")
                         }
-                        .tint(.cyan)
+                        .tint(Color(red: 0.2, green: 0.8, blue: 0.9))
                     }
                 }
                 Button {
@@ -548,89 +550,119 @@ public struct AdminDashboardView: View {
     private var sourcesSections: some View {
         if !blockedSources.isEmpty {
             Section {
-                HStack(spacing: 12) {
-                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-                    Text(isEn ? "\(blockedSources.count) blocked sources" : "\(blockedSources.count) fuentes bloqueadas")
-                        .font(.subheadline.weight(.semibold))
-                    Spacer()
-                    Button(isEn ? "Unblock all" : "Desbloquear todas") {
-                        Task { await store.reactivateAllFailedSources(apiClient: apiClient, session: appState.session, isEn: isEn) }
+                GlassCard {
+                    HStack(spacing: 12) {
+                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                        Text(isEn ? "\(blockedSources.count) blocked sources" : "\(blockedSources.count) fuentes bloqueadas")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.white)
+                        Spacer()
+                        SecondaryButton(
+                            title: isEn ? "Unblock all" : "Desbloquear todas",
+                            systemImage: nil,
+                            tint: .orange
+                        ) {
+                            Task { await store.reactivateAllFailedSources(apiClient: apiClient, session: appState.session, isEn: isEn) }
+                        }
+                        .disabled(store.activeAction != nil)
                     }
-                    .font(.footnote.weight(.semibold))
-                    .buttonStyle(.glass)
-                    .disabled(store.activeAction != nil)
+                    .padding(16)
                 }
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+                )
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
             }
-            .listRowBackground(Color.orange.opacity(0.18))
         }
         
         Section {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                TextField(isEn ? "Search sources" : "Buscar fuente", text: $store.sourceSearchText)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-            }
-            Picker("", selection: $store.sourceFilter) {
-                ForEach(SourceFilter.allCases) { f in
-                    Text(f.label(isEn: isEn)).tag(f)
+            GlassCard {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(.white.opacity(0.6))
+                    TextField(isEn ? "Search sources" : "Buscar fuente", text: $store.sourceSearchText)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .foregroundStyle(.white)
                 }
+                .padding(16)
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+
+            SegmentedGlass(
+                items: SourceFilter.allCases.map { $0.label(isEn: isEn) },
+                selectedIndex: Binding(
+                    get: { SourceFilter.allCases.firstIndex(of: store.sourceFilter) ?? 0 },
+                    set: { store.sourceFilter = SourceFilter.allCases[$0] }
+                )
+            )
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 8, trailing: 0))
         }
         
         Section {
             if store.isLoadingSources && store.sources.isEmpty {
                 HStack { Spacer(); ProgressView(); Spacer() }
+                    .listRowBackground(Color.clear)
             } else if filteredSources.isEmpty {
                 Text(isEn ? "No sources match." : "No hay fuentes que coincidan.")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.white.opacity(0.6))
+                    .listRowBackground(Color.clear)
             } else {
                 ForEach(filteredSources) { source in
                     sourceRow(source)
                 }
             }
         } footer: {
-            Button {
+            SecondaryButton(
+                title: isEn ? "Sync sources from GitHub" : "Sincronizar fuentes desde GitHub",
+                systemImage: "arrow.down.doc",
+                tint: Color(red: 0.2, green: 0.8, blue: 0.9)
+            ) {
                 Task { await store.syncSources(apiClient: apiClient, session: appState.session, isEn: isEn) }
-            } label: {
-                Label(isEn ? "Sync sources from GitHub" : "Sincronizar fuentes desde GitHub", systemImage: "arrow.down.doc")
-                    .font(.footnote.weight(.semibold))
             }
             .disabled(store.activeAction != nil)
-            .padding(.top, 8)
+            .padding(.top, 16)
         }
     }
     
     private func sourceRow(_ source: KaizenSourceItem) -> some View {
-        let statusColor: Color = source.isActive ? .green : (source.isFailed ? .red : .gray)
         let statusText = source.isActive
             ? (isEn ? "Active" : "Activa")
             : (source.isFailed ? (isEn ? "Blocked" : "Bloqueada") : (isEn ? "Disabled" : "Deshabilitada"))
+        let badgeColor: Color = source.isActive ? .green : (source.isFailed ? .red : .gray)
         
-        return HStack(spacing: 12) {
-            Circle().fill(statusColor).frame(width: 10, height: 10)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(source.name).foregroundStyle(.white)
-                Text(statusText + (source.origin.map { " · \($0)" } ?? ""))
-                    .font(.footnote)
-                    .foregroundStyle(statusColor == .gray ? Color.secondary : statusColor)
+        return GlassCard {
+            HStack(spacing: 12) {
+                StatusDot(status: source.isActive ? .completed : (source.isFailed ? .failed : .waiting))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(source.name).foregroundStyle(.white)
+                    Text(statusText + (source.origin.map { " · \($0)" } ?? ""))
+                        .font(.footnote)
+                        .foregroundStyle(badgeColor)
+                }
+                Spacer()
+                if store.isTogglingSource == source.name {
+                    ProgressView()
+                } else {
+                    Toggle("", isOn: Binding(
+                        get: { source.isActive },
+                        set: { _ in
+                            Task { await store.toggleSource(source: source, apiClient: apiClient, session: appState.session) }
+                        }
+                    ))
+                    .labelsHidden()
+                    .tint(Color(red: 0.2, green: 0.8, blue: 0.9))
+                }
             }
-            Spacer()
-            if store.isTogglingSource == source.name {
-                ProgressView()
-            } else {
-                Toggle("", isOn: Binding(
-                    get: { source.isActive },
-                    set: { _ in
-                        Task { await store.toggleSource(source: source, apiClient: apiClient, session: appState.session) }
-                    }
-                ))
-                .labelsHidden()
-                .tint(.cyan)
-            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
         }
+        .listRowBackground(Color.clear)
+        .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
     }
     
     // MARK: - Colas
@@ -664,7 +696,7 @@ public struct AdminDashboardView: View {
                         Spacer()
                         Text(job.status == "active" ? "\(max(job.progress, 1))%" : job.status.capitalized)
                             .font(.footnote.weight(.semibold))
-                            .foregroundStyle(job.status == "active" ? Color.cyan : (job.status == "failed" ? Color.red : Color.secondary))
+                            .foregroundStyle(job.status == "active" ? Color(red: 0.2, green: 0.8, blue: 0.9) : (job.status == "failed" ? Color.red : Color.secondary))
                     }
                 }
             }
@@ -686,7 +718,7 @@ public struct AdminDashboardView: View {
                         } else {
                             Text("\(queue.active) · \(queue.waiting) · \(queue.failed)")
                                 .font(.footnote.monospacedDigit())
-                                .foregroundStyle(queue.failed > 0 ? Color.red : Color.cyan)
+                                .foregroundStyle(queue.failed > 0 ? Color.red : Color(red: 0.2, green: 0.8, blue: 0.9))
                         }
                     }
                 }

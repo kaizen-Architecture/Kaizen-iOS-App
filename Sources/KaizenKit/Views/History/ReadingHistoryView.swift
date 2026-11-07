@@ -69,7 +69,7 @@ public struct ReadingHistoryView: View {
                             } header: {
                                 Text(section.title)
                                     .font(.headline.weight(.bold))
-                                    .foregroundStyle(.cyan)
+                                    .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
                                     .textCase(nil)
                                     .padding(.top, 8)
                             }
@@ -154,7 +154,7 @@ private struct HistoryCardRow: View {
                 
                 Text((isEn ? "Chapter " : "Capítulo ") + "\(entry.chapterIndex)")
                     .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.cyan)
+                    .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
                     .lineLimit(1)
                 
                 HStack(spacing: 8) {
@@ -173,7 +173,7 @@ private struct HistoryCardRow: View {
                 
                 // Barra de progreso de lectura
                 ProgressView(value: entry.progressPercentage, total: 100)
-                    .tint(.cyan)
+                    .tint(Color(red: 0.2, green: 0.8, blue: 0.9))
                     .scaleEffect(y: 0.8, anchor: .center)
             }
             
@@ -190,7 +190,7 @@ private struct HistoryCardRow: View {
                 .foregroundStyle(.black)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                .background(Color.cyan, in: Capsule())
+                .background(Color(red: 0.2, green: 0.8, blue: 0.9), in: Capsule())
             }
             .buttonStyle(.plain)
         }

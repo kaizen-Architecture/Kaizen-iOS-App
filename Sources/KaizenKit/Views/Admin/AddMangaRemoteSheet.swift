@@ -78,7 +78,7 @@ public struct AddMangaRemoteSheet: View {
                                 ? (isEn ? "Searching all sources on Kaizen..." : "Buscando en todas las fuentes de Kaizen...")
                                 : (isEn ? "Searching on \(selectedSource.capitalized)..." : "Buscando en \(selectedSource.capitalized)...")
                         )
-                        .tint(.cyan)
+                        .tint(Color(red: 0.2, green: 0.8, blue: 0.9))
                         .foregroundStyle(.secondary)
                         Spacer()
                     } else if let result = selectedResult {
@@ -129,7 +129,7 @@ public struct AddMangaRemoteSheet: View {
                         }
                     }
                     .pickerStyle(.menu)
-                    .tint(.cyan)
+                    .tint(Color(red: 0.2, green: 0.8, blue: 0.9))
                 }
                 Spacer()
             }
@@ -155,7 +155,7 @@ public struct AddMangaRemoteSheet: View {
                         .font(.subheadline.weight(.semibold))
                         .padding(.horizontal, 16)
                         .padding(.vertical, 10)
-                        .background(Color.cyan, in: RoundedRectangle(cornerRadius: 10))
+                        .background(Color(red: 0.2, green: 0.8, blue: 0.9), in: RoundedRectangle(cornerRadius: 10))
                         .foregroundStyle(.black)
                 }
                 .disabled(searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || selectedSource.isEmpty || isSearching)
@@ -168,7 +168,7 @@ public struct AddMangaRemoteSheet: View {
             Spacer()
             Image(systemName: selectedSource == "all" ? "globe.americas.fill" : "books.vertical.circle")
                 .font(.system(size: 48))
-                .foregroundStyle(.cyan.opacity(0.7))
+                .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9).opacity(0.7))
             Text(isEn ? "Search and Add New Series" : "Buscar y Añadir Nueva Serie")
                 .font(.headline)
                 .foregroundStyle(.white)
@@ -212,10 +212,10 @@ public struct AddMangaRemoteSheet: View {
                                 HStack(spacing: 8) {
                                     Text(result.source)
                                         .font(.caption2.weight(.medium))
-                                        .foregroundStyle(.cyan)
+                                        .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
                                         .padding(.horizontal, 6)
                                         .padding(.vertical, 2)
-                                        .background(Color.cyan.opacity(0.15), in: Capsule())
+                                        .background(Color(red: 0.2, green: 0.8, blue: 0.9).opacity(0.15), in: Capsule())
                                     
                                     if result.chapters > 0 {
                                         Text("\(result.chapters) " + (isEn ? "chapters" : "capítulos"))
@@ -229,7 +229,7 @@ public struct AddMangaRemoteSheet: View {
                             
                             Image(systemName: "plus.circle.fill")
                                 .font(.title3)
-                                .foregroundStyle(.cyan)
+                                .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
                         }
                         .padding(10)
                         .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
@@ -262,7 +262,7 @@ public struct AddMangaRemoteSheet: View {
                         
                         Text((isEn ? "Source: " : "Fuente: ") + result.source)
                             .font(.caption)
-                            .foregroundStyle(.cyan)
+                            .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
                         
                         if result.chapters > 0 {
                             Text((isEn ? "Available chapters: " : "Capítulos disponibles: ") + "\(result.chapters)")
@@ -321,7 +321,7 @@ public struct AddMangaRemoteSheet: View {
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
-                        .background(Color.cyan, in: RoundedRectangle(cornerRadius: 12))
+                        .background(Color(red: 0.2, green: 0.8, blue: 0.9), in: RoundedRectangle(cornerRadius: 12))
                         .foregroundStyle(.black)
                     }
                     .disabled(isAdding)

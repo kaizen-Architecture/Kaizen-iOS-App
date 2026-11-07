@@ -137,7 +137,7 @@ public struct AIStudioView: View {
                     }
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
-                    .background(Color.cyan, in: RoundedRectangle(cornerRadius: 10))
+                    .background(Color(red: 0.2, green: 0.8, blue: 0.9), in: RoundedRectangle(cornerRadius: 10))
                     .foregroundStyle(.black)
                 }
                 .disabled(store.isAnalyzing || store.targetUrl.isEmpty)
@@ -178,7 +178,7 @@ public struct AIStudioView: View {
             if let msg = store.testStatusMessage {
                 Text(msg)
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.cyan)
+                    .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
                     .padding(.vertical, 8)
             }
             
@@ -208,7 +208,7 @@ public struct AIStudioView: View {
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
-                        .background(Color.cyan, in: Capsule())
+                        .background(Color(red: 0.2, green: 0.8, blue: 0.9), in: Capsule())
                         .foregroundStyle(.black)
                     }
                 }

@@ -53,7 +53,9 @@ public struct LibraryView: View {
     @State private var showRenameShelfAlert = false
     
     private let columns = [
-        GridItem(.adaptive(minimum: 125, maximum: 180), spacing: 16, alignment: .top)
+        GridItem(.flexible(), spacing: 16, alignment: .top),
+        GridItem(.flexible(), spacing: 16, alignment: .top),
+        GridItem(.flexible(), spacing: 16, alignment: .top)
     ]
     
     public init(apiClient: KaizenAPIClient, mode: LibraryDisplayMode = .unifiedCatalog) {
@@ -280,7 +282,7 @@ public struct LibraryView: View {
                                         .padding(.horizontal, 14)
                                         .padding(.vertical, 7)
                                         .background(
-                                            isSelected ? Color.cyan : Color.white.opacity(0.08),
+                                            isSelected ? Color(red: 0.2, green: 0.8, blue: 0.9) : Color.white.opacity(0.1),
                                             in: Capsule()
                                         )
                                         .foregroundStyle(isSelected ? Color.black : Color.white)
@@ -308,7 +310,7 @@ public struct LibraryView: View {
                                         .padding(.horizontal, 13)
                                         .padding(.vertical, 7)
                                         .background(
-                                            isShelfSelected ? Color.cyan : Color.white.opacity(0.08),
+                                            isShelfSelected ? Color(red: 0.2, green: 0.8, blue: 0.9) : Color.white.opacity(0.1),
                                             in: Capsule()
                                         )
                                         .foregroundStyle(isShelfSelected ? Color.black : Color.white)
@@ -332,7 +334,7 @@ public struct LibraryView: View {
                                             }
                                         } label: {
                                             Image(systemName: "ellipsis.circle.fill")
-                                                .foregroundStyle(.cyan)
+                                                .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
                                         }
                                     }
                                 }
@@ -352,7 +354,7 @@ public struct LibraryView: View {
     private var mainCatalogContent: some View {
         if appState.isLoadingLibrary && appState.mangas.isEmpty {
             Spacer()
-            ProgressView().tint(.cyan)
+            ProgressView().tint(Color(red: 0.2, green: 0.8, blue: 0.9))
             Spacer()
         } else if filteredMangas.isEmpty {
             Spacer()
@@ -382,7 +384,7 @@ public struct LibraryView: View {
                             resetFilters()
                         }
                         .buttonStyle(.bordered)
-                        .tint(.cyan)
+                        .tint(Color(red: 0.2, green: 0.8, blue: 0.9))
                     }
                 }
             }
@@ -817,10 +819,10 @@ public struct MangaDetailView: View {
                                     Text(padPanelMode == .expanded ? (isEn ? "Reduce" : "Reducir") : (isEn ? "Expand" : "Agrandar"))
                                 }
                                 .font(.caption.weight(.semibold))
-                                .foregroundStyle(.cyan)
+                                .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 6)
-                                .background(Color.cyan.opacity(0.15), in: Capsule())
+                                .background(Color(red: 0.2, green: 0.8, blue: 0.9).opacity(0.15), in: Capsule())
                             }
                             .buttonStyle(.plain)
                         }
@@ -904,7 +906,7 @@ public struct MangaDetailView: View {
                     coverThumbnail(width: 44, height: 66, cornerRadius: 8)
                     Image(systemName: "chevron.right.circle.fill")
                         .font(.caption)
-                        .foregroundStyle(.cyan)
+                        .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
                 }
             }
             .buttonStyle(.plain)
@@ -946,9 +948,9 @@ public struct MangaDetailView: View {
             } label: {
                 Image(systemName: "arrow.triangle.2.circlepath")
                     .font(.subheadline)
-                    .foregroundStyle(.cyan)
+                    .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
                     .frame(width: 38, height: 38)
-                    .background(Color.cyan.opacity(0.14), in: RoundedRectangle(cornerRadius: 10))
+                    .background(Color(red: 0.2, green: 0.8, blue: 0.9).opacity(0.14), in: RoundedRectangle(cornerRadius: 10))
             }
             .buttonStyle(.plain)
             .disabled(isCheckingNewChapters)
@@ -978,7 +980,7 @@ public struct MangaDetailView: View {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .stroke(Color.white.opacity(0.15), lineWidth: 1)
             )
-            .shadow(color: Color.cyan.opacity(0.18), radius: 10, y: 4)
+            .shadow(color: Color(red: 0.2, green: 0.8, blue: 0.9).opacity(0.18), radius: 10, y: 4)
     }
     
     // MARK: - Cabecera Hero Rediseñada (Sin Textos Partidos ni Duplicados)
@@ -1026,9 +1028,9 @@ public struct MangaDetailView: View {
                         } label: {
                             Image(systemName: padPanelMode == .expanded ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
                                 .font(.caption.weight(.bold))
-                                .foregroundStyle(.cyan)
+                                .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
                                 .padding(7)
-                                .background(Color.cyan.opacity(0.15), in: RoundedRectangle(cornerRadius: 8))
+                                .background(Color(red: 0.2, green: 0.8, blue: 0.9).opacity(0.15), in: RoundedRectangle(cornerRadius: 8))
                         }
                         .buttonStyle(.plain)
                         .help(padPanelMode == .expanded ? (isEn ? "Reduce panel" : "Reducir ficha") : (isEn ? "Expand panel" : "Agrandar ficha"))
@@ -1073,10 +1075,10 @@ public struct MangaDetailView: View {
                 Spacer()
                 Text(progressText)
                     .font(.caption.weight(.bold))
-                    .foregroundStyle(.cyan)
+                    .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
             }
             ProgressView(value: progressFraction)
-                .tint(.cyan)
+                .tint(Color(red: 0.2, green: 0.8, blue: 0.9))
         }
     }
     
@@ -1119,8 +1121,8 @@ public struct MangaDetailView: View {
         .font(.caption2.weight(.bold))
         .padding(.horizontal, 9)
         .padding(.vertical, 4)
-        .background(Color.cyan.opacity(0.18), in: Capsule())
-        .foregroundStyle(.cyan)
+        .background(Color(red: 0.2, green: 0.8, blue: 0.9).opacity(0.18), in: Capsule())
+        .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
         .fixedSize(horizontal: true, vertical: false)
     }
     
@@ -1141,7 +1143,7 @@ public struct MangaDetailView: View {
                     .frame(maxWidth: .infinity)
                     .frame(height: 46)
                     .background(
-                        LinearGradient(colors: [Color.cyan, Color.blue], startPoint: .leading, endPoint: .trailing),
+                        LinearGradient(colors: [Color(red: 0.2, green: 0.8, blue: 0.9), Color.blue], startPoint: .leading, endPoint: .trailing),
                         in: RoundedRectangle(cornerRadius: 14)
                     )
                     .foregroundStyle(.black)
@@ -1165,11 +1167,11 @@ public struct MangaDetailView: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: 48)
                 .background(
-                    LinearGradient(colors: [Color.cyan, Color.blue], startPoint: .leading, endPoint: .trailing),
+                    LinearGradient(colors: [Color(red: 0.2, green: 0.8, blue: 0.9), Color.blue], startPoint: .leading, endPoint: .trailing),
                     in: RoundedRectangle(cornerRadius: 14)
                 )
                 .foregroundStyle(.black)
-                .shadow(color: Color.cyan.opacity(0.3), radius: 8, y: 4)
+                .shadow(color: Color(red: 0.2, green: 0.8, blue: 0.9).opacity(0.3), radius: 8, y: 4)
             }
             .buttonStyle(.plain)
         }
@@ -1237,7 +1239,7 @@ public struct MangaDetailView: View {
             } label: {
                 HStack(spacing: 6) {
                     if isCheckingNewChapters {
-                        ProgressView().scaleEffect(0.65).tint(.cyan)
+                        ProgressView().scaleEffect(0.65).tint(Color(red: 0.2, green: 0.8, blue: 0.9))
                     } else {
                         Image(systemName: "arrow.triangle.2.circlepath")
                     }
@@ -1245,11 +1247,11 @@ public struct MangaDetailView: View {
                         .lineLimit(1)
                 }
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(.cyan)
+                .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
                 .frame(maxWidth: .infinity)
                 .frame(height: 38)
-                .background(Color.cyan.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
-                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.cyan.opacity(0.3), lineWidth: 1))
+                .background(Color(red: 0.2, green: 0.8, blue: 0.9).opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(red: 0.2, green: 0.8, blue: 0.9).opacity(0.3), lineWidth: 1))
             }
             .buttonStyle(.plain)
             .disabled(isCheckingNewChapters)
@@ -1288,7 +1290,7 @@ public struct MangaDetailView: View {
                     } label: {
                         Text(isSynopsisExpanded ? (isEn ? "Show less" : "Mostrar menos") : (isEn ? "Read more..." : "Leer más..."))
                             .font(.caption.weight(.bold))
-                            .foregroundStyle(.cyan)
+                            .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
                     }
                     .buttonStyle(.plain)
                 }
@@ -1310,13 +1312,13 @@ public struct MangaDetailView: View {
                 Text(feedback.message)
                     .font(.caption.weight(.medium))
             }
-            .foregroundStyle(feedback.isSuccess ? Color.green : Color.cyan)
+            .foregroundStyle(feedback.isSuccess ? Color.green : Color(red: 0.2, green: 0.8, blue: 0.9))
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background((feedback.isSuccess ? Color.green : Color.cyan).opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+            .background((feedback.isSuccess ? Color.green : Color(red: 0.2, green: 0.8, blue: 0.9)).opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
             .overlay(
                 RoundedRectangle(cornerRadius: 12)
-                    .stroke((feedback.isSuccess ? Color.green : Color.cyan).opacity(0.3), lineWidth: 1)
+                    .stroke((feedback.isSuccess ? Color.green : Color(red: 0.2, green: 0.8, blue: 0.9)).opacity(0.3), lineWidth: 1)
             )
             .transition(.opacity.combined(with: .move(edge: .top)))
         }
@@ -1328,11 +1330,11 @@ public struct MangaDetailView: View {
                 Text(toast)
                     .font(.caption.weight(.semibold))
             }
-            .foregroundStyle(.cyan)
+            .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.cyan.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.cyan.opacity(0.3), lineWidth: 1))
+            .background(Color(red: 0.2, green: 0.8, blue: 0.9).opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(red: 0.2, green: 0.8, blue: 0.9).opacity(0.3), lineWidth: 1))
         }
         
         if let errorMsg = errorMessage {
@@ -1396,7 +1398,7 @@ public struct MangaDetailView: View {
                     Image(systemName: isSourcesFolded ? "chevron.down" : "chevron.up")
                 }
                 .font(.caption.weight(.bold))
-                .foregroundStyle(.cyan)
+                .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
             }
             .padding(14)
             .contentShape(Rectangle())
@@ -1424,7 +1426,7 @@ public struct MangaDetailView: View {
             } label: {
                 Text(isEn ? "Configure" : "Configurar")
                     .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.cyan)
+                    .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
             }
             .buttonStyle(.plain)
         }
@@ -1440,8 +1442,8 @@ public struct MangaDetailView: View {
                     .font(.caption2.weight(.bold))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(index == 0 ? Color.cyan.opacity(0.22) : Color.purple.opacity(0.22), in: RoundedRectangle(cornerRadius: 7))
-                    .foregroundStyle(index == 0 ? Color.cyan : Color.purple)
+                    .background(index == 0 ? Color(red: 0.2, green: 0.8, blue: 0.9).opacity(0.22) : Color.purple.opacity(0.22), in: RoundedRectangle(cornerRadius: 7))
+                    .foregroundStyle(index == 0 ? Color(red: 0.2, green: 0.8, blue: 0.9) : Color.purple)
                 
                 if index == 0 {
                     HStack(spacing: 3) {
@@ -1461,10 +1463,10 @@ public struct MangaDetailView: View {
                     } label: {
                         Text(isEn ? "Set Primary" : "Hacer Principal")
                             .font(.caption2.weight(.bold))
-                            .foregroundStyle(.cyan)
+                            .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
-                            .background(Color.cyan.opacity(0.14), in: Capsule())
+                            .background(Color(red: 0.2, green: 0.8, blue: 0.9).opacity(0.14), in: Capsule())
                     }
                     .buttonStyle(.plain)
                 }
@@ -1489,7 +1491,7 @@ public struct MangaDetailView: View {
         .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(index == 0 ? Color.cyan.opacity(0.25) : Color.white.opacity(0.06), lineWidth: 1)
+                .stroke(index == 0 ? Color(red: 0.2, green: 0.8, blue: 0.9).opacity(0.25) : Color.white.opacity(0.06), lineWidth: 1)
         )
     }
     
@@ -1515,10 +1517,10 @@ public struct MangaDetailView: View {
                                 Text(isEn ? "Add Source" : "Añadir Fuente")
                             }
                             .font(.caption.weight(.bold))
-                            .foregroundStyle(.cyan)
+                            .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
                             .padding(.horizontal, 10)
                             .padding(.vertical, 5)
-                            .background(Color.cyan.opacity(0.15), in: Capsule())
+                            .background(Color(red: 0.2, green: 0.8, blue: 0.9).opacity(0.15), in: Capsule())
                         }
                         .buttonStyle(.plain)
                     }
@@ -1551,9 +1553,9 @@ public struct MangaDetailView: View {
             HStack(spacing: 12) {
                 Image(systemName: "server.rack")
                     .font(.subheadline.weight(.bold))
-                    .foregroundStyle(.cyan)
+                    .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
                     .frame(width: 34, height: 34)
-                    .background(Color.cyan.opacity(0.15), in: RoundedRectangle(cornerRadius: 10))
+                    .background(Color(red: 0.2, green: 0.8, blue: 0.9).opacity(0.15), in: RoundedRectangle(cornerRadius: 10))
                 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(isEn ? "Server Options (Admin)" : "Opciones de Servidor (Admin)")
@@ -1572,7 +1574,7 @@ public struct MangaDetailView: View {
                     Image(systemName: isServerAdminFolded ? "chevron.down" : "chevron.up")
                 }
                 .font(.caption.weight(.bold))
-                .foregroundStyle(.cyan)
+                .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
             }
             .padding(14)
             .contentShape(Rectangle())
@@ -1598,7 +1600,7 @@ public struct MangaDetailView: View {
                             icon: "arrow.triangle.2.circlepath",
                             title: isEn ? "Redownload Range" : "Redescargar Rango",
                             subtitle: isEn ? "Batch chapters" : "Capítulos por lote",
-                            tint: .cyan
+                            tint: Color(red: 0.2, green: 0.8, blue: 0.9)
                         )
                     }
                     .buttonStyle(.plain)
@@ -1643,7 +1645,7 @@ public struct MangaDetailView: View {
             }
         }
         .background(Color.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.cyan.opacity(0.22), lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color(red: 0.2, green: 0.8, blue: 0.9).opacity(0.22), lineWidth: 1))
     }
     
     private func serverActionTile(icon: String, title: String, subtitle: String, tint: Color) -> some View {
@@ -1685,8 +1687,8 @@ public struct MangaDetailView: View {
                         .font(.caption.weight(.bold))
                         .padding(.horizontal, 9)
                         .padding(.vertical, 3)
-                        .background(Color.cyan.opacity(0.15), in: Capsule())
-                        .foregroundStyle(.cyan)
+                        .background(Color(red: 0.2, green: 0.8, blue: 0.9).opacity(0.15), in: Capsule())
+                        .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
                 }
                 
                 Spacer()
@@ -1717,10 +1719,10 @@ public struct MangaDetailView: View {
                             Text(isEn ? "Mark all" : "Marcar todo")
                         }
                         .font(.caption.weight(.bold))
-                        .foregroundStyle(.cyan)
+                        .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
-                        .background(Color.cyan.opacity(0.14), in: RoundedRectangle(cornerRadius: 10))
+                        .background(Color(red: 0.2, green: 0.8, blue: 0.9).opacity(0.14), in: RoundedRectangle(cornerRadius: 10))
                     }
                     .buttonStyle(.plain)
                 }
@@ -1753,7 +1755,7 @@ public struct MangaDetailView: View {
             if isLoadingChapters && chapters.isEmpty {
                 HStack {
                     Spacer()
-                    ProgressView().tint(.cyan)
+                    ProgressView().tint(Color(red: 0.2, green: 0.8, blue: 0.9))
                     Spacer()
                 }
                 .padding(.vertical, 30)
@@ -1803,7 +1805,7 @@ public struct MangaDetailView: View {
         .background(Color.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 14))
         .overlay(
             RoundedRectangle(cornerRadius: 14)
-                .stroke(chapter.isRead ? Color.cyan.opacity(0.14) : Color.white.opacity(0.06), lineWidth: 1)
+                .stroke(chapter.isRead ? Color(red: 0.2, green: 0.8, blue: 0.9).opacity(0.14) : Color.white.opacity(0.06), lineWidth: 1)
         )
         .contextMenu {
             chapterContextMenuItems(chapter)
@@ -1814,20 +1816,20 @@ public struct MangaDetailView: View {
         HStack(spacing: 4) {
             Text(isEn ? "Ch." : "Cap.")
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(chapter.isRead ? Color.cyan.opacity(0.8) : Color.secondary)
+                .foregroundStyle(chapter.isRead ? Color(red: 0.2, green: 0.8, blue: 0.9).opacity(0.8) : Color.secondary)
             Text("\(chapter.index)")
                 .font(.subheadline.weight(.bold))
-                .foregroundStyle(chapter.isRead ? Color.cyan : Color.white)
+                .foregroundStyle(chapter.isRead ? Color(red: 0.2, green: 0.8, blue: 0.9) : Color.white)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(
-            chapter.isRead ? Color.cyan.opacity(0.15) : Color.white.opacity(0.08),
+            chapter.isRead ? Color(red: 0.2, green: 0.8, blue: 0.9).opacity(0.15) : Color.white.opacity(0.08),
             in: RoundedRectangle(cornerRadius: 10)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 10)
-                .stroke(chapter.isRead ? Color.cyan.opacity(0.3) : Color.white.opacity(0.1), lineWidth: 1)
+                .stroke(chapter.isRead ? Color(red: 0.2, green: 0.8, blue: 0.9).opacity(0.3) : Color.white.opacity(0.1), lineWidth: 1)
         )
         .fixedSize(horizontal: true, vertical: false)
     }
@@ -1847,8 +1849,8 @@ public struct MangaDetailView: View {
                     .font(.caption2.weight(.bold))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
-                    .background(Color.cyan.opacity(0.16), in: Capsule())
-                    .foregroundStyle(.cyan)
+                    .background(Color(red: 0.2, green: 0.8, blue: 0.9).opacity(0.16), in: Capsule())
+                    .foregroundStyle(Color(red: 0.2, green: 0.8, blue: 0.9))
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
             }
@@ -1862,10 +1864,10 @@ public struct MangaDetailView: View {
             } label: {
                 Image(systemName: chapter.isRead ? "checkmark" : "circle")
                     .font(.caption.weight(.bold))
-                    .foregroundStyle(chapter.isRead ? Color.cyan : Color.secondary)
+                    .foregroundStyle(chapter.isRead ? Color(red: 0.2, green: 0.8, blue: 0.9) : Color.secondary)
                     .frame(width: 34, height: 34)
                     .background(
-                        chapter.isRead ? Color.cyan.opacity(0.14) : Color.white.opacity(0.05),
+                        chapter.isRead ? Color(red: 0.2, green: 0.8, blue: 0.9).opacity(0.14) : Color.white.opacity(0.05),
                         in: RoundedRectangle(cornerRadius: 10)
                     )
             }
