@@ -4,7 +4,7 @@ import SwiftUI
 public struct LiveDownloadQueueSheet: View {
     public enum QueueFilter: String, CaseIterable, Identifiable {
         case all, active, waiting, failed
-        var id: String { rawValue }
+        public var id: String { rawValue }
     }
     
     @Environment(\.dismiss) private var dismiss

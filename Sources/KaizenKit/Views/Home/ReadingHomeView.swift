@@ -260,31 +260,34 @@ public struct ReadingHomeView: View {
     // MARK: - Novedades
     
     private var recentSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let items = Array(recentDownloads.prefix(5))
+        
+        return VStack(alignment: .leading, spacing: 12) {
             Text(isEn ? "New chapters" : "Nuevos capítulos")
                 .font(.title3.weight(.bold))
                 .foregroundStyle(.white)
             
             VStack(spacing: 0) {
-                ForEach(Array(recentDownloads.prefix(5).enumerated()), id: \.element.id) { offset, item in
-                    let matchedManga = appState.mangas.first(where: { $0.id == item.mangaId })
-                    Group {
-                        if let matchedManga {
-                            NavigationLink(value: matchedManga) {
-                                recentDownloadRow(item)
-                            }
-                            .buttonStyle(.plain)
-                        } else {
-                            recentDownloadRow(item)
-                        }
-                    }
-                    
-                    if offset < min(recentDownloads.count, 5) - 1 {
+                ForEach(items) { item in
+                    recentItemCell(item: item)
+                    if item.id != items.last?.id {
                         Divider().padding(.leading, 64)
                     }
                 }
             }
             .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        }
+    }
+    
+    @ViewBuilder
+    private func recentItemCell(item: KaizenServerRecentDownload) -> some View {
+        if let matched = appState.mangas.first(where: { $0.id == item.mangaId }) {
+            NavigationLink(value: matched) {
+                recentDownloadRow(item)
+            }
+            .buttonStyle(.plain)
+        } else {
+            recentDownloadRow(item)
         }
     }
     

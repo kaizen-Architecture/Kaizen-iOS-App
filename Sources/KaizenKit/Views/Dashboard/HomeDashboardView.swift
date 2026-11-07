@@ -431,23 +431,25 @@ public struct HomeDashboardView: View {
             } else {
                 VStack(spacing: 8) {
                     ForEach(recentDownloads.prefix(6)) { item in
-                        let matchedManga = appState.mangas.first(where: { $0.id == item.mangaId })
-                        Group {
-                            if let matchedManga {
-                                NavigationLink(value: matchedManga) {
-                                    recentServerDownloadRow(item)
-                                }
-                                .buttonStyle(.plain)
-                            } else {
-                                recentServerDownloadRow(item)
-                            }
-                        }
+                        recentDownloadItemView(item)
                     }
                 }
             }
         }
         .padding(15)
         .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+    }
+    
+    @ViewBuilder
+    private func recentDownloadItemView(_ item: KaizenServerRecentDownload) -> some View {
+        if let matched = appState.mangas.first(where: { $0.id == item.mangaId }) {
+            NavigationLink(value: matched) {
+                recentServerDownloadRow(item)
+            }
+            .buttonStyle(.plain)
+        } else {
+            recentServerDownloadRow(item)
+        }
     }
     
     private func recentServerDownloadRow(_ item: KaizenServerRecentDownload) -> some View {
