@@ -10,33 +10,22 @@ public struct MangaCardView: View {
     }
     
     public var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             ZStack(alignment: .topTrailing) {
                 // Portada con relación de aspecto 2:3 fija garantizada para todas las series
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.white.opacity(0.06))
-                    .aspectRatio(2/3, contentMode: .fit)
-                    .overlay {
-                        RemoteImage(
-                            url: manga.coverUrl.flatMap { URL(string: $0) },
-                            token: appState.session?.apiToken,
-                            contentMode: .fill
-                        )
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .shadow(color: .black.opacity(0.3), radius: 6, y: 4)
+                CoverView(
+                    url: manga.coverUrl,
+                    token: appState.session?.apiToken,
+                    width: nil,
+                    height: nil,
+                    cornerRadius: 16
+                )
+                .aspectRatio(2/3, contentMode: .fit)
                 .overlay(alignment: .bottom) {
                     if manga.safeReadingPercentage > 0 {
-                        GeometryReader { geo in
-                            ZStack(alignment: .leading) {
-                                Color.black.opacity(0.6)
-                                Color.cyan.frame(width: geo.size.width * CGFloat(min(max(manga.safeReadingPercentage / 100.0, 0), 1)))
-                            }
-                        }
-                        .frame(height: 3)
-                        .clipShape(RoundedRectangle(cornerRadius: 1.5))
-                        .padding(.horizontal, 4)
-                        .padding(.bottom, 4)
+                        ProgressBarGlow(progress: min(max(manga.safeReadingPercentage / 100.0, 0), 1), color: .kaizenCyan, height: 4)
+                            .padding(.horizontal, 8)
+                            .padding(.bottom, 8)
                     }
                 }
                 
@@ -47,8 +36,8 @@ public struct MangaCardView: View {
                         .foregroundStyle(.black)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
-                        .background(Color.cyan, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                        .padding(6)
+                        .background(Color.kaizenCyan, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .padding(8)
                 }
                 
                 // Indicador de favorito
@@ -63,11 +52,11 @@ public struct MangaCardView: View {
                 }
             }
             
-            // Título en una línea (el diseño nativo deja el protagonismo a la portada)
+            // Título
             Text(manga.title)
-                .font(.footnote.weight(.semibold))
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.white)
-                .lineLimit(1)
+                .lineLimit(2)
                 .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
             

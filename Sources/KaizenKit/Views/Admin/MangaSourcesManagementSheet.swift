@@ -40,7 +40,7 @@ public struct MangaSourcesManagementSheet: View {
                 
                 if isLoading {
                     VStack(spacing: 12) {
-                        ProgressView().tint(.cyan)
+                        ProgressView().tint(.kaizenCyan)
                         Text(isEn ? "Loading sources..." : "Cargando fuentes...")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
@@ -51,7 +51,7 @@ public struct MangaSourcesManagementSheet: View {
                             if sources.isEmpty {
                                 Text(isEn ? "No custom sources configured for this series." : "No hay fuentes secundarias configuradas para esta serie.")
                                     .font(.subheadline)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(.white.opacity(0.6))
                                     .padding(.vertical, 8)
                             } else {
                                 ForEach(sources) { src in
@@ -59,29 +59,19 @@ public struct MangaSourcesManagementSheet: View {
                                         VStack(alignment: .leading, spacing: 4) {
                                             HStack(spacing: 8) {
                                                 Text(src.source)
-                                                    .font(.subheadline.weight(.bold))
+                                                    .font(.subheadline.weight(.semibold))
                                                     .foregroundStyle(.white)
                                                 
                                                 if src.priority == 0 {
-                                                    Text(isEn ? "PRIMARY" : "PRINCIPAL")
-                                                        .font(.system(size: 9, weight: .black))
-                                                        .padding(.horizontal, 6)
-                                                        .padding(.vertical, 2)
-                                                        .background(Color.green.opacity(0.2), in: Capsule())
-                                                        .foregroundStyle(.green)
+                                                    Badge(text: isEn ? "PRIMARY" : "PRINCIPAL", color: .green)
                                                 } else {
-                                                    Text(isEn ? "Priority \(src.priority)" : "Prioridad \(src.priority)")
-                                                        .font(.system(size: 9, weight: .semibold))
-                                                        .padding(.horizontal, 6)
-                                                        .padding(.vertical, 2)
-                                                        .background(Color.white.opacity(0.1), in: Capsule())
-                                                        .foregroundStyle(.secondary)
+                                                    Badge(text: isEn ? "Priority \(src.priority)" : "Prioridad \(src.priority)", color: .white.opacity(0.4))
                                                 }
                                             }
                                             
                                             Text(src.title)
                                                 .font(.caption)
-                                                .foregroundStyle(.secondary)
+                                                .foregroundStyle(.white.opacity(0.6))
                                                 .lineLimit(1)
                                         }
                                         
@@ -104,24 +94,27 @@ public struct MangaSourcesManagementSheet: View {
                                         } label: {
                                             Image(systemName: "ellipsis.circle")
                                                 .font(.title3)
-                                                .foregroundStyle(.cyan)
+                                                .foregroundStyle(.kaizenCyan)
                                                 .padding(6)
                                         }
                                     }
-                                    .listRowBackground(Color.white.opacity(0.04))
+                                    .padding(.vertical, 8)
+                                    .listRowBackground(Color.clear)
                                 }
                             }
                         } header: {
                             Text(isEn ? "Configured Sources" : "Fuentes de Descarga")
+                                .foregroundStyle(.white)
                         } footer: {
                             Text(isEn ? "Kaizen downloads chapters in priority order. If a scraper fails or is blocked, alternative sources are used automatically." : "Kaizen descarga los capítulos en orden de prioridad. Si una fuente falla o sufre bloqueos, se recurre automáticamente a las siguientes.")
                                 .font(.caption2)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(.white.opacity(0.6))
                         }
                     }
                     .scrollContentBackground(.hidden)
                 }
             }
+            .kaizenBackgroundStyle()
             .navigationTitle(isEn ? "Manga Sources" : "Fuentes del Manga")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -136,6 +129,7 @@ public struct MangaSourcesManagementSheet: View {
                     } label: {
                         Label(isEn ? "Add Source" : "Añadir Fuente", systemImage: "plus")
                             .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.kaizenCyan)
                     }
                 }
             }
@@ -152,101 +146,97 @@ public struct MangaSourcesManagementSheet: View {
     
     private var addSourceModal: some View {
         NavigationStack {
-            ZStack {
-                Color.black.ignoresSafeArea()
-                
-                VStack(spacing: 16) {
-                    // Selector de Scraper
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(isEn ? "Select Source Scraper" : "Seleccionar Fuente / Scraper")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                        
-                        if availableScrapers.isEmpty {
-                            ProgressView().tint(.cyan)
-                        } else {
-                            Picker("Scraper", selection: $selectedScraper) {
-                                ForEach(availableScrapers, id: \.self) { scraper in
-                                    Text(scraper).tag(scraper)
-                                }
-                            }
-                            .pickerStyle(.menu)
-                            .tint(.cyan)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 16)
+            VStack(spacing: 16) {
+                // Selector de Scraper
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(isEn ? "Select Source Scraper" : "Seleccionar Fuente / Scraper")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.6))
                     
-                    // Buscador
-                    HStack(spacing: 10) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "magnifyingglass")
-                                .foregroundStyle(.secondary)
-                            TextField(isEn ? "Manga title to search..." : "Título del manga...", text: $searchKeyword)
-                                .textFieldStyle(.plain)
-                                .foregroundStyle(.white)
-                                .onSubmit { Task { await executeSearch() } }
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 10)
-                        .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
-                        
-                        Button {
-                            Task { await executeSearch() }
-                        } label: {
-                            if isSearching {
-                                ProgressView().tint(.black)
-                                    .padding(.horizontal, 8)
-                            } else {
-                                Text(isEn ? "Search" : "Buscar")
-                                    .font(.subheadline.weight(.bold))
-                            }
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
-                        .background(Color.cyan, in: RoundedRectangle(cornerRadius: 10))
-                        .foregroundStyle(.black)
-                        .disabled(isSearching || searchKeyword.trimmingCharacters(in: .whitespaces).isEmpty)
-                    }
-                    .padding(.horizontal, 16)
-                    
-                    if let addError {
-                        Text(addError)
-                            .font(.caption)
-                            .foregroundStyle(.red)
-                            .padding(.horizontal, 16)
-                    }
-                    
-                    // Resultados
-                    if isSearching {
-                        Spacer()
-                        ProgressView(isEn ? "Searching source..." : "Buscando en la fuente...").tint(.cyan)
-                        Spacer()
-                    } else if searchResults.isEmpty {
-                        Spacer()
-                        Text(isEn ? "Search for this series on the chosen source" : "Busca la serie en el catálogo de la fuente elegida")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                        Spacer()
+                    if availableScrapers.isEmpty {
+                        ProgressView().tint(.kaizenCyan)
                     } else {
-                        List(searchResults) { result in
-                            Button {
-                                Task { await addSource(result) }
-                            } label: {
+                        Picker("Scraper", selection: $selectedScraper) {
+                            ForEach(availableScrapers, id: \.self) { scraper in
+                                Text(scraper).tag(scraper)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .tint(.kaizenCyan)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+
+                // Buscador
+                HStack(spacing: 10) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundStyle(.white.opacity(0.6))
+                        TextField(isEn ? "Manga title to search..." : "Título del manga...", text: $searchKeyword)
+                            .textFieldStyle(.plain)
+                            .foregroundStyle(.white)
+                            .onSubmit { Task { await executeSearch() } }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                    
+                    Button {
+                        Task { await executeSearch() }
+                    } label: {
+                        if isSearching {
+                            ProgressView().tint(.black)
+                                .padding(.horizontal, 8)
+                        } else {
+                            Text(isEn ? "Search" : "Buscar")
+                                .font(.subheadline.weight(.bold))
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(Color.kaizenCyan, in: RoundedRectangle(cornerRadius: 10))
+                    .foregroundStyle(.black)
+                    .disabled(isSearching || searchKeyword.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+                .padding(.horizontal, 16)
+
+                if let addError {
+                    Text(addError)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .padding(.horizontal, 16)
+                }
+
+                // Resultados
+                if isSearching {
+                    Spacer()
+                    ProgressView(isEn ? "Searching source..." : "Buscando en la fuente...").tint(.kaizenCyan)
+                    Spacer()
+                } else if searchResults.isEmpty {
+                    Spacer()
+                    Text(isEn ? "Search for this series on the chosen source" : "Busca la serie en el catálogo de la fuente elegida")
+                        .font(.subheadline)
+                        .foregroundStyle(.white.opacity(0.6))
+                    Spacer()
+                } else {
+                    List(searchResults) { result in
+                        Button {
+                            Task { await addSource(result) }
+                        } label: {
+                            GlassCard {
                                 HStack(spacing: 12) {
-                                    if let cover = result.cover, let url = URL(string: cover) {
-                                        RemoteImage(url: url, token: appState.session?.apiToken)
-                                            .frame(width: 44, height: 60)
-                                            .clipShape(RoundedRectangle(cornerRadius: 6))
-                                    } else {
-                                        RoundedRectangle(cornerRadius: 6)
-                                            .fill(Color.white.opacity(0.06))
-                                            .frame(width: 44, height: 60)
-                                    }
+                                    CoverView(
+                                        url: result.cover,
+                                        token: appState.session?.apiToken,
+                                        width: 44,
+                                        height: 60,
+                                        cornerRadius: 6
+                                    )
                                     
                                     VStack(alignment: .leading, spacing: 4) {
                                         Text(result.title)
@@ -257,27 +247,35 @@ public struct MangaSourcesManagementSheet: View {
                                         HStack(spacing: 6) {
                                             Text(result.source)
                                                 .font(.caption2.weight(.bold))
-                                                .foregroundStyle(.cyan)
+                                                .foregroundStyle(.kaizenCyan)
                                             
                                             Text("•")
-                                                .foregroundStyle(.secondary)
+                                                .foregroundStyle(.white.opacity(0.6))
                                             
                                             Text("\(result.chapters) " + (isEn ? "chapters" : "capítulos"))
                                                 .font(.caption2)
-                                                .foregroundStyle(.secondary)
+                                                .foregroundStyle(.white.opacity(0.6))
                                         }
                                     }
                                     
                                     Spacer()
                                     
-                                    Image(systemName: "plus.circle.fill")
-                                        .font(.title3)
-                                        .foregroundStyle(.cyan)
+                                    if isAdding {
+                                        ProgressView().tint(.kaizenCyan)
+                                    } else {
+                                        Image(systemName: "plus.circle.fill")
+                                            .font(.title3)
+                                            .foregroundStyle(.kaizenCyan)
+                                    }
                                 }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 12)
                             }
-                            .buttonStyle(.plain)
-                            .listRowBackground(Color.white.opacity(0.04))
                         }
+                        .buttonStyle(.plain)
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+                        .disabled(isAdding)
                         .scrollContentBackground(.hidden)
                     }
                 }

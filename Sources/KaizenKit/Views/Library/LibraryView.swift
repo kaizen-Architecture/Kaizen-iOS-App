@@ -53,7 +53,9 @@ public struct LibraryView: View {
     @State private var showRenameShelfAlert = false
     
     private let columns = [
-        GridItem(.adaptive(minimum: 125, maximum: 180), spacing: 16, alignment: .top)
+        GridItem(.flexible(), spacing: 16, alignment: .top),
+        GridItem(.flexible(), spacing: 16, alignment: .top),
+        GridItem(.flexible(), spacing: 16, alignment: .top)
     ]
     
     public init(apiClient: KaizenAPIClient, mode: LibraryDisplayMode = .unifiedCatalog) {
@@ -280,7 +282,7 @@ public struct LibraryView: View {
                                         .padding(.horizontal, 14)
                                         .padding(.vertical, 7)
                                         .background(
-                                            isSelected ? Color.cyan : Color.white.opacity(0.08),
+                                            isSelected ? Color.kaizenCyan : Color.white.opacity(0.1),
                                             in: Capsule()
                                         )
                                         .foregroundStyle(isSelected ? Color.black : Color.white)
@@ -308,7 +310,7 @@ public struct LibraryView: View {
                                         .padding(.horizontal, 13)
                                         .padding(.vertical, 7)
                                         .background(
-                                            isShelfSelected ? Color.cyan : Color.white.opacity(0.08),
+                                            isShelfSelected ? Color.kaizenCyan : Color.white.opacity(0.1),
                                             in: Capsule()
                                         )
                                         .foregroundStyle(isShelfSelected ? Color.black : Color.white)
@@ -332,7 +334,7 @@ public struct LibraryView: View {
                                             }
                                         } label: {
                                             Image(systemName: "ellipsis.circle.fill")
-                                                .foregroundStyle(.cyan)
+                                                .foregroundStyle(.kaizenCyan)
                                         }
                                     }
                                 }

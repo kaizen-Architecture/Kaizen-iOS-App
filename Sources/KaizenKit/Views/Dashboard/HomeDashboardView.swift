@@ -72,8 +72,8 @@ public struct HomeDashboardView: View {
                                     .font(.caption.weight(.bold))
                                     .padding(.horizontal, 10)
                                     .padding(.vertical, 5)
-                                    .background(Color.cyan.opacity(0.16), in: Capsule())
-                                    .foregroundStyle(.cyan)
+                                    .background(Color.kaizenCyan.opacity(0.16), in: Capsule())
+                                    .foregroundStyle(.kaizenCyan)
                                 }
                                 
                                 if appState.isManagement {
@@ -82,7 +82,7 @@ public struct HomeDashboardView: View {
                                     } label: {
                                         Label(isEn ? "Add Manga" : "Añadir Manga", systemImage: "plus.circle.fill")
                                             .font(.subheadline.weight(.semibold))
-                                            .foregroundStyle(.cyan)
+                                            .foregroundStyle(.kaizenCyan)
                                     }
                                 }
                             }
@@ -167,7 +167,7 @@ public struct HomeDashboardView: View {
                     value: "\(activityStats.active)",
                     subtitle: isEn ? "View live queue →" : "Ver cola en vivo →",
                     icon: "arrow.down.circle.fill",
-                    color: .cyan
+                    color: .kaizenCyan
                 )
             }
             .buttonStyle(.plain)
@@ -259,7 +259,7 @@ public struct HomeDashboardView: View {
                 
                 Text("\(total14d) " + (isEn ? "ch." : "caps."))
                     .font(.caption.weight(.bold))
-                    .foregroundStyle(.cyan)
+                    .foregroundStyle(.kaizenCyan)
             }
             
             if activityHistory.isEmpty {
@@ -276,7 +276,7 @@ public struct HomeDashboardView: View {
                     )
                     .foregroundStyle(
                         LinearGradient(
-                            colors: [.cyan, .indigo],
+                            colors: [.kaizenCyan, .indigo],
                             startPoint: .top,
                             endPoint: .bottom
                         )
@@ -329,10 +329,10 @@ public struct HomeDashboardView: View {
                                 Spacer()
                                 Text(stat.formattedSize)
                                     .font(.caption.weight(.bold))
-                                    .foregroundStyle(.cyan)
+                                    .foregroundStyle(.kaizenCyan)
                             }
                             ProgressView(value: min(max(ratio, 0.04), 1.0))
-                                .tint(.cyan)
+                                .tint(.kaizenCyan)
                         }
                     }
                 }
@@ -345,128 +345,125 @@ public struct HomeDashboardView: View {
     // MARK: - 4. Cola de Descargas en Vivo (trpc/manga.downloadQueue)
     
     private var liveDownloadQueueCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Label(
-                    isEn ? "Live Download Queue" : "Cola de Descargas en Vivo",
-                    systemImage: "arrow.down.circle.fill"
-                )
-                .font(.subheadline.weight(.bold))
-                .foregroundStyle(.white)
-                
-                Spacer()
-                
-                Button {
-                    showQueueSheet = true
-                } label: {
-                    Text(isEn ? "Full Queue (\(queueJobs.count)) →" : "Ver todas (\(queueJobs.count)) →")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(.cyan)
+        GlassCard {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Label(
+                        isEn ? "Live Download Queue" : "Cola de Descargas en Vivo",
+                        systemImage: "arrow.down.circle.fill"
+                    )
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.white)
+
+                    Spacer()
+
+                    Button {
+                        showQueueSheet = true
+                    } label: {
+                        Text(isEn ? "Full Queue (\(queueJobs.count)) →" : "Ver todas (\(queueJobs.count)) →")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.kaizenCyan)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
-            }
-            
-            if activeAndWaitingJobs.isEmpty {
-                HStack(spacing: 8) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
-                    Text(isEn ? "No active downloads right now. Tap 'Full Queue' for history." : "No hay descargas en curso ahora mismo. Pulsa 'Ver todas' para el historial.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 10))
-            } else {
-                VStack(spacing: 8) {
-                    ForEach(activeAndWaitingJobs.prefix(5)) { job in
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(job.mangaTitle)
-                                    .font(.caption.weight(.bold))
-                                    .foregroundStyle(.white)
-                                    .lineLimit(1)
-                                Text((isEn ? "Ch. " : "Cap. ") + String(format: "%g", job.chapterIndex) + " • \(job.source)")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
+
+                if activeAndWaitingJobs.isEmpty {
+                    HStack(spacing: 8) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                        Text(isEn ? "No active downloads right now. Tap 'Full Queue' for history." : "No hay descargas en curso ahora mismo. Pulsa 'Ver todas' para el historial.")
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.6))
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
+                } else {
+                    VStack(spacing: 8) {
+                        ForEach(activeAndWaitingJobs.prefix(5)) { job in
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(job.mangaTitle)
+                                        .font(.caption.weight(.bold))
+                                        .foregroundStyle(.white)
+                                        .lineLimit(1)
+                                    Text((isEn ? "Ch. " : "Cap. ") + String(format: "%g", job.chapterIndex) + " • \(job.source)")
+                                        .font(.caption2)
+                                        .foregroundStyle(.white.opacity(0.6))
+                                }
+                                Spacer()
+                                if job.status == "active" {
+                                    Badge(text: "\(max(job.progress, 1))%", color: .kaizenCyan)
+                                } else {
+                                    Badge(text: isEn ? "Queued" : "En cola", color: .indigo)
+                                }
                             }
-                            Spacer()
-                            Text(job.status == "active" ? "\(max(job.progress, 1))%" : (isEn ? "Queued" : "En cola"))
-                                .font(.caption2.weight(.bold))
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
-                                .background((job.status == "active" ? Color.cyan : Color.indigo).opacity(0.18), in: Capsule())
-                                .foregroundStyle(job.status == "active" ? Color.cyan : Color.indigo)
+                            .padding(10)
+                            .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
                         }
-                        .padding(10)
-                        .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
                     }
                 }
             }
+            .padding(16)
         }
-        .padding(15)
-        .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
     
     // MARK: - 5. Últimas Descargas del Servidor (trpc/manga.history)
     
     private var recentServerDownloadsCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Label(
-                isEn ? "Recent Server Downloads" : "Últimas Descargas en el Servidor",
-                systemImage: "clock.arrow.circlepath"
-            )
-            .font(.subheadline.weight(.bold))
-            .foregroundStyle(.white)
-            
-            if recentDownloads.isEmpty {
-                Text(isEn ? "No recent chapters downloaded." : "No hay capítulos descargados recientemente.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.vertical, 16)
-            } else {
-                VStack(spacing: 8) {
-                    ForEach(recentDownloads.prefix(6)) { item in
-                        HStack(spacing: 10) {
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(Color.white.opacity(0.08))
-                                .frame(width: 34, height: 48)
-                                .overlay {
-                                    RemoteImage(
-                                        url: item.coverUrl.flatMap { URL(string: $0) },
-                                        token: appState.session?.apiToken,
-                                        contentMode: .fill
-                                    )
-                                }
-                                .clipShape(RoundedRectangle(cornerRadius: 6))
-                            
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(item.mangaTitle)
-                                    .font(.caption.weight(.bold))
-                                    .foregroundStyle(.white)
-                                    .lineLimit(1)
+        GlassCard {
+            VStack(alignment: .leading, spacing: 12) {
+                Label(
+                    isEn ? "Recent Server Downloads" : "Últimas Descargas en el Servidor",
+                    systemImage: "clock.arrow.circlepath"
+                )
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(.white)
+
+                if recentDownloads.isEmpty {
+                    Text(isEn ? "No recent chapters downloaded." : "No hay capítulos descargados recientemente.")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.6))
+                        .padding(.vertical, 16)
+                } else {
+                    VStack(spacing: 8) {
+                        ForEach(recentDownloads.prefix(6)) { item in
+                            HStack(spacing: 10) {
+                                CoverView(
+                                    url: item.coverUrl,
+                                    token: appState.session?.apiToken,
+                                    width: 34,
+                                    height: 48,
+                                    cornerRadius: 6
+                                )
                                 
-                                HStack(spacing: 6) {
-                                    Text((isEn ? "Chapter " : "Capítulo ") + String(format: "%g", item.index))
-                                        .font(.caption2.weight(.semibold))
-                                        .foregroundStyle(.cyan)
-                                    if let sz = item.formattedSize {
-                                        Text("• \(sz)")
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(item.mangaTitle)
+                                        .font(.caption.weight(.bold))
+                                        .foregroundStyle(.white)
+                                        .lineLimit(1)
+
+                                    HStack(spacing: 6) {
+                                        Text((isEn ? "Chapter " : "Capítulo ") + String(format: "%g", item.index))
+                                            .font(.caption2.weight(.semibold))
+                                            .foregroundStyle(.kaizenCyan)
+                                        if let sz = item.formattedSize {
+                                            Text("• \(sz)")
+                                                .font(.caption2)
+                                                .foregroundStyle(.white.opacity(0.6))
+                                        }
                                     }
                                 }
+                                Spacer()
                             }
-                            Spacer()
+                            .padding(8)
+                            .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
                         }
-                        .padding(8)
-                        .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 10))
                     }
                 }
             }
+            .padding(16)
         }
-        .padding(15)
-        .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
     
     // MARK: - Carga de Datos del Dashboard

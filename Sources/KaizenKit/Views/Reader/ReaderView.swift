@@ -498,63 +498,65 @@ public struct ReaderView: View {
     }
 
     private var topHUDBar: some View {
-        HStack(spacing: 14) {
-            Button {
-                dismiss()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.footnote.weight(.bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 32, height: 32)
-                    .background(Color.white.opacity(0.12), in: Circle())
-            }
-            .buttonStyle(.plain)
-            
-            VStack(spacing: 2) {
-                Text(store.manga?.title ?? (isEn ? "Reader" : "Lector"))
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
+        GlassCard {
+            HStack(spacing: 14) {
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.footnote.weight(.bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 32, height: 32)
+                        .background(Color.white.opacity(0.12), in: Circle())
+                }
+                .buttonStyle(.plain)
                 
-                Text((isEn ? "Chapter " : "Capítulo ") + "\(store.currentChapterIndex)")
-                    .font(.caption2.weight(.medium))
-                    .foregroundStyle(.cyan)
-            }
-            .frame(maxWidth: .infinity)
-            
-            Menu {
-                Section(isEn ? "Reading Mode" : "Modo de Lectura") {
-                    ForEach(ReaderMode.allCases) { mode in
-                        Button {
-                            store.readerMode = mode
-                            appState.updateReaderMode(mode)
-                        } label: {
-                            Label(mode.rawValue, systemImage: mode.iconName)
+                VStack(spacing: 2) {
+                    Text(store.manga?.title ?? (isEn ? "Reader" : "Lector"))
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+
+                    Text((isEn ? "Chapter " : "Capítulo ") + "\(store.currentChapterIndex)")
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(.kaizenCyan)
+                }
+                .frame(maxWidth: .infinity)
+                
+                Menu {
+                    Section(isEn ? "Reading Mode" : "Modo de Lectura") {
+                        ForEach(ReaderMode.allCases) { mode in
+                            Button {
+                                store.readerMode = mode
+                                appState.updateReaderMode(mode)
+                            } label: {
+                                Label(mode.rawValue, systemImage: mode.iconName)
+                            }
                         }
                     }
-                }
-                
-                Section(isEn ? "Theme" : "Tema de Fondo") {
-                    ForEach(ReaderTheme.allCases) { theme in
-                        Button {
-                            store.readerTheme = theme
-                            appState.updateReaderTheme(theme)
-                        } label: {
-                            Text(theme.rawValue)
+
+                    Section(isEn ? "Theme" : "Tema de Fondo") {
+                        ForEach(ReaderTheme.allCases) { theme in
+                            Button {
+                                store.readerTheme = theme
+                                appState.updateReaderTheme(theme)
+                            } label: {
+                                Text(theme.rawValue)
+                            }
                         }
                     }
+                } label: {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.footnote.weight(.bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 32, height: 32)
+                        .background(Color.white.opacity(0.12), in: Circle())
                 }
-            } label: {
-                Image(systemName: "slider.horizontal.3")
-                    .font(.footnote.weight(.bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 32, height: 32)
-                    .background(Color.white.opacity(0.12), in: Circle())
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .glassCard(Capsule())
+        .clipShape(Capsule())
         .padding(.horizontal, 20)
         .padding(.top, 8)
     }
@@ -562,58 +564,60 @@ public struct ReaderView: View {
     @ViewBuilder
     private var bottomHUDBar: some View {
         if !store.pages.isEmpty {
-            VStack(spacing: 10) {
-                HStack(spacing: 12) {
-                    Button {
-                        Task {
-                            await store.goToPreviousChapter(apiClient: apiClient, session: appState.session)
-                            recordHistory()
+            GlassCard {
+                VStack(spacing: 10) {
+                    HStack(spacing: 12) {
+                        Button {
+                            Task {
+                                await store.goToPreviousChapter(apiClient: apiClient, session: appState.session)
+                                recordHistory()
+                            }
+                        } label: {
+                            Image(systemName: "backward.end.fill")
+                                .font(.subheadline)
+                                .foregroundStyle(store.hasPreviousChapter ? .white : .white.opacity(0.25))
                         }
-                    } label: {
-                        Image(systemName: "backward.end.fill")
-                            .font(.subheadline)
-                            .foregroundStyle(store.hasPreviousChapter ? .white : .white.opacity(0.25))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(!store.hasPreviousChapter)
-                    
-                    Text("\(store.currentPage)")
-                        .font(.caption.monospacedDigit().weight(.bold))
-                        .foregroundStyle(.white)
-                        .frame(width: 28, alignment: .trailing)
-                    
-                    Slider(
-                        value: Binding(
-                            get: { Double(store.currentPage) },
-                            set: { store.currentPage = Int($0) }
-                        ),
-                        in: 1...Double(max(store.pages.count, 1)),
-                        step: 1
-                    )
-                    .tint(.cyan)
-                    
-                    Text("\(store.pages.count)")
-                        .font(.caption.monospacedDigit().weight(.bold))
-                        .foregroundStyle(.white.opacity(0.7))
-                        .frame(width: 28, alignment: .leading)
-                    
-                    Button {
-                        Task {
-                            await store.goToNextChapter(apiClient: apiClient, session: appState.session)
-                            recordHistory()
+                        .buttonStyle(.plain)
+                        .disabled(!store.hasPreviousChapter)
+
+                        Text("\(store.currentPage)")
+                            .font(.caption.monospacedDigit().weight(.bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 28, alignment: .trailing)
+
+                        Slider(
+                            value: Binding(
+                                get: { Double(store.currentPage) },
+                                set: { store.currentPage = Int($0) }
+                            ),
+                            in: 1...Double(max(store.pages.count, 1)),
+                            step: 1
+                        )
+                        .tint(.kaizenCyan)
+
+                        Text("\(store.pages.count)")
+                            .font(.caption.monospacedDigit().weight(.bold))
+                            .foregroundStyle(.white.opacity(0.7))
+                            .frame(width: 28, alignment: .leading)
+
+                        Button {
+                            Task {
+                                await store.goToNextChapter(apiClient: apiClient, session: appState.session)
+                                recordHistory()
+                            }
+                        } label: {
+                            Image(systemName: "forward.end.fill")
+                                .font(.subheadline)
+                                .foregroundStyle(store.hasNextChapter ? .white : .white.opacity(0.25))
                         }
-                    } label: {
-                        Image(systemName: "forward.end.fill")
-                            .font(.subheadline)
-                            .foregroundStyle(store.hasNextChapter ? .white : .white.opacity(0.25))
+                        .buttonStyle(.plain)
+                        .disabled(!store.hasNextChapter)
                     }
-                    .buttonStyle(.plain)
-                    .disabled(!store.hasNextChapter)
                 }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 12)
             }
-            .padding(.horizontal, 18)
-            .padding(.vertical, 12)
-            .glassCard(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
             .padding(.horizontal, 20)
             .safeAreaPadding(.bottom, 12)
         }

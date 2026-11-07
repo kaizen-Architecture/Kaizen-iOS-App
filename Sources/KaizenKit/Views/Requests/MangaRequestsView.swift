@@ -151,28 +151,27 @@ public struct MangaRequestsView: View {
     private var requestsListContent: some View {
         List {
             Section {
-                Picker("", selection: $filter) {
-                    ForEach(RequestFilter.allCases) { f in
-                        Text(title(for: f)).tag(f)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
+                SegmentedGlass(
+                    items: RequestFilter.allCases.map { title(for: $0) },
+                    selectedIndex: Binding(
+                        get: { RequestFilter.allCases.firstIndex(of: filter) ?? 0 },
+                        set: { filter = RequestFilter.allCases[$0] }
+                    )
+                )
+                .padding(.bottom, 8)
             }
             .listRowBackground(Color.clear)
             .listRowInsets(EdgeInsets())
             
             if isEmbedded {
                 Section {
-                    Button {
+                    SecondaryButton(
+                        title: isEn ? "Request New Manga" : "Solicitar Nuevo Manga",
+                        systemImage: "plus.circle.fill",
+                        tint: .kaizenCyan
+                    ) {
                         showNewRequest = true
-                    } label: {
-                        Label(isEn ? "Request New Manga" : "Solicitar Nuevo Manga", systemImage: "plus.circle.fill")
-                            .font(.subheadline.weight(.semibold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
                     }
-                    .buttonStyle(.glass)
                     .listRowBackground(Color.clear)
                     .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
                 }
@@ -197,66 +196,61 @@ public struct MangaRequestsView: View {
             }
         }
         .scrollContentBackground(.hidden)
-        .background(Color.black.ignoresSafeArea())
+        .kaizenBackgroundStyle()
     }
     
     // MARK: - Tarjeta
     
     private func requestCard(_ req: MangaRequestItem) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 12) {
-                Text(String(req.title.prefix(1)).uppercased())
-                    .font(.title3.weight(.bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 44, height: 62)
-                    .background(
-                        LinearGradient(colors: [.indigo, .cyan], startPoint: .topLeading, endPoint: .bottomTrailing),
-                        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    )
-                
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(req.title)
-                        .font(.headline)
+        GlassCard {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 12) {
+                    Text(String(req.title.prefix(1)).uppercased())
+                        .font(.title3.weight(.bold))
                         .foregroundStyle(.white)
-                        .lineLimit(2)
-                    HStack(spacing: 4) {
-                        if let username = req.username {
-                            Text("@\(username)")
+                        .frame(width: 44, height: 62)
+                        .background(
+                            LinearGradient(colors: [.indigo, .kaizenCyan], startPoint: .topLeading, endPoint: .bottomTrailing),
+                            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        )
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(req.title)
+                            .font(.headline)
+                            .foregroundStyle(.white)
+                            .lineLimit(2)
+                        HStack(spacing: 4) {
+                            if let username = req.username {
+                                Text("@\(username)")
+                            }
+                            Text("· " + (isEn ? "from Ch. " : "desde cap. ") + "\(req.startChapter)")
                         }
-                        Text("· " + (isEn ? "from Ch. " : "desde cap. ") + "\(req.startChapter)")
+                        .font(.footnote)
+                        .foregroundStyle(.white.opacity(0.6))
                     }
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                    if bucket(req.status) != .pending {
+                        statusBadge(for: req.status)
+                    }
                 }
-                Spacer(minLength: 0)
-                if bucket(req.status) != .pending {
-                    statusBadge(for: req.status)
+
+                if appState.isManagement && bucket(req.status) == .pending {
+                    HStack(spacing: 10) {
+                        PrimaryButton(title: isEn ? "Approve" : "Aprobar", systemImage: "checkmark", isGlowing: true) {
+                            Task { await store.updateStatus(apiClient: apiClient, session: appState.session, requestId: req.id, status: "APPROVED") }
+                        }
+
+                        SecondaryButton(title: isEn ? "Reject" : "Rechazar", systemImage: "xmark", tint: .white) {
+                            Task { await store.updateStatus(apiClient: apiClient, session: appState.session, requestId: req.id, status: "REJECTED") }
+                        }
+                    }
                 }
             }
-            
-            if appState.isManagement && bucket(req.status) == .pending {
-                HStack(spacing: 10) {
-                    Button {
-                        Task { await store.updateStatus(apiClient: apiClient, session: appState.session, requestId: req.id, status: "APPROVED") }
-                    } label: {
-                        Label(isEn ? "Approve" : "Aprobar", systemImage: "checkmark")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.glassProminent)
-                    .tint(.cyan)
-                    
-                    Button {
-                        Task { await store.updateStatus(apiClient: apiClient, session: appState.session, requestId: req.id, status: "REJECTED") }
-                    } label: {
-                        Label(isEn ? "Reject" : "Rechazar", systemImage: "xmark")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.glass)
-                }
-                .font(.subheadline.weight(.semibold))
-            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
         }
-        .padding(.vertical, 6)
+        .listRowBackground(Color.clear)
+        .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
         .contextMenu {
             if appState.isManagement {
                 Button {
@@ -315,16 +309,11 @@ public struct MangaRequestsView: View {
         let (text, color): (String, Color) = {
             switch status.uppercased() {
             case "APPROVED": return (isEn ? "Approved" : "Aprobada", .green)
-            case "DOWNLOADING": return (isEn ? "Downloading" : "Descargando", .cyan)
+            case "DOWNLOADING": return (isEn ? "Downloading" : "Descargando", .kaizenCyan)
             case "AVAILABLE": return (isEn ? "Available" : "Disponible", .blue)
             default: return (isEn ? "Rejected" : "Rechazada", .red)
             }
         }()
-        Text(text)
-            .font(.caption2.weight(.bold))
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(color.opacity(0.2), in: Capsule())
-            .foregroundStyle(color)
+        Badge(text: text, color: color)
     }
 }
