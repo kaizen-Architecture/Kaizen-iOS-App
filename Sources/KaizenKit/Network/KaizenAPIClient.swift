@@ -321,14 +321,14 @@ public actor KaizenAPIClient {
     }
     
     /// Obtiene los últimos capítulos descargados en el servidor (`trpc/manga.history`).
-    public func fetchRecentServerDownloads(serverUrl: URL, token: String) async throws -> [KaizenServerRecentDownload] {
+    public func fetchRecentServerDownloads(serverUrl: URL, token: String, limit: Int = 15) async throws -> [KaizenServerRecentDownload] {
         let req = request(try trpcQueryURL(serverUrl, procedure: "manga.history", input: [:]), token: token)
         let (data, http) = try await send(req)
         guard (200...299).contains(http.statusCode),
               let list = trpcRawData(data) as? [[String: Any]] else { return [] }
         
         let baseStr = serverUrl.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        return list.prefix(15).compactMap { dict in
+        return list.prefix(max(1, limit)).compactMap { dict in
             guard let id = dict["id"] as? Int else { return nil }
             let index: Double
             if let idxD = dict["index"] as? Double {
@@ -485,10 +485,171 @@ public actor KaizenAPIClient {
         guard (200...299).contains(http.statusCode) else { throw KaizenError.server(status: http.statusCode) }
     }
     
-    public func updateRequestStatus(serverUrl: URL, token: String, requestId: Int, status: String) async throws {
-        let req = try request(try endpoint(serverUrl, path: "/api/trpc/mangaRequest.updateStatus"), method: "POST", token: token, json: ["json": ["id": requestId, "status": status]])
+    public func updateRequestStatus(serverUrl: URL, token: String, requestId: Int, status: String, title: String? = nil) async throws {
+        var payload: [String: Any] = ["id": requestId, "status": status]
+        if let title, !title.isEmpty {
+            payload["title"] = title
+        }
+        let req = try request(try endpoint(serverUrl, path: "/api/trpc/mangaRequest.updateStatus"), method: "POST", token: token, json: ["json": payload])
         let (_, http) = try await send(req)
         guard (200...299).contains(http.statusCode) else { throw KaizenError.server(status: http.statusCode) }
+    }
+    
+    /// Obtiene las series que están en espera de alcanzar un umbral de capítulos (ej. 50 caps.) (`trpc/manga.query`).
+    public func fetchPlannedMangas(serverUrl: URL, token: String) async throws -> [KaizenPlannedManga] {
+        let req = request(try trpcQueryURL(serverUrl, procedure: "manga.query", input: [:]), token: token)
+        let (data, http) = try await send(req)
+        guard (200...299).contains(http.statusCode),
+              let list = trpcRawData(data) as? [[String: Any]] else { return [] }
+        
+        let baseStr = serverUrl.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        return list.compactMap { dict in
+            guard let id = dict["id"] as? Int,
+                  let title = dict["title"] as? String else { return nil }
+            let minCh = (dict["minChaptersForDownload"] as? Int) ?? 0
+            guard minCh > 0 else { return nil }
+            
+            let source = (dict["source"] as? String) ?? "Unknown"
+            let interval = (dict["interval"] as? String) ?? "0 */6 * * *"
+            let remoteCount = (dict["remoteChaptersCount"] as? Int) ?? 0
+            let countDict = dict["_count"] as? [String: Any]
+            let downloadedCount = (countDict?["chapters"] as? Int) ?? 0
+            let meta = dict["metadata"] as? [String: Any]
+            let status = meta?["status"] as? String
+            let coverUrl = "\(baseStr)/api/v1/mangas/\(id)/cover"
+            
+            return KaizenPlannedManga(
+                id: id,
+                title: title,
+                source: source,
+                interval: interval,
+                minChaptersForDownload: minCh,
+                remoteChaptersCount: remoteCount,
+                downloadedChaptersCount: downloadedCount,
+                status: status,
+                coverUrl: coverUrl
+            )
+        }
+    }
+    
+    /// Actualiza el umbral mínimo de capítulos para iniciar la descarga (`trpc/manga.updateMinChapters`).
+    public func updateMangaMinChapters(serverUrl: URL, token: String, mangaId: Int, minChapters: Int) async throws {
+        let req = try request(
+            try endpoint(serverUrl, path: "/api/trpc/manga.updateMinChapters"),
+            method: "POST",
+            token: token,
+            json: ["json": ["id": mangaId, "minChapters": max(0, minChapters)]]
+        )
+        let (_, http) = try await send(req)
+        guard (200...299).contains(http.statusCode) else { throw KaizenError.server(status: http.statusCode) }
+    }
+    
+    /// Obtiene las series programadas en el planificador del servidor (`trpc/manga.getSchedules`).
+    public func fetchSchedules(serverUrl: URL, token: String) async throws -> [KaizenScheduledManga] {
+        let req = request(try trpcQueryURL(serverUrl, procedure: "manga.getSchedules", input: [:]), token: token)
+        let (data, http) = try await send(req)
+        guard (200...299).contains(http.statusCode),
+              let list = trpcRawData(data) as? [[String: Any]] else { return [] }
+        
+        let baseStr = serverUrl.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        return list.compactMap { dict in
+            guard let id = dict["id"] as? Int,
+                  let title = dict["title"] as? String else { return nil }
+            let interval = (dict["interval"] as? String) ?? "0 * * * *"
+            let source = (dict["source"] as? String) ?? "Unknown"
+            let isLocked = (dict["isLocked"] as? Bool) ?? false
+            let meta = dict["metadata"] as? [String: Any]
+            let status = meta?["status"] as? String
+            let coverUrl = "\(baseStr)/api/v1/mangas/\(id)/cover"
+            return KaizenScheduledManga(
+                id: id,
+                title: title,
+                interval: interval,
+                source: source,
+                isLocked: isLocked,
+                status: status,
+                coverUrl: coverUrl
+            )
+        }
+    }
+    
+    /// Escalona automáticamente las comprobaciones entre `startHour` y `endHour` (`trpc/manga.autoStaggerAll`).
+    public func autoStaggerSchedules(serverUrl: URL, token: String, startHour: Int = 0, endHour: Int = 5) async throws -> Int {
+        let req = try request(
+            try endpoint(serverUrl, path: "/api/trpc/manga.autoStaggerAll"),
+            method: "POST",
+            token: token,
+            json: ["json": ["startHour": startHour, "endHour": endHour]]
+        )
+        let (data, http) = try await send(req)
+        guard (200...299).contains(http.statusCode) else { throw KaizenError.server(status: http.statusCode) }
+        let payload = trpcPayload(data)
+        return (payload?["count"] as? Int) ?? 0
+    }
+    
+    /// Descarga un capítulo fallido desde otra fuente alternativa (`trpc/manga.downloadChapterFromAlternativeSource`).
+    public func downloadChapterFromAlternativeSource(
+        serverUrl: URL,
+        token: String,
+        jobId: String,
+        mangaId: Int,
+        chapterIndex: Double,
+        newSource: String,
+        newSourceTitle: String? = nil
+    ) async throws {
+        var payload: [String: Any] = [
+            "jobId": jobId,
+            "mangaId": mangaId,
+            "chapterIndex": Int(chapterIndex),
+            "newSource": newSource
+        ]
+        if let newSourceTitle, !newSourceTitle.isEmpty {
+            payload["newSourceTitle"] = newSourceTitle
+        }
+        let req = try request(
+            try endpoint(serverUrl, path: "/api/trpc/manga.downloadChapterFromAlternativeSource"),
+            method: "POST",
+            token: token,
+            json: ["json": payload]
+        )
+        let (_, http) = try await send(req)
+        guard (200...299).contains(http.statusCode) else { throw KaizenError.server(status: http.statusCode) }
+    }
+    
+    /// Busca la portada oficial 2:3 de un manga en AniList GraphQL para mostrarla en peticiones pendientes.
+    public func fetchAniListCover(title: String) async -> String? {
+        guard let url = URL(string: "https://graphql.anilist.co") else { return nil }
+        let query = """
+        query ($search: String) {
+          Media(search: $search, type: MANGA) {
+            coverImage {
+              large
+              medium
+            }
+          }
+        }
+        """
+        let body: [String: Any] = [
+            "query": query,
+            "variables": ["search": title]
+        ]
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else { return nil }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.timeoutInterval = 8
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = jsonData
+        
+        guard let (data, response) = try? await session.data(for: req),
+              let http = response as? HTTPURLResponse,
+              (200...299).contains(http.statusCode),
+              let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let dataDict = root["data"] as? [String: Any],
+              let media = dataDict["Media"] as? [String: Any],
+              let coverImage = media["coverImage"] as? [String: Any] else {
+            return nil
+        }
+        return (coverImage["large"] as? String) ?? (coverImage["medium"] as? String)
     }
     
     // MARK: - Añadir Manga Remoto (tRPC)

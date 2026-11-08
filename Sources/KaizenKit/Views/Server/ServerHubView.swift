@@ -39,6 +39,7 @@ public struct ServerHubView: View {
     let apiClient: KaizenAPIClient
     
     @State private var selectedSection: ServerSection = .status
+    @State private var selectedQueueFilter: LiveDownloadQueueSheet.QueueFilter = .all
     @State private var showAIStudio = false
     @State private var showAddMangaSheet = false
     
@@ -68,9 +69,23 @@ public struct ServerHubView: View {
                 ZStack {
                     switch selectedSection {
                     case .status:
-                        HomeDashboardView(apiClient: apiClient, isEmbedded: true)
+                        HomeDashboardView(
+                            apiClient: apiClient,
+                            isEmbedded: true,
+                            onNavigateToQueue: { filter in
+                                withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
+                                    selectedQueueFilter = filter
+                                    selectedSection = .queue
+                                }
+                            }
+                        )
                     case .queue:
-                        LiveDownloadQueueSheet(apiClient: apiClient, isEmbedded: true)
+                        LiveDownloadQueueSheet(
+                            apiClient: apiClient,
+                            initialFilter: selectedQueueFilter,
+                            isEmbedded: true
+                        )
+                        .id(selectedQueueFilter)
                     case .scrapers:
                         AdminDashboardView(apiClient: apiClient, isEmbedded: true, defaultSection: .sources)
                     case .requests:

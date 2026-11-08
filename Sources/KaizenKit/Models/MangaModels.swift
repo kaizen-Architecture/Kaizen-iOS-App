@@ -661,3 +661,72 @@ public struct KaizenServerRecentDownload: Identifiable, Codable, Sendable, Equat
         return ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)
     }
 }
+
+/// Serie programada en el planificador de Kaizen (`trpc/manga.getSchedules`)
+public struct KaizenScheduledManga: Identifiable, Codable, Sendable, Equatable {
+    public let id: Int
+    public let title: String
+    public var interval: String
+    public let source: String
+    public var isLocked: Bool
+    public let status: String?
+    public let coverUrl: String?
+    
+    public init(
+        id: Int,
+        title: String,
+        interval: String,
+        source: String,
+        isLocked: Bool = false,
+        status: String? = nil,
+        coverUrl: String? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.interval = interval
+        self.source = source
+        self.isLocked = isLocked
+        self.status = status
+        self.coverUrl = coverUrl
+    }
+}
+
+/// Serie en espera de alcanzar un umbral de capítulos (ej. 50 capítulos) en Kaizen (`Plan to Read` / Backlog)
+public struct KaizenPlannedManga: Identifiable, Codable, Sendable, Equatable {
+    public let id: Int
+    public let title: String
+    public let source: String
+    public let interval: String
+    public var minChaptersForDownload: Int
+    public let remoteChaptersCount: Int
+    public let downloadedChaptersCount: Int
+    public let status: String?
+    public let coverUrl: String?
+    
+    public init(
+        id: Int,
+        title: String,
+        source: String,
+        interval: String = "0 */6 * * *",
+        minChaptersForDownload: Int,
+        remoteChaptersCount: Int = 0,
+        downloadedChaptersCount: Int = 0,
+        status: String? = nil,
+        coverUrl: String? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.source = source
+        self.interval = interval
+        self.minChaptersForDownload = minChaptersForDownload
+        self.remoteChaptersCount = remoteChaptersCount
+        self.downloadedChaptersCount = downloadedChaptersCount
+        self.status = status
+        self.coverUrl = coverUrl
+    }
+    
+    public var progressRatio: Double {
+        guard minChaptersForDownload > 0 else { return 1.0 }
+        return min(1.0, max(0.0, Double(remoteChaptersCount) / Double(minChaptersForDownload)))
+    }
+}
