@@ -28,14 +28,25 @@ public struct ReadingHomeView: View {
     }
     
     private var inProgress: [Manga] {
-        appState.mangas
+        let historyDates: [Int: Date] = Dictionary(
+            uniqueKeysWithValues: appState.history.map { ($0.mangaId, $0.updatedAt) }
+        )
+        return appState.mangas
             .filter { manga in
-                let inHistory = appState.history.contains { $0.mangaId == manga.id }
+                let inHistory = historyDates[manga.id] != nil
                 let hasStarted = (manga.totalChapters > manga.unreadCount && manga.totalChapters > 0)
                     || (manga.safeReadingPercentage > 0 && manga.safeReadingPercentage < 100)
                     || inHistory
                 let hasUnread = manga.unreadCount > 0 || manga.safeReadingPercentage < 100
                 return hasStarted && hasUnread
+            }
+            .sorted { a, b in
+                let da = historyDates[a.id] ?? Date.distantPast
+                let db = historyDates[b.id] ?? Date.distantPast
+                if abs(da.timeIntervalSince(db)) > 1 {
+                    return da > db
+                }
+                return a.safeReadingPercentage > b.safeReadingPercentage
             }
             .prefix(16)
             .map { $0 }
@@ -66,7 +77,7 @@ public struct ReadingHomeView: View {
                         .padding(.top, 60)
                     }
                 }
-                .padding(.horizontal, 20)
+                .padding(.horizontal, isPad ? 20 : 14)
                 .padding(.bottom, 32)
                 .frame(maxWidth: 900)
                 .frame(maxWidth: .infinity, alignment: .top)
@@ -87,10 +98,12 @@ public struct ReadingHomeView: View {
             }
             .task {
                 await appState.loadLibrary(client: apiClient, force: false)
+                await appState.syncRemoteReadingHistory(client: apiClient)
                 await loadRecent()
             }
             .refreshable {
                 await appState.checkForNewChapters(client: apiClient)
+                await appState.syncRemoteReadingHistory(client: apiClient)
                 await loadRecent()
             }
             .sheet(item: $sheet) { item in
@@ -163,14 +176,17 @@ public struct ReadingHomeView: View {
     private func heroCard(_ entry: ReadingHistoryEntry) -> some View {
         let coverURL = entry.coverUrl.flatMap { URL(string: $0) }
         let manga = appState.mangas.first(where: { $0.id == entry.mangaId })
-        let progressVal: Double = entry.progressPercentage
+        let progressVal: Double = entry.totalPages > 1 ? entry.progressPercentage : max(manga?.safeReadingPercentage ?? 12, 8)
         let chapterIdxText = "\(entry.chapterIndex)"
-        let pagesText = "\(entry.pageIndex + 1)/\(entry.totalPages)"
+        let pagesText = entry.totalPages > 1 ? "\(entry.pageIndex + 1)/\(entry.totalPages)" : "\(entry.pageIndex + 1)"
         let subtitle = (isEn ? "Chapter " : "Capítulo ") + chapterIdxText + " · " + (isEn ? "p. " : "pág. ") + pagesText
+        let thumbW: CGFloat = isPad ? 88 : 74
+        let thumbH: CGFloat = isPad ? 128 : 108
+        let cardH: CGFloat = isPad ? 164 : 146
         
-        return HStack(spacing: 16) {
+        return HStack(spacing: isPad ? 16 : 12) {
             RemoteImage(url: coverURL, token: appState.session?.apiToken, contentMode: .fill)
-                .frame(width: 88, height: 128)
+                .frame(width: thumbW, height: thumbH)
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -227,13 +243,13 @@ public struct ReadingHomeView: View {
             
             Spacer(minLength: 0)
         }
-        .padding(16)
-        .frame(height: 164)
+        .padding(isPad ? 16 : 13)
+        .frame(height: cardH)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background {
             if let coverURL {
                 RemoteImage(url: coverURL, token: appState.session?.apiToken, contentMode: .fill)
-                    .frame(height: 164)
+                    .frame(height: cardH)
                     .blur(radius: 36)
                     .opacity(0.32)
                     .clipped()
@@ -259,11 +275,11 @@ public struct ReadingHomeView: View {
                 .foregroundStyle(.white)
             
             ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(alignment: .top, spacing: 14) {
+                LazyHStack(alignment: .top, spacing: isPad ? 14 : 10) {
                     ForEach(inProgress) { manga in
                         NavigationLink(value: manga) {
                             MangaCardView(manga: manga)
-                                .frame(width: 132)
+                                .frame(width: isPad ? 132 : 104)
                         }
                         .buttonStyle(.plain)
                     }

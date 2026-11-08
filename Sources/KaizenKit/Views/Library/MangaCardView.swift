@@ -3,17 +3,22 @@ import SwiftUI
 /// Tarjeta visual reutilizable con acabado Cyberpunk Liquid Glass para cuadrículas y carruseles
 public struct MangaCardView: View {
     @Environment(AppState.self) private var appState
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     public let manga: Manga
     
     public init(manga: Manga) {
         self.manga = manga
     }
     
+    private var isPad: Bool {
+        horizontalSizeClass == .regular
+    }
+    
     public var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: isPad ? 8 : 6) {
             ZStack(alignment: .topTrailing) {
                 // Portada con relación de aspecto 2:3 fija garantizada
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: isPad ? 12 : 10, style: .continuous)
                     .fill(Color.white.opacity(0.06))
                     .aspectRatio(2/3, contentMode: .fit)
                     .overlay {
@@ -23,9 +28,9 @@ public struct MangaCardView: View {
                             contentMode: .fill
                         )
                     }
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: isPad ? 12 : 10, style: .continuous))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        RoundedRectangle(cornerRadius: isPad ? 12 : 10, style: .continuous)
                             .stroke(Color.white.opacity(0.18), lineWidth: 1)
                     )
                     .shadow(color: .black.opacity(0.45), radius: 6, y: 3)
@@ -58,8 +63,8 @@ public struct MangaCardView: View {
                     Text("\(manga.unreadCount)")
                         .font(.caption2.weight(.heavy).monospacedDigit())
                         .foregroundStyle(.black)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 3)
+                        .padding(.horizontal, isPad ? 7 : 5)
+                        .padding(.vertical, isPad ? 3 : 2)
                         .background(
                             LinearGradient(
                                 colors: [Color(red: 0.35, green: 0.98, blue: 1.0), Color.cyan],
@@ -70,7 +75,7 @@ public struct MangaCardView: View {
                         )
                         .overlay(Capsule().stroke(Color.white.opacity(0.75), lineWidth: 1))
                         .shadow(color: Color.cyan.opacity(0.65), radius: 6)
-                        .padding(6)
+                        .padding(isPad ? 6 : 5)
                 }
                 
                 // Indicador de favorito
@@ -78,25 +83,25 @@ public struct MangaCardView: View {
                     Image(systemName: "heart.fill")
                         .font(.caption2)
                         .foregroundStyle(.pink)
-                        .padding(6)
+                        .padding(isPad ? 6 : 5)
                         .background(Color.black.opacity(0.65), in: Circle())
                         .overlay(Circle().stroke(Color.pink.opacity(0.45), lineWidth: 1))
-                        .padding(6)
+                        .padding(isPad ? 6 : 5)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 }
             }
             
             // Título con tipografía limpia sobre el marco de cristal
             Text(manga.title)
-                .font(.footnote.weight(.bold))
+                .font(isPad ? .footnote.weight(.bold) : .caption.weight(.bold))
                 .foregroundStyle(.white)
                 .lineLimit(1)
                 .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
                 .padding(.horizontal, 2)
         }
-        .padding(8)
+        .padding(isPad ? 8 : 5)
         .frame(maxHeight: .infinity, alignment: .top)
-        .kaizenGlass(in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .kaizenGlass(in: RoundedRectangle(cornerRadius: isPad ? 18 : 14, style: .continuous))
     }
 }

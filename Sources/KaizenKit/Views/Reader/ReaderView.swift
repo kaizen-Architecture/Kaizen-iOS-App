@@ -242,6 +242,7 @@ public struct ReaderView: View {
     
     @State private var isTransitioningChapter: Bool = false
     @State private var topPullOffset: CGFloat = 0
+    @State private var sliderTargetPage: Int? = nil
     
     private var isEn: Bool {
         appState.currentLanguage == "en"
@@ -298,6 +299,7 @@ public struct ReaderView: View {
             store.readerTheme = appState.preferredReaderTheme
             await store.loadPages(apiClient: apiClient, session: appState.session)
             recordHistory()
+            await store.saveProgress(apiClient: apiClient, session: appState.session)
         }
         .onChange(of: store.currentPage) { _, newPage in
             recordHistory()
@@ -312,27 +314,29 @@ public struct ReaderView: View {
 
     @ViewBuilder
     private var readerContentLayer: some View {
-        Group {
-            if store.pages.isEmpty && !store.isBufferingChapter {
-                ContentUnavailableView(
-                    isEn ? "No pages found" : "No se encontraron páginas",
-                    systemImage: "photo.badge.exclamationmark",
-                    description: Text(store.errorMessage ?? (isEn ? "Could not load pages for this chapter." : "No se han podido cargar las páginas de este capítulo."))
-                )
-            } else {
-                switch store.readerMode {
-                case .webtoon:
-                    webtoonScrollView
-                case .horizontalLTR, .horizontalRTL:
-                    horizontalTabView
-                }
+        if store.pages.isEmpty && !store.isBufferingChapter {
+            ContentUnavailableView(
+                isEn ? "No pages found" : "No se encontraron páginas",
+                systemImage: "photo.badge.exclamationmark",
+                description: Text(store.errorMessage ?? (isEn ? "Could not load pages for this chapter." : "No se han podido cargar las páginas de este capítulo."))
+            )
+            .contentShape(Rectangle())
+            .onTapGesture {
+                toggleHUD()
+            }
+        } else {
+            switch store.readerMode {
+            case .webtoon:
+                webtoonScrollView
+            case .horizontalLTR, .horizontalRTL:
+                horizontalTabView
             }
         }
-        .contentShape(Rectangle())
-        .onTapGesture {
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                store.isHUDVisible.toggle()
-            }
+    }
+
+    private func toggleHUD() {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+            store.isHUDVisible.toggle()
         }
     }
 
@@ -354,9 +358,15 @@ public struct ReaderView: View {
                             url: URL(string: urlString),
                             token: appState.session?.apiToken,
                             isEn: isEn,
-                            readerTheme: store.readerTheme
+                            readerTheme: store.readerTheme,
+                            onSingleTap: toggleHUD
                         )
                         .id(index + 1)
+                        .onAppear {
+                            if !store.isBufferingChapter && store.currentPage != (index + 1) {
+                                store.currentPage = index + 1
+                            }
+                        }
                     }
                     
                     EndOfChapterCard(
@@ -371,6 +381,11 @@ public struct ReaderView: View {
                         }
                     ) {
                         triggerAutoNextChapter()
+                    }
+                    .onAppear {
+                        if !store.pages.isEmpty && !store.isBufferingChapter {
+                            store.currentPage = store.pages.count
+                        }
                     }
                     
                     if isTransitioningChapter {
@@ -392,6 +407,7 @@ public struct ReaderView: View {
                     Spacer().frame(height: 140)
                 }
             }
+            .scrollBounceBehavior(.always)
             .coordinateSpace(name: "webtoonReaderScroll")
             .overlay(alignment: .top) {
                 if store.hasPreviousChapter && topPullOffset > 20 && !store.isHUDVisible {
@@ -400,14 +416,27 @@ public struct ReaderView: View {
                 }
             }
             .onPreferenceChange(ReaderTopOffsetKey.self) { minY in
-                topPullOffset = minY
+                let clamped = max(0, minY)
+                if abs(clamped - topPullOffset) > 1 || (clamped == 0 && topPullOffset != 0) {
+                    topPullOffset = clamped
+                }
                 if minY > 85 {
                     triggerAutoPreviousChapter()
                 }
             }
-            .onChange(of: store.currentPage) { _, newPage in
+            .onChange(of: sliderTargetPage) { _, targetPage in
+                guard let targetPage else { return }
                 withAnimation(.easeInOut(duration: 0.2)) {
-                    proxy.scrollTo(newPage, anchor: .top)
+                    proxy.scrollTo(targetPage, anchor: .top)
+                }
+                sliderTargetPage = nil
+            }
+            .onChange(of: store.isBufferingChapter) { _, buffering in
+                if !buffering && store.currentPage > 1 {
+                    let target = store.currentPage
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                        proxy.scrollTo(target, anchor: .top)
+                    }
                 }
             }
         }
@@ -423,7 +452,8 @@ public struct ReaderView: View {
                     url: URL(string: urlString),
                     token: appState.session?.apiToken,
                     isEn: isEn,
-                    readerTheme: store.readerTheme
+                    readerTheme: store.readerTheme,
+                    onSingleTap: toggleHUD
                 )
                 .tag(index + 1)
             }
@@ -582,7 +612,11 @@ public struct ReaderView: View {
                     Slider(
                         value: Binding(
                             get: { Double(store.currentPage) },
-                            set: { store.currentPage = Int($0) }
+                            set: {
+                                let target = Int($0)
+                                store.currentPage = target
+                                sliderTargetPage = target
+                            }
                         ),
                         in: 1...Double(max(store.pages.count, 1)),
                         step: 1
@@ -689,6 +723,7 @@ private struct ReaderPageView: View {
     let token: String?
     let isEn: Bool
     let readerTheme: ReaderTheme
+    var onSingleTap: (() -> Void)? = nil
     
     @State private var uiImage: UIImage?
     @State private var isLoading: Bool = false
@@ -699,15 +734,21 @@ private struct ReaderPageView: View {
     @State private var offset: CGSize = .zero
     @State private var lastOffset: CGSize = .zero
     
+    private var isZoomed: Bool {
+        scale > 1.05
+    }
+    
     var body: some View {
         ZStack {
             if let uiImage {
+                let ratio = max(uiImage.size.width, 1) / max(uiImage.size.height, 1)
                 Image(uiImage: uiImage)
                     .resizable()
-                    .aspectRatio(contentMode: .fit)
+                    .aspectRatio(ratio, contentMode: .fit)
+                    .frame(maxWidth: .infinity)
                     .scaleEffect(scale)
                     .offset(offset)
-                    .gesture(
+                    .simultaneousGesture(
                         MagnificationGesture()
                             .onChanged { delta in
                                 let newScale = lastScale * delta
@@ -725,17 +766,16 @@ private struct ReaderPageView: View {
                             }
                     )
                     .simultaneousGesture(
-                        DragGesture()
+                        DragGesture(minimumDistance: isZoomed ? 6 : 100_000)
                             .onChanged { value in
-                                if scale > 1.05 {
-                                    offset = CGSize(
-                                        width: lastOffset.width + value.translation.width,
-                                        height: lastOffset.height + value.translation.height
-                                    )
-                                }
+                                guard isZoomed else { return }
+                                offset = CGSize(
+                                    width: lastOffset.width + value.translation.width,
+                                    height: lastOffset.height + value.translation.height
+                                )
                             }
                             .onEnded { _ in
-                                if scale <= 1.05 {
+                                if !isZoomed {
                                     withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                                         offset = .zero
                                         lastOffset = .zero
@@ -743,7 +783,8 @@ private struct ReaderPageView: View {
                                 } else {
                                     lastOffset = offset
                                 }
-                            }
+                            },
+                        isEnabled: isZoomed
                     )
                     .onTapGesture(count: 2) {
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
@@ -758,7 +799,9 @@ private struct ReaderPageView: View {
                             }
                         }
                     }
-                    .transition(.opacity)
+                    .onTapGesture(count: 1) {
+                        onSingleTap?()
+                    }
             } else {
                 // Placeholder con proporción realista de manga (1 : 1.42) para que LazyVStack
                 // no colapse a 20pt y nunca muestre 50 spinners en columna.
@@ -771,8 +814,12 @@ private struct ReaderPageView: View {
                         Task { await loadPage() }
                     }
                 )
+                .onTapGesture {
+                    onSingleTap?()
+                }
             }
         }
+        .frame(maxWidth: .infinity)
         .task(id: url) {
             await loadPage()
         }

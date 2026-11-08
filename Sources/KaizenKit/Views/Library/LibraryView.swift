@@ -46,6 +46,7 @@ public enum LibraryDisplayMode: String, Sendable {
 
 public struct LibraryView: View {
     @Environment(AppState.self) private var appState
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     let apiClient: KaizenAPIClient
     let mode: LibraryDisplayMode
     
@@ -70,9 +71,17 @@ public struct LibraryView: View {
     @State private var renameShelfText = ""
     @State private var showRenameShelfAlert = false
     
-    private let columns = [
-        GridItem(.adaptive(minimum: 125, maximum: 180), spacing: 16, alignment: .top)
-    ]
+    private var isPad: Bool {
+        horizontalSizeClass == .regular
+    }
+    
+    private var columns: [GridItem] {
+        if isPad {
+            return [GridItem(.adaptive(minimum: 125, maximum: 180), spacing: 16, alignment: .top)]
+        } else {
+            return [GridItem(.adaptive(minimum: 96, maximum: 125), spacing: 10, alignment: .top)]
+        }
+    }
     
     public init(apiClient: KaizenAPIClient, mode: LibraryDisplayMode = .unifiedCatalog) {
         self.apiClient = apiClient
@@ -489,7 +498,7 @@ public struct LibraryView: View {
             Spacer()
         } else {
             ScrollView {
-                LazyVGrid(columns: columns, spacing: 20) {
+                LazyVGrid(columns: columns, spacing: isPad ? 20 : 12) {
                     ForEach(filteredMangas) { manga in
                         NavigationLink(value: manga) {
                             MangaCardView(manga: manga)
@@ -520,7 +529,7 @@ public struct LibraryView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, isPad ? 16 : 12)
                 .padding(.top, 8)
                 .padding(.bottom, 24)
             }

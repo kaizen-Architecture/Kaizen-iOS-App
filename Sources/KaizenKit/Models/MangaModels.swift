@@ -19,6 +19,7 @@ public struct Manga: Identifiable, Decodable, Sendable, Equatable, Hashable {
     public let readingPercentage: Double
     public var isFavorite: Bool
     public var chapters: [Chapter]?
+    public var lastReadChapter: Chapter? = nil
     
     public func hash(into hasher: inout Hasher) {
         hasher.combine(id)
@@ -81,7 +82,7 @@ public struct Manga: Identifiable, Decodable, Sendable, Equatable, Hashable {
         case cover, summary, authors, genres, status, synonyms
     }
     private enum ProgressKeys: String, CodingKey {
-        case totalChapters, unreadChapters, percentageComplete
+        case totalChapters, unreadChapters, percentageComplete, lastReadChapter
     }
     
     public init(from decoder: Decoder) throws {
@@ -113,6 +114,7 @@ public struct Manga: Identifiable, Decodable, Sendable, Equatable, Hashable {
         let total = try progress?.decodeIfPresent(Int.self, forKey: .totalChapters)
         let unread = try progress?.decodeIfPresent(Int.self, forKey: .unreadChapters)
         let pct = try progress?.decodeIfPresent(Double.self, forKey: .percentageComplete)
+        lastReadChapter = try? progress?.decodeIfPresent(Chapter.self, forKey: .lastReadChapter)
         
         totalChapters = total ?? (chapters?.count ?? 0)
         unreadCount = unread ?? (chapters?.filter { !$0.isRead }.count ?? 0)
@@ -659,6 +661,20 @@ public struct KaizenServerRecentDownload: Identifiable, Codable, Sendable, Equat
     public var formattedSize: String? {
         guard let size, size > 0 else { return nil }
         return ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)
+    }
+}
+
+extension Chapter {
+    public var lastReadDate: Date? {
+        guard let lastReadAt, !lastReadAt.isEmpty else { return nil }
+        let isoFractional = ISO8601DateFormatter()
+        isoFractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = isoFractional.date(from: lastReadAt) {
+            return d
+        }
+        let isoStandard = ISO8601DateFormatter()
+        isoStandard.formatOptions = [.withInternetDateTime]
+        return isoStandard.date(from: lastReadAt)
     }
 }
 

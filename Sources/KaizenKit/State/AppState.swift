@@ -324,6 +324,7 @@ public final class AppState {
             self.mangas = m
             self.libraries = libs
             self.lastLibrarySyncTime = Date()
+            await syncRemoteReadingHistory(client: client)
             if isActualAdmin {
                 await refreshDownloadQueue(client: client)
             }
@@ -334,6 +335,126 @@ public final class AppState {
         } catch {
             libraryErrorMessage = error.localizedDescription
             KaizenLogger.shared.error("Library", "Error inesperado sincronizando biblioteca: \(error.localizedDescription)")
+        }
+    }
+    
+    /// Sincroniza el progreso e historial de lectura entre dispositivos (iPad <-> iPhone)
+    /// consultando `lastReadAt`, `lastReadPage` e `isRead` de las series en curso en el servidor.
+    public func syncRemoteReadingHistory(client: KaizenAPIClient) async {
+        guard let session else { return }
+        
+        let candidates = mangas.filter { m in
+            (m.totalChapters > m.unreadCount && m.totalChapters > 0)
+                || m.safeReadingPercentage > 0
+                || history.contains { $0.mangaId == m.id }
+        }
+        guard !candidates.isEmpty else { return }
+        
+        let serverUrl = session.serverUrl
+        let token = session.apiToken
+        let targetMangas = Array(candidates.prefix(24))
+        
+        struct RemoteProgressItem: Sendable {
+            let manga: Manga
+            let targetChapter: Chapter
+            let activityDate: Date
+        }
+        
+        let remoteItems: [RemoteProgressItem] = await withTaskGroup(of: RemoteProgressItem?.self) { group in
+            for manga in targetMangas {
+                group.addTask {
+                    if let direct = manga.lastReadChapter {
+                        let date = direct.lastReadDate ?? Date.distantPast
+                        return RemoteProgressItem(manga: manga, targetChapter: direct, activityDate: date)
+                    }
+                    guard let detail = try? await client.fetchMangaDetail(serverUrl: serverUrl, token: token, mangaId: manga.id),
+                          let chapters = detail.chapters, !chapters.isEmpty else {
+                        return nil
+                    }
+                    let touched = chapters.filter { $0.lastReadDate != nil || $0.lastReadPage > 0 || $0.isRead }
+                    guard let mostRecent = touched.max(by: { a, b in
+                        let da = a.lastReadDate ?? Date.distantPast
+                        let db = b.lastReadDate ?? Date.distantPast
+                        if abs(da.timeIntervalSince(db)) > 1 {
+                            return da < db
+                        }
+                        return a.index < b.index
+                    }) else {
+                        return nil
+                    }
+                    
+                    let activityDate = mostRecent.lastReadDate ?? Date.distantPast
+                    // Si el capítulo más reciente ya está leído por completo y no tiene página intermedia,
+                    // ofrecer el siguiente capítulo no leído para continuar directamente.
+                    if mostRecent.isRead && mostRecent.lastReadPage <= 1 {
+                        let sortedAsc = chapters.sorted { $0.index < $1.index }
+                        if let nextUnread = sortedAsc.first(where: { $0.index > mostRecent.index && !$0.isRead }) {
+                            return RemoteProgressItem(manga: detail, targetChapter: nextUnread, activityDate: activityDate)
+                        }
+                    }
+                    return RemoteProgressItem(manga: detail, targetChapter: mostRecent, activityDate: activityDate)
+                }
+            }
+            
+            var collected: [RemoteProgressItem] = []
+            for await item in group {
+                if let item {
+                    collected.append(item)
+                }
+            }
+            return collected
+        }
+        
+        guard !remoteItems.isEmpty else { return }
+        var didChange = false
+        
+        for item in remoteItems {
+            let remotePageIdx = max(item.targetChapter.lastReadPage - 1, 0)
+            if let existingIdx = history.firstIndex(where: { $0.mangaId == item.manga.id }) {
+                let existing = history[existingIdx]
+                let isNewerOnServer = item.activityDate > existing.updatedAt.addingTimeInterval(2)
+                let isFurtherChapter = item.targetChapter.index > existing.chapterIndex
+                let isFurtherPageInSameChapter = (item.targetChapter.id == existing.chapterId && remotePageIdx > existing.pageIndex)
+                
+                if isNewerOnServer || isFurtherChapter || isFurtherPageInSameChapter {
+                    let keepTotalPages = (item.targetChapter.id == existing.chapterId) ? existing.totalPages : 1
+                    history[existingIdx] = ReadingHistoryEntry(
+                        id: existing.id,
+                        mangaId: item.manga.id,
+                        mangaTitle: item.manga.title,
+                        coverUrl: item.manga.coverUrl ?? existing.coverUrl,
+                        chapterId: item.targetChapter.id,
+                        chapterIndex: item.targetChapter.index,
+                        chapterFileName: item.targetChapter.fileName,
+                        pageIndex: remotePageIdx,
+                        totalPages: max(keepTotalPages, remotePageIdx + 1),
+                        updatedAt: max(item.activityDate, existing.updatedAt)
+                    )
+                    didChange = true
+                }
+            } else {
+                let newEntry = ReadingHistoryEntry(
+                    mangaId: item.manga.id,
+                    mangaTitle: item.manga.title,
+                    coverUrl: item.manga.coverUrl,
+                    chapterId: item.targetChapter.id,
+                    chapterIndex: item.targetChapter.index,
+                    chapterFileName: item.targetChapter.fileName,
+                    pageIndex: remotePageIdx,
+                    totalPages: max(remotePageIdx + 1, 1),
+                    updatedAt: item.activityDate
+                )
+                history.append(newEntry)
+                didChange = true
+            }
+        }
+        
+        if didChange {
+            history.sort { $0.updatedAt > $1.updatedAt }
+            if history.count > 100 {
+                history = Array(history.prefix(100))
+            }
+            saveHistory()
         }
     }
     
