@@ -219,6 +219,7 @@ public final class AdminStore {
 /// Operaciones del servidor Kaizen (solo administradores): acciones, fallos, fuentes y colas.
 public struct AdminDashboardView: View {
     @Environment(AppState.self) private var appState
+    @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var store = AdminStore()
     @State private var showAddMangaSheet = false
     @State private var showLiveQueueSheet = false
@@ -234,6 +235,7 @@ public struct AdminDashboardView: View {
     }
     
     private var isEn: Bool { appState.currentLanguage == "en" }
+    private var isPad: Bool { sizeClass == .regular }
     
     private var blockedSources: [KaizenSourceItem] {
         store.sources.filter { $0.isFailed }
@@ -300,41 +302,505 @@ public struct AdminDashboardView: View {
         }
     }
     
+    @ViewBuilder
     private var content: some View {
-        List {
-            if let success = store.successMessage {
-                Label(success, systemImage: "checkmark.circle.fill")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.green)
-            } else if let error = store.errorMessage {
-                Label(error, systemImage: "exclamationmark.triangle.fill")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.red)
-            }
-            
-            if !isEmbedded || defaultSection == nil {
-                Section {
-                    Picker("", selection: $store.selectedSection) {
-                        ForEach(AdminSection.allCases) { section in
-                            Text(section.label(isEn: isEn, failureCount: store.totalFailuresCount, sourceCount: store.sources.count))
-                                .tag(section)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
+        if store.selectedSection == .operations && isEmbedded {
+            cyberpunkOperationsGridView
+        } else if store.selectedSection == .sources && isEmbedded {
+            cyberpunkSourcesGridView
+        } else {
+            List {
+                if let success = store.successMessage {
+                    Label(success, systemImage: "checkmark.circle.fill")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.green)
+                } else if let error = store.errorMessage {
+                    Label(error, systemImage: "exclamationmark.triangle.fill")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.red)
                 }
-                .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets())
+                
+                if !isEmbedded || defaultSection == nil {
+                    Section {
+                        Picker("", selection: $store.selectedSection) {
+                            ForEach(AdminSection.allCases) { section in
+                                Text(section.label(isEn: isEn, failureCount: store.totalFailuresCount, sourceCount: store.sources.count))
+                                    .tag(section)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                    }
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets())
+                }
+                
+                switch store.selectedSection {
+                case .operations: operationsSections
+                case .failures: failuresSections
+                case .sources: sourcesSections
+                case .queues: queuesSections
+                }
             }
-            
-            switch store.selectedSection {
-            case .operations: operationsSections
-            case .failures: failuresSections
-            case .sources: sourcesSections
-            case .queues: queuesSections
+            .scrollContentBackground(.hidden)
+            .refreshable {
+                await store.refreshAllData(apiClient: apiClient, session: appState.session)
             }
         }
-        .scrollContentBackground(.hidden)
+    }
+    
+    // MARK: - Vista Cyberpunk 2x2 de Operaciones del Servidor (Mockup 2)
+    
+    private var cyberpunkOperationsGridView: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                // Cabecera: "Operaciones del Servidor" + píldora verde neón "Servidor En Línea"
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .center, spacing: 14) {
+                        Text(isEn ? "Server Operations" : "Operaciones del Servidor")
+                            .font(.title2.weight(.bold))
+                            .foregroundStyle(.white)
+                        Spacer()
+                        serverOnlinePill
+                    }
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(isEn ? "Server Operations" : "Operaciones del Servidor")
+                            .font(.title2.weight(.bold))
+                            .foregroundStyle(.white)
+                        serverOnlinePill
+                    }
+                }
+                
+                if let success = store.successMessage {
+                    Label(success, systemImage: "checkmark.circle.fill")
+                        .font(.footnote.weight(.bold))
+                        .foregroundStyle(.green)
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .kaizenGlass(in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                } else if let error = store.errorMessage {
+                    Label(error, systemImage: "exclamationmark.triangle.fill")
+                        .font(.footnote.weight(.bold))
+                        .foregroundStyle(.red)
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .kaizenGlass(in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+                
+                let columns = isPad
+                    ? [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)]
+                    : [GridItem(.flexible(), spacing: 16)]
+                
+                LazyVGrid(columns: columns, alignment: .leading, spacing: 16) {
+                    circuitBreakersGlassPanel
+                    realtimeMetricsGlassPanel
+                    quickActionsGlassPanel
+                    terminalStatusGlassPanel
+                }
+            }
+            .padding(16)
+            .padding(.bottom, 28)
+        }
+        .refreshable {
+            await store.refreshAllData(apiClient: apiClient, session: appState.session)
+        }
+    }
+    
+    private var serverOnlinePill: some View {
+        HStack(spacing: 7) {
+            Circle()
+                .fill(Color(red: 0.25, green: 0.98, blue: 0.55))
+                .frame(width: 8, height: 8)
+                .shadow(color: .green, radius: 5)
+            Text(isEn ? "Server Online (v1.2.0 · Active)" : "Servidor En Línea (v1.2.0 · Activo)")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(Color(red: 0.45, green: 1.0, blue: 0.65))
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(Color.green.opacity(0.14), in: Capsule())
+        .overlay(Capsule().stroke(Color.green.opacity(0.55), lineWidth: 1))
+        .shadow(color: Color.green.opacity(0.3), radius: 8)
+    }
+    
+    // Panel 1: Circuit Breakers de Scrapers
+    private var circuitBreakersGlassPanel: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text(isEn ? "Scraper Circuit Breakers" : "Circuit Breakers de Scrapers")
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(.white)
+                Spacer()
+                if !blockedSources.isEmpty {
+                    Button(isEn ? "Unblock all" : "Reactivar") {
+                        Task { await store.reactivateAllFailedSources(apiClient: apiClient, session: appState.session, isEn: isEn) }
+                    }
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.cyan)
+                }
+            }
+            
+            if store.sources.isEmpty {
+                Text(isEn ? "Loading scrapers..." : "Cargando scrapers...")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 24)
+            } else {
+                VStack(spacing: 12) {
+                    ForEach(store.sources.prefix(5)) { source in
+                        HStack(spacing: 10) {
+                            Text(source.name)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.white)
+                                .lineLimit(1)
+                            
+                            Spacer()
+                            
+                            Text(source.isActive ? (isEn ? "Operational" : "Operativo") : (source.isFailed ? (isEn ? "Degraded" : "Degradado") : (isEn ? "Paused" : "Pausado")))
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(source.isActive ? Color(red: 0.25, green: 0.98, blue: 0.55) : (source.isFailed ? .orange : .secondary))
+                            
+                            Toggle("", isOn: Binding(
+                                get: { source.isActive },
+                                set: { _ in
+                                    Task { await store.toggleSource(source: source, apiClient: apiClient, session: appState.session) }
+                                }
+                            ))
+                            .labelsHidden()
+                            .tint(source.isActive ? .green : .orange)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .kaizenGlass(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+    }
+    
+    // Panel 2: Métricas en Tiempo Real y Estado de Colas
+    private var realtimeMetricsGlassPanel: some View {
+        let summary = store.queuesResponse?.summary
+        let totalSeries = appState.mangas.count
+        let totalChapters = appState.mangas.reduce(0) { $0 + $1.totalChapters }
+        
+        return VStack(alignment: .leading, spacing: 14) {
+            Text(isEn ? "Real-Time Queue & Catalog Metrics" : "Métricas y Colas en Tiempo Real")
+                .font(.headline.weight(.bold))
+                .foregroundStyle(.white)
+            
+            HStack(alignment: .center, spacing: 16) {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Text(isEn ? "Active Jobs" : "Activas")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text("\(summary?.totalActive ?? 0)")
+                            .font(.subheadline.weight(.bold).monospacedDigit())
+                            .foregroundStyle(.cyan)
+                    }
+                    HStack {
+                        Text(isEn ? "Waiting" : "En Espera")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text("\(summary?.totalWaiting ?? 0)")
+                            .font(.subheadline.weight(.bold).monospacedDigit())
+                            .foregroundStyle(.indigo)
+                    }
+                    HStack {
+                        Text(isEn ? "Scheduled" : "Programadas")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text("\(summary?.totalDelayed ?? 0)")
+                            .font(.subheadline.weight(.bold).monospacedDigit())
+                            .foregroundStyle(.purple)
+                    }
+                    HStack {
+                        Text(isEn ? "Failed" : "Fallidas")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text("\(summary?.totalFailed ?? 0)")
+                            .font(.subheadline.weight(.bold).monospacedDigit())
+                            .foregroundStyle((summary?.totalFailed ?? 0) > 0 ? .red : .green)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                
+                // Anillo Neón Cian de Series y Capítulos
+                ZStack {
+                    Circle()
+                        .stroke(Color.white.opacity(0.10), lineWidth: 10)
+                    
+                    Circle()
+                        .trim(from: 0, to: 0.78)
+                        .stroke(
+                            LinearGradient(
+                                colors: [Color(red: 0.30, green: 0.96, blue: 1.0), Color.cyan, Color.blue],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            style: StrokeStyle(lineWidth: 10, lineCap: .round)
+                        )
+                        .rotationEffect(.degrees(-90))
+                        .shadow(color: Color.cyan.opacity(0.75), radius: 8)
+                    
+                    VStack(spacing: 2) {
+                        Text("\(totalChapters)")
+                            .font(.headline.weight(.bold).monospacedDigit())
+                            .foregroundStyle(.white)
+                        Text("\(totalSeries) " + (isEn ? "series" : "series"))
+                            .font(.caption2)
+                            .foregroundStyle(.cyan)
+                    }
+                }
+                .frame(width: 112, height: 112)
+            }
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .kaizenGlass(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+    }
+    
+    // Panel 3: Acciones Rápidas con Botones Biselados de Cristal
+    private var quickActionsGlassPanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(isEn ? "Quick Actions" : "Acciones Rápidas")
+                .font(.headline.weight(.bold))
+                .foregroundStyle(.white)
+            
+            bevelGlassActionButton(
+                title: isEn ? "Sync Complete Library" : "Sincronizar Biblioteca Completa",
+                icon: "arrow.triangle.2.circlepath",
+                key: "syncAll"
+            ) {
+                await run("syncAll", ok: "¡Comprobación lanzada en todas las series!", okEn: "Chapter check launched on all series!") { c, s in
+                    try await c.syncAllMangas(serverUrl: s.serverUrl, token: s.apiToken)
+                }
+            }
+            
+            bevelGlassActionButton(
+                title: isEn ? "Refresh Metadata & Covers" : "Actualizar Metadatos y Portadas",
+                icon: "photo.stack.fill",
+                key: "refreshMeta"
+            ) {
+                await run("refreshMeta", ok: "¡Actualización de metadatos encolada!", okEn: "Metadata refresh queued!") { c, s in
+                    try await c.refreshAllMetadata(serverUrl: s.serverUrl, token: s.apiToken)
+                }
+            }
+            
+            bevelGlassActionButton(
+                title: isEn ? "Purge Duplicate Chapters" : "Depurar Capítulos Duplicados",
+                icon: "trash.fill",
+                key: "cleanupDupes"
+            ) {
+                await run("cleanupDupes", ok: "¡Capítulos duplicados depurados!", okEn: "Duplicate chapters cleaned up!") { c, s in
+                    try await c.cleanupDuplicates(serverUrl: s.serverUrl, token: s.apiToken)
+                }
+            }
+            
+            bevelGlassActionButton(
+                title: isEn ? "Audit Series Integrity & Breakers" : "Auditar Integridad y Disyuntores",
+                icon: "bolt.shield.fill",
+                key: "statusAudit"
+            ) {
+                await run("statusAudit", ok: "¡Auditoría completada!", okEn: "Status audit completed!") { c, s in
+                    try await c.triggerStatusAudit(serverUrl: s.serverUrl, token: s.apiToken)
+                }
+            }
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .kaizenGlass(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+    }
+    
+    private func bevelGlassActionButton(title: String, icon: String, key: String, action: @escaping () async -> Void) -> some View {
+        Button {
+            Task { await action() }
+        } label: {
+            HStack(spacing: 10) {
+                if store.activeAction == key {
+                    ProgressView().tint(.cyan)
+                } else {
+                    Image(systemName: icon)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.cyan)
+                }
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .background(
+                LinearGradient(
+                    colors: [Color.white.opacity(0.18), Color.white.opacity(0.06)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                ),
+                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: [Color.white.opacity(0.50), Color.white.opacity(0.12)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1.1
+                    )
+            )
+            .shadow(color: .black.opacity(0.35), radius: 5, y: 2)
+        }
+        .buttonStyle(.plain)
+        .disabled(store.activeAction != nil)
+    }
+    
+    // Panel 4: Terminal & Estado de BullMQ
+    private var terminalStatusGlassPanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Terminal & BullMQ")
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(.white)
+                Spacer()
+                Button {
+                    Task {
+                        await store.syncSources(apiClient: apiClient, session: appState.session, isEn: isEn)
+                    }
+                } label: {
+                    Label(isEn ? "Sync GitHub" : "Sincronizar GitHub", systemImage: "arrow.down.doc.fill")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.cyan)
+                }
+                .buttonStyle(.plain)
+            }
+            
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 6) {
+                    Text("[INFO]")
+                        .foregroundStyle(.cyan)
+                    Text("Kaizen Engine Online · \(store.sources.filter { $0.isActive }.count)/\(store.sources.count) scrapers ready")
+                        .foregroundStyle(.white.opacity(0.9))
+                }
+                
+                if let queues = store.queuesResponse?.queues {
+                    ForEach(queues.prefix(4)) { q in
+                        HStack(spacing: 6) {
+                            Text("[QUEUE]")
+                                .foregroundStyle(q.failed > 0 ? .orange : .green)
+                            Text("\(q.label): \(q.active) active · \(q.waiting) waiting · \(q.failed) failed")
+                                .foregroundStyle(.white.opacity(0.82))
+                        }
+                    }
+                }
+                
+                if let activeJob = store.downloadQueueJobs.first(where: { $0.status == "active" }) {
+                    HStack(spacing: 6) {
+                        Text("[WORKER]")
+                            .foregroundStyle(.cyan)
+                        Text("Downloading \(activeJob.mangaTitle) Ch. \(String(format: "%g", activeJob.chapterIndex)) (\(activeJob.progress)%)")
+                            .foregroundStyle(.white)
+                    }
+                } else {
+                    HStack(spacing: 6) {
+                        Text("[WORKER]")
+                            .foregroundStyle(.green)
+                        Text(isEn ? "BullMQ Workers idle and listening for jobs" : "Workers de BullMQ en espera y listos")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .font(.caption.monospaced())
+            .padding(14)
+            .frame(maxWidth: .infinity, minHeight: 150, alignment: .topLeading)
+            .background(Color.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(Color.cyan.opacity(0.22), lineWidth: 1)
+            )
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .kaizenGlass(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+    }
+    
+    // MARK: - Vista Cyberpunk de Fuentes & Scrapers en Grid de Cristal
+    
+    private var cyberpunkSourcesGridView: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(isEn ? "Scrapers & Sources" : "Scrapers y Fuentes")
+                            .font(.title2.weight(.bold))
+                            .foregroundStyle(.white)
+                        Text(isEn ? "\(store.sources.filter { $0.isActive }.count) active · \(blockedSources.count) blocked" : "\(store.sources.filter { $0.isActive }.count) activas · \(blockedSources.count) bloqueadas")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if !blockedSources.isEmpty {
+                        Button(isEn ? "Unblock all" : "Desbloquear todas") {
+                            Task { await store.reactivateAllFailedSources(apiClient: apiClient, session: appState.session, isEn: isEn) }
+                        }
+                        .font(.footnote.weight(.bold))
+                        .kaizenGlassButton(prominent: true)
+                    }
+                }
+                
+                // Buscador y filtro en píldoras de cristal
+                HStack(spacing: 10) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.cyan)
+                    TextField(isEn ? "Search scraper..." : "Buscar scraper...", text: $store.sourceSearchText)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .foregroundStyle(.white)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .kaizenGlass(in: Capsule())
+                
+                HStack(spacing: 8) {
+                    ForEach(SourceFilter.allCases) { f in
+                        let isSelected = (store.sourceFilter == f)
+                        Button {
+                            withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
+                                store.sourceFilter = f
+                            }
+                        } label: {
+                            Text(f.label(isEn: isEn))
+                                .font(.caption.weight(isSelected ? .bold : .semibold))
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 7)
+                                .foregroundStyle(isSelected ? Color.black : Color.white)
+                                .kaizenGlass(interactive: true, tint: isSelected ? .cyan : nil, in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    Spacer()
+                }
+                
+                let columns = isPad
+                    ? [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)]
+                    : [GridItem(.flexible(), spacing: 12)]
+                
+                LazyVGrid(columns: columns, spacing: 12) {
+                    ForEach(filteredSources) { source in
+                        sourceRow(source)
+                            .padding(14)
+                            .kaizenGlass(in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    }
+                }
+            }
+            .padding(16)
+            .padding(.bottom, 28)
+        }
         .refreshable {
             await store.refreshAllData(apiClient: apiClient, session: appState.session)
         }

@@ -198,9 +198,9 @@ public struct ServerHubView: View {
                                         .foregroundStyle(isSelected ? Color.white : Color.black)
                                 }
                             }
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 8)
-                            .foregroundStyle(.white)
+                            .padding(.horizontal, 15)
+                            .padding(.vertical, 9)
+                            .foregroundStyle(isSelected ? Color.black : Color.white)
                             .kaizenGlass(interactive: true, tint: isSelected ? .cyan : nil, in: Capsule())
                         }
                         .buttonStyle(.plain)
@@ -208,7 +208,7 @@ public struct ServerHubView: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.vertical, 8)
+                .padding(.vertical, 12)
                 .frame(maxWidth: isPad ? .infinity : nil, alignment: isPad ? .center : .leading)
             }
             .overlay(alignment: .bottom) {

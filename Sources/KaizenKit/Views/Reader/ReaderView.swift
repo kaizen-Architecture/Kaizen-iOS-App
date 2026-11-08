@@ -341,10 +341,6 @@ public struct ReaderView: View {
         ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(spacing: 0) {
-                    if store.hasPreviousChapter {
-                        previousChapterPullIndicator
-                    }
-                    
                     GeometryReader { g in
                         let minY = g.frame(in: .named("webtoonReaderScroll")).minY
                         Color.clear.preference(key: ReaderTopOffsetKey.self, value: minY)
@@ -397,6 +393,12 @@ public struct ReaderView: View {
                 }
             }
             .coordinateSpace(name: "webtoonReaderScroll")
+            .overlay(alignment: .top) {
+                if store.hasPreviousChapter && topPullOffset > 20 && !store.isHUDVisible {
+                    previousChapterPullIndicator
+                        .padding(.top, 12)
+                }
+            }
             .onPreferenceChange(ReaderTopOffsetKey.self) { minY in
                 topPullOffset = minY
                 if minY > 85 {

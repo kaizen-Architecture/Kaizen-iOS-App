@@ -1,25 +1,88 @@
 import SwiftUI
 
-/// Capa híbrida Liquid Glass (Xcode 26 SDK + Retrocompatibilidad iOS 18):
-/// - En iOS 26+: Invoca el motor nativo de Apple (`Glass`, `.glassEffect`, `.buttonStyle(.glass)`).
-/// - En iOS 18: Usa fallback translúcido con `.ultraThinMaterial` y borde especular direccional.
+/// Motor visual Liquid Glass de Kaizen (Xcode 26 SDK + Retrocompatibilidad iOS 18):
+/// Reproduce fielmente el acabado de cristal ahumado con bisel especular luminoso
+/// y píldoras activas en cian neón con halo exterior de los mockups de diseño.
 public extension View {
     @ViewBuilder
     func kaizenGlass<S: Shape>(interactive: Bool = false, tint: Color? = nil, in shape: S) -> some View {
-        if #available(iOS 26.0, *) {
-            if let tint {
-                self.glassEffect(
-                    interactive ? .regular.tint(tint).interactive() : .regular.tint(tint),
-                    in: shape
+        if let tint {
+            // Píldora/control activo: Cian neón brillante con reflejo superior y halo exterior
+            self
+                .background {
+                    shape.fill(
+                        LinearGradient(
+                            colors: [
+                                Color(red: 0.30, green: 0.96, blue: 1.0),
+                                tint,
+                                tint.opacity(0.88)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                }
+                .overlay(
+                    shape.stroke(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.85),
+                                Color.white.opacity(0.25),
+                                Color.clear
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1.2
+                    )
                 )
-            } else {
-                self.glassEffect(
-                    interactive ? .regular.interactive() : .regular,
-                    in: shape
-                )
-            }
+                .shadow(color: tint.opacity(0.55), radius: 12, x: 0, y: 0)
+                .shadow(color: Color.black.opacity(0.35), radius: 6, x: 0, y: 3)
         } else {
-            self.glassCardFallback(shape, tint: tint)
+            // Superficie de cristal ahumado con refracción nativa iOS 26 + luz interna + bisel especular
+            self
+                .background {
+                    ZStack {
+                        if #available(iOS 26.0, *) {
+                            Color.clear
+                                .glassEffect(
+                                    interactive ? .regular.interactive() : .regular,
+                                    in: shape
+                                )
+                        } else {
+                            shape.fill(.ultraThinMaterial)
+                        }
+                        
+                        // Reflejo diagonal interno de cristal esmerilado
+                        shape.fill(
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(0.13),
+                                    Color.white.opacity(0.05),
+                                    Color.white.opacity(0.02)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                    }
+                }
+                .overlay(
+                    shape.stroke(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.45),
+                                Color.white.opacity(0.15),
+                                Color.cyan.opacity(0.18),
+                                Color.white.opacity(0.22)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1.15
+                    )
+                )
+                .shadow(color: Color.black.opacity(0.55), radius: 16, x: 0, y: 8)
         }
     }
     
@@ -30,68 +93,40 @@ public extension View {
     
     @ViewBuilder
     func kaizenGlassButton(prominent: Bool = false) -> some View {
-        if #available(iOS 26.0, *) {
-            if prominent {
-                self.buttonStyle(.glassProminent)
-            } else {
-                self.buttonStyle(.glass)
-            }
-        } else {
-            self.buttonStyle(GlassFallbackButtonStyle(isProminent: prominent))
-        }
+        self.buttonStyle(GlassFallbackButtonStyle(isProminent: prominent))
     }
     
-    @ViewBuilder
-    private func glassCardFallback<S: Shape>(_ shape: S, tint: Color? = nil) -> some View {
-        self
-            .background {
-                ZStack {
-                    if let tint {
-                        shape.fill(tint.opacity(0.28))
-                    } else {
-                        shape.fill(Color.white.opacity(0.05))
-                    }
-                    shape.fill(.ultraThinMaterial)
-                }
-            }
-            .overlay(
-                shape.stroke(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.36),
-                            Color.white.opacity(0.12),
-                            Color.white.opacity(0.05),
-                            Color.white.opacity(0.20)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 1
-                )
-            )
-            .shadow(color: Color.black.opacity(0.42), radius: 14, x: 0, y: 6)
-    }
-    
-    /// Resplandor ambiental de fondo para que el Liquid Glass refracte luz y color real
+    /// Resplandor ambiental profundo con foco central y esquinas para que las tarjetas refracten luz real
     @ViewBuilder
     func ambientGlowBackground() -> some View {
         self.background {
             ZStack {
-                Color.black.ignoresSafeArea()
+                Color(red: 0.03, green: 0.04, blue: 0.06).ignoresSafeArea()
                 
+                // Halo superior izquierdo cian
                 RadialGradient(
-                    colors: [Color.cyan.opacity(0.30), Color.blue.opacity(0.12), .clear],
+                    colors: [Color.cyan.opacity(0.32), Color.blue.opacity(0.12), .clear],
                     center: .topLeading,
-                    startRadius: 20,
-                    endRadius: 460
+                    startRadius: 10,
+                    endRadius: 520
                 )
                 .ignoresSafeArea()
                 
+                // Nebulosa central azul/cian detrás de las tarjetas principales
                 RadialGradient(
-                    colors: [Color.indigo.opacity(0.28), Color.purple.opacity(0.10), .clear],
-                    center: .bottomTrailing,
+                    colors: [Color.cyan.opacity(0.16), Color.indigo.opacity(0.12), .clear],
+                    center: .center,
                     startRadius: 20,
-                    endRadius: 480
+                    endRadius: 580
+                )
+                .ignoresSafeArea()
+                
+                // Halo inferior derecho índigo/violeta
+                RadialGradient(
+                    colors: [Color.indigo.opacity(0.32), Color.purple.opacity(0.14), .clear],
+                    center: .bottomTrailing,
+                    startRadius: 10,
+                    endRadius: 540
                 )
                 .ignoresSafeArea()
             }
@@ -110,34 +145,54 @@ public struct GlassFallbackButtonStyle: ButtonStyle {
     public func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .background(
-                isProminent
-                    ? AnyShapeStyle(
-                        LinearGradient(
-                            colors: [Color.cyan, Color.cyan.opacity(0.85)],
-                            startPoint: .top,
-                            endPoint: .bottom
+            .padding(.vertical, 9)
+            .background {
+                ZStack {
+                    if isProminent {
+                        Capsule().fill(
+                            LinearGradient(
+                                colors: [
+                                    Color(red: 0.30, green: 0.96, blue: 1.0),
+                                    Color.cyan
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
                         )
-                    )
-                    : AnyShapeStyle(.ultraThinMaterial),
-                in: Capsule()
-            )
+                    } else {
+                        Capsule().fill(.ultraThinMaterial)
+                        Capsule().fill(
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(0.18),
+                                    Color.white.opacity(0.06)
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                    }
+                }
+            }
             .foregroundStyle(isProminent ? Color.black : Color.white)
             .overlay(
                 Capsule().stroke(
                     LinearGradient(
                         colors: isProminent
-                            ? [Color.white.opacity(0.6), Color.clear]
-                            : [Color.white.opacity(0.3), Color.white.opacity(0.08)],
+                            ? [Color.white.opacity(0.85), Color.cyan.opacity(0.4)]
+                            : [Color.white.opacity(0.48), Color.white.opacity(0.14)],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     ),
-                    lineWidth: 1
+                    lineWidth: 1.15
                 )
             )
-            .shadow(color: isProminent ? Color.cyan.opacity(0.35) : Color.black.opacity(0.3), radius: isProminent ? 8 : 4, y: 2)
-            .opacity(configuration.isPressed ? 0.75 : 1.0)
+            .shadow(
+                color: isProminent ? Color.cyan.opacity(0.55) : Color.black.opacity(0.45),
+                radius: isProminent ? 12 : 6,
+                y: isProminent ? 0 : 3
+            )
+            .opacity(configuration.isPressed ? 0.78 : 1.0)
             .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
             .animation(.easeInOut(duration: 0.15), value: configuration.isPressed)
     }

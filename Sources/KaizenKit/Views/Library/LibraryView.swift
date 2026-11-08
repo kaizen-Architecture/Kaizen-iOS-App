@@ -328,10 +328,10 @@ public struct LibraryView: View {
                                             }
                                             Text(filter.label(language: appState.currentLanguage))
                                         }
-                                        .font(.subheadline.weight(.medium))
+                                        .font(.subheadline.weight(isSelected ? .bold : .medium))
                                         .padding(.horizontal, 14)
-                                        .padding(.vertical, 7)
-                                        .foregroundStyle(.white)
+                                        .padding(.vertical, 8)
+                                        .foregroundStyle(isSelected ? Color.black : Color.white)
                                         .kaizenGlass(interactive: true, tint: isSelected ? .cyan : nil, in: Capsule())
                                     }
                                     .buttonStyle(.plain)
@@ -353,10 +353,10 @@ public struct LibraryView: View {
                                                 .font(.caption2)
                                                 .opacity(0.75)
                                         }
-                                        .font(.subheadline.weight(.medium))
+                                        .font(.subheadline.weight(isShelfSelected ? .bold : .medium))
                                         .padding(.horizontal, 13)
-                                        .padding(.vertical, 7)
-                                        .foregroundStyle(.white)
+                                        .padding(.vertical, 8)
+                                        .foregroundStyle(isShelfSelected ? Color.black : Color.white)
                                         .kaizenGlass(interactive: true, tint: isShelfSelected ? .cyan : nil, in: Capsule())
                                     }
                                     .buttonStyle(.plain)
@@ -384,6 +384,7 @@ public struct LibraryView: View {
                                 }
                             }
                         }
+                        .padding(.vertical, 6)
                     }
                     
                 }
@@ -394,7 +395,7 @@ public struct LibraryView: View {
             }
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+        .padding(.vertical, 4)
     }
     
     private var caughtUpSubFilterBar: some View {
@@ -415,16 +416,16 @@ public struct LibraryView: View {
                                 .font(.caption2.weight(.bold))
                                 .opacity(0.8)
                         }
-                        .font(.caption.weight(.medium))
+                        .font(.caption.weight(isSelected ? .bold : .medium))
                         .padding(.horizontal, 12)
-                        .padding(.vertical, 5)
-                        .foregroundStyle(.white)
+                        .padding(.vertical, 6)
+                        .foregroundStyle(isSelected ? Color.black : Color.white)
                         .kaizenGlass(interactive: true, tint: isSelected ? .cyan : nil, in: Capsule())
                     }
                     .buttonStyle(.plain)
                 }
             }
-            .padding(.top, 2)
+            .padding(.vertical, 6)
         }
     }
     
