@@ -5,7 +5,7 @@ import UIKit
 @MainActor
 @Observable
 public final class ReaderStore {
-    public let manga: Manga?
+    public var manga: Manga?
     public let mangaId: Int
     public var currentChapterId: Int
     public var currentChapterIndex: Int
@@ -78,6 +78,23 @@ public final class ReaderStore {
         
         isBufferingChapter = true
         errorMessage = nil
+        
+        // Si el lector se abrió desde "Continuar leyendo", Historial o Novedades sin la lista completa de capítulos,
+        // cargarla automáticamente para que el avance continuo al siguiente capítulo siempre esté activo.
+        if allChapters.isEmpty {
+            if let detail = try? await apiClient.fetchMangaDetail(
+                serverUrl: session.serverUrl,
+                token: session.apiToken,
+                mangaId: mangaId
+            ) {
+                if self.manga == nil {
+                    self.manga = detail
+                }
+                if let chapters = detail.chapters, !chapters.isEmpty {
+                    self.allChapters = chapters.sorted { $0.index < $1.index }
+                }
+            }
+        }
         
         // 1. Comprobar si las páginas ya fueron precargadas en segundo plano
         if let cached = await ChapterPrefetchManager.shared.cachedPages(for: currentChapterId), !cached.isEmpty {
@@ -388,10 +405,10 @@ public struct ReaderView: View {
                         }
                     }
                     
-                    if isTransitioningChapter {
+                    if !store.pages.isEmpty && !store.isBufferingChapter && store.hasNextChapter {
                         VStack(spacing: 10) {
                             ProgressView().tint(.cyan)
-                            Text(isEn ? "Loading next chapter..." : "Cargando siguiente capítulo...")
+                            Text(isEn ? "Scrolling to next chapter..." : "Deslizando al siguiente capítulo...")
                                 .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(.cyan)
                             if let next = store.nextChapter {
@@ -402,11 +419,17 @@ public struct ReaderView: View {
                         }
                         .frame(height: 100)
                         .frame(maxWidth: .infinity)
+                        .onAppear {
+                            triggerAutoNextChapter()
+                        }
+                        
+                        Spacer().frame(height: 120)
+                    } else {
+                        Spacer().frame(height: 160)
                     }
-                    
-                    Spacer().frame(height: 140)
                 }
             }
+            .id(store.currentChapterId)
             .scrollBounceBehavior(.always)
             .coordinateSpace(name: "webtoonReaderScroll")
             .overlay(alignment: .top) {
@@ -684,9 +707,14 @@ public struct ReaderView: View {
         impact.prepare()
         impact.impactOccurred()
         Task {
+            if !store.pages.isEmpty {
+                store.currentPage = store.pages.count
+                await store.saveProgress(apiClient: apiClient, session: appState.session)
+            }
             try? await Task.sleep(nanoseconds: 150_000_000)
             await store.goToNextChapter(apiClient: apiClient, session: appState.session)
             recordHistory()
+            await store.saveProgress(apiClient: apiClient, session: appState.session)
             try? await Task.sleep(nanoseconds: 500_000_000)
             isTransitioningChapter = false
         }
@@ -701,6 +729,7 @@ public struct ReaderView: View {
         Task {
             await store.goToPreviousChapter(apiClient: apiClient, session: appState.session)
             recordHistory()
+            await store.saveProgress(apiClient: apiClient, session: appState.session)
             try? await Task.sleep(nanoseconds: 500_000_000)
             isTransitioningChapter = false
         }
