@@ -707,11 +707,26 @@ public struct MangaDetailView: View {
     
     private var isCaughtUp: Bool {
         if chapters.isEmpty { return false }
+        if nextUnreadChapter != nil { return false }
         return chapters.allSatisfy { $0.isRead } || currentManga.safeReadingPercentage >= 100
     }
     
     private var nextUnreadChapter: Chapter? {
-        chapters.sorted { $0.index < $1.index }.first { !$0.isRead }
+        let sorted = chapters.sorted { $0.index < $1.index }
+        // 1. Priorizar el progreso real registrado en el historial del usuario
+        if let historyEntry = appState.history.first(where: { $0.mangaId == currentManga.id }),
+           let histCh = sorted.first(where: { $0.id == historyEntry.chapterId }) {
+            // Si el usuario estaba a mitad de este capítulo, continuar en él
+            if historyEntry.pageIndex < max(historyEntry.totalPages, 1) {
+                return histCh
+            }
+            // Si ya lo completó, el candidato natural es el siguiente capítulo por número
+            if let next = sorted.first(where: { $0.index > histCh.index }) {
+                return next
+            }
+        }
+        // 2. Si no hay entrada de historial o ya se completó la serie, primer capítulo no leído
+        return sorted.first { !$0.isRead }
     }
     
     // MARK: - Fondo atmosférico (portada desenfocada) y hoja de administración

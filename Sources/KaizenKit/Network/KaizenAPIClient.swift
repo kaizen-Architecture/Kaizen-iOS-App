@@ -97,8 +97,12 @@ public actor KaizenAPIClient {
     // MARK: - Capítulos y páginas
 
     /// Devuelve las URLs absolutas de las páginas de un capítulo.
-    public func fetchChapterPages(serverUrl: URL, token: String, mangaId: Int, chapterId: Int) async throws -> [String] {
-        let req = request(try endpoint(serverUrl, path: "/api/v1/mangas/\(mangaId)/chapters/\(chapterId)/pages"), token: token)
+    public func fetchChapterPages(serverUrl: URL, token: String, mangaId: Int, chapterId: Int, isPrefetch: Bool = false) async throws -> [String] {
+        let path = "/api/v1/mangas/\(mangaId)/chapters/\(chapterId)/pages" + (isPrefetch ? "?prefetch=true" : "")
+        var req = request(try endpoint(serverUrl, path: path), token: token)
+        if isPrefetch {
+            req.setValue("true", forHTTPHeaderField: "X-Kaizen-Prefetch")
+        }
         let (data, http) = try await send(req)
         try checkREST(http)
 

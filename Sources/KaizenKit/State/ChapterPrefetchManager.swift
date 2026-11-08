@@ -67,9 +67,22 @@ public actor ChapterPrefetchManager {
                         serverUrl: session.serverUrl,
                         token: session.apiToken,
                         mangaId: mangaId,
-                        chapterId: chapterId
+                        chapterId: chapterId,
+                        isPrefetch: true
                     )
                     pagesCache[chapterId] = pageUrls
+                    
+                    // Doble defensa: si el servidor no tuviera aún el parche de prefetch,
+                    // revertimos el estado para que nunca quede prematuramente como leído.
+                    if !nextChapter.isRead {
+                        try? await apiClient.toggleChapterRead(
+                            serverUrl: session.serverUrl,
+                            token: session.apiToken,
+                            mangaId: mangaId,
+                            chapterId: chapterId,
+                            isRead: false
+                        )
+                    }
                 }
                 
                 guard !pageUrls.isEmpty else { return }
@@ -154,9 +167,21 @@ public actor ChapterPrefetchManager {
                         serverUrl: session.serverUrl,
                         token: session.apiToken,
                         mangaId: manga.id,
-                        chapterId: chapterId
+                        chapterId: chapterId,
+                        isPrefetch: true
                     )
                     pagesCache[chapterId] = pageUrls
+                    
+                    // Doble defensa: asegurar que no quede prematuramente como leído
+                    if !oldestUnread.isRead {
+                        try? await apiClient.toggleChapterRead(
+                            serverUrl: session.serverUrl,
+                            token: session.apiToken,
+                            mangaId: manga.id,
+                            chapterId: chapterId,
+                            isRead: false
+                        )
+                    }
                     
                     let token = session.apiToken
                     for urlStr in pageUrls {

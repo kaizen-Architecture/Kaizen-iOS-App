@@ -377,10 +377,10 @@ public struct ReaderView: View {
                         triggerAutoNextChapter()
                     }
                     
-                    if store.hasNextChapter {
+                    if isTransitioningChapter {
                         VStack(spacing: 10) {
                             ProgressView().tint(.cyan)
-                            Text(isEn ? "Scrolling to next chapter..." : "Deslizando al siguiente capítulo...")
+                            Text(isEn ? "Loading next chapter..." : "Cargando siguiente capítulo...")
                                 .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(.cyan)
                             if let next = store.nextChapter {
@@ -391,14 +391,9 @@ public struct ReaderView: View {
                         }
                         .frame(height: 100)
                         .frame(maxWidth: .infinity)
-                        .onAppear {
-                            triggerAutoNextChapter()
-                        }
-                        
-                        Spacer().frame(height: 120)
-                    } else {
-                        Spacer().frame(height: 160)
                     }
+                    
+                    Spacer().frame(height: 140)
                 }
             }
             .coordinateSpace(name: "webtoonReaderScroll")
