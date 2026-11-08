@@ -55,12 +55,12 @@ public final class MangaRequestsStore {
         }
         
         // Pre-poblar portadas conocidas desde la biblioteca local o series planeadas
+        let baseStr = session.serverUrl.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         for req in requests {
             let key = req.title.lowercased()
             if coverCache[key] == nil {
-                if let libMatch = existingMangas.first(where: { $0.title.localizedCaseInsensitiveCompare(req.title) == .orderedSame }),
-                   let cov = libMatch.coverURL(baseURL: session.serverUrl)?.absoluteString {
-                    coverCache[key] = cov
+                if let libMatch = existingMangas.first(where: { $0.title.localizedCaseInsensitiveCompare(req.title) == .orderedSame }) {
+                    coverCache[key] = "\(baseStr)/api/v1/mangas/\(libMatch.id)/cover"
                 } else if let planMatch = plannedMangas.first(where: { $0.title.localizedCaseInsensitiveCompare(req.title) == .orderedSame }),
                           let cov = planMatch.coverUrl {
                     coverCache[key] = cov
@@ -532,7 +532,8 @@ public struct MangaRequestsView: View {
         }
         if let matched = appState.mangas.first(where: { $0.title.localizedCaseInsensitiveCompare(title) == .orderedSame }),
            let session = appState.session {
-            return matched.coverURL(baseURL: session.serverUrl)
+            let baseStr = session.serverUrl.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            return URL(string: "\(baseStr)/api/v1/mangas/\(matched.id)/cover")
         }
         return nil
     }

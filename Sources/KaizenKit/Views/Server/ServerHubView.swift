@@ -82,8 +82,8 @@ public struct ServerHubView: View {
                     case .queue:
                         LiveDownloadQueueSheet(
                             apiClient: apiClient,
-                            initialFilter: selectedQueueFilter,
-                            isEmbedded: true
+                            isEmbedded: true,
+                            initialFilter: selectedQueueFilter
                         )
                         .id(selectedQueueFilter)
                     case .scrapers:
