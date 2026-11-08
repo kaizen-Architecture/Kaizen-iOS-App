@@ -2,9 +2,9 @@ name: Kaizen
 options:
   bundleIdPrefix: io.kaizen
   developmentLanguage: es
-  xcodeVersion: "15.4"
+  xcodeVersion: "26.0"
   deploymentTarget:
-    iOS: "17.0"
+    iOS: "18.0"
 targets:
   Kaizen:
     type: application
@@ -20,7 +20,7 @@ targets:
         INFOPLIST_FILE: App/Info.plist
         MARKETING_VERSION: "1.2.0"
         CURRENT_PROJECT_VERSION: "3"
-        SWIFT_VERSION: "5.10"
+        SWIFT_VERSION: "5.0"
         CODE_SIGN_STYLE: Manual
         CODE_SIGNING_ALLOWED: NO
         CODE_SIGNING_REQUIRED: NO
@@ -37,7 +37,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.kaizen.tests
         GENERATE_INFOPLIST_FILE: YES
-        SWIFT_VERSION: "5.10"
+        SWIFT_VERSION: "5.0"
 schemes:
   Kaizen:
     build:

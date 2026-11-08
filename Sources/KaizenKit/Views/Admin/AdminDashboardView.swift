@@ -465,7 +465,7 @@ public struct AdminDashboardView: View {
                         Button(isEn ? "Reactivate" : "Reactivar") {
                             Task { await store.toggleSource(source: src, apiClient: apiClient, session: appState.session) }
                         }
-                        .buttonStyle(.glass)
+                        .kaizenGlassButton(prominent: false)
                         .font(.footnote.weight(.semibold))
                     }
                 }
@@ -557,7 +557,7 @@ public struct AdminDashboardView: View {
                         Task { await store.reactivateAllFailedSources(apiClient: apiClient, session: appState.session, isEn: isEn) }
                     }
                     .font(.footnote.weight(.semibold))
-                    .buttonStyle(.glass)
+                    .kaizenGlassButton(prominent: false)
                     .disabled(store.activeAction != nil)
                 }
             }

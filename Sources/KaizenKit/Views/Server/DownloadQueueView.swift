@@ -132,7 +132,7 @@ public struct LiveDownloadQueueSheet: View {
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 8)
                         }
-                        .buttonStyle(.glass)
+                        .kaizenGlassButton(prominent: false)
                         .disabled(isExecutingAction || failedCount == 0)
                         
                         Button {
@@ -145,7 +145,7 @@ public struct LiveDownloadQueueSheet: View {
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 8)
                         }
-                        .buttonStyle(.glass)
+                        .kaizenGlassButton(prominent: false)
                         .disabled(isExecutingAction)
                     }
                     .listRowBackground(Color.clear)
@@ -174,7 +174,7 @@ public struct LiveDownloadQueueSheet: View {
             }
         }
         .scrollContentBackground(.hidden)
-        .background(Color.black.ignoresSafeArea())
+        .background((isEmbedded ? Color.clear : Color.black).ignoresSafeArea())
         .sheet(item: $selectedMangaForSources) { manga in
             MangaSourcesManagementSheet(manga: manga, apiClient: apiClient) {
                 Task {
@@ -247,7 +247,7 @@ public struct LiveDownloadQueueSheet: View {
                         Label(isEn ? "Retry" : "Reintentar", systemImage: "arrow.clockwise")
                             .font(.footnote.weight(.semibold))
                     }
-                    .buttonStyle(.glass)
+                    .kaizenGlassButton(prominent: false)
                     
                     if let matchedManga {
                         Button {
@@ -256,7 +256,7 @@ public struct LiveDownloadQueueSheet: View {
                             Label(isEn ? "Sources" : "Fuentes", systemImage: "network")
                                 .font(.footnote.weight(.semibold))
                         }
-                        .buttonStyle(.glass)
+                        .kaizenGlassButton(prominent: false)
                         
                         Button {
                             selectedMangaForDetail = matchedManga
@@ -264,7 +264,7 @@ public struct LiveDownloadQueueSheet: View {
                             Label(isEn ? "Series" : "Serie", systemImage: "book.pages")
                                 .font(.footnote.weight(.semibold))
                         }
-                        .buttonStyle(.glass)
+                        .kaizenGlassButton(prominent: false)
                     }
                 }
             }

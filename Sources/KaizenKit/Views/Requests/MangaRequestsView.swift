@@ -172,7 +172,7 @@ public struct MangaRequestsView: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 8)
                     }
-                    .buttonStyle(.glass)
+                    .kaizenGlassButton(prominent: false)
                     .listRowBackground(Color.clear)
                     .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
                 }
@@ -197,7 +197,7 @@ public struct MangaRequestsView: View {
             }
         }
         .scrollContentBackground(.hidden)
-        .background(Color.black.ignoresSafeArea())
+        .background((isEmbedded ? Color.clear : Color.black).ignoresSafeArea())
     }
     
     // MARK: - Tarjeta
@@ -242,7 +242,7 @@ public struct MangaRequestsView: View {
                         Label(isEn ? "Approve" : "Aprobar", systemImage: "checkmark")
                             .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.glassProminent)
+                    .kaizenGlassButton(prominent: true)
                     .tint(.cyan)
                     
                     Button {
@@ -251,7 +251,7 @@ public struct MangaRequestsView: View {
                         Label(isEn ? "Reject" : "Rechazar", systemImage: "xmark")
                             .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.glass)
+                    .kaizenGlassButton(prominent: false)
                 }
                 .font(.subheadline.weight(.semibold))
             }

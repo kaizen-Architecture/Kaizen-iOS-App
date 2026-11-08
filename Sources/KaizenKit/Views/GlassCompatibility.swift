@@ -1,19 +1,56 @@
 import SwiftUI
 
-public struct KaizenGlassToken {
-    public static let regular = KaizenGlassToken()
-    public func interactive() -> KaizenGlassToken { self }
-}
-
-/// Extensión de compatibilidad para estilos Liquid Glass en Xcode 16 / iOS 17-18
-/// Proporciona un acabado translúcido de alta gama con doble capa de material y luz especular direccional.
+/// Capa híbrida Liquid Glass (Xcode 26 SDK + Retrocompatibilidad iOS 18):
+/// - En iOS 26+: Invoca el motor nativo de Apple (`Glass`, `.glassEffect`, `.buttonStyle(.glass)`).
+/// - En iOS 18: Usa fallback translúcido con `.ultraThinMaterial` y borde especular direccional.
 public extension View {
     @ViewBuilder
+    func kaizenGlass<S: Shape>(interactive: Bool = false, tint: Color? = nil, in shape: S) -> some View {
+        if #available(iOS 26.0, *) {
+            if let tint {
+                self.glassEffect(
+                    interactive ? .regular.tint(tint).interactive() : .regular.tint(tint),
+                    in: shape
+                )
+            } else {
+                self.glassEffect(
+                    interactive ? .regular.interactive() : .regular,
+                    in: shape
+                )
+            }
+        } else {
+            self.glassCardFallback(shape, tint: tint)
+        }
+    }
+    
+    @ViewBuilder
     func glassCard<S: Shape>(_ shape: S) -> some View {
+        self.kaizenGlass(interactive: false, in: shape)
+    }
+    
+    @ViewBuilder
+    func kaizenGlassButton(prominent: Bool = false) -> some View {
+        if #available(iOS 26.0, *) {
+            if prominent {
+                self.buttonStyle(.glassProminent)
+            } else {
+                self.buttonStyle(.glass)
+            }
+        } else {
+            self.buttonStyle(GlassFallbackButtonStyle(isProminent: prominent))
+        }
+    }
+    
+    @ViewBuilder
+    private func glassCardFallback<S: Shape>(_ shape: S, tint: Color? = nil) -> some View {
         self
             .background {
                 ZStack {
-                    shape.fill(Color.white.opacity(0.04))
+                    if let tint {
+                        shape.fill(tint.opacity(0.28))
+                    } else {
+                        shape.fill(Color.white.opacity(0.05))
+                    }
                     shape.fill(.ultraThinMaterial)
                 }
             }
@@ -21,10 +58,10 @@ public extension View {
                 shape.stroke(
                     LinearGradient(
                         colors: [
-                            Color.white.opacity(0.32),
-                            Color.white.opacity(0.10),
-                            Color.white.opacity(0.04),
-                            Color.white.opacity(0.18)
+                            Color.white.opacity(0.36),
+                            Color.white.opacity(0.12),
+                            Color.white.opacity(0.05),
+                            Color.white.opacity(0.20)
                         ],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
@@ -35,38 +72,35 @@ public extension View {
             .shadow(color: Color.black.opacity(0.42), radius: 14, x: 0, y: 6)
     }
     
-    @ViewBuilder
-    func glassEffect<S: Shape>(_ token: KaizenGlassToken = .regular, in shape: S) -> some View {
-        self.glassCard(shape)
-    }
-    
-    /// Resplandor ambiental de fondo para interfaces Liquid Glass
+    /// Resplandor ambiental de fondo para que el Liquid Glass refracte luz y color real
     @ViewBuilder
     func ambientGlowBackground() -> some View {
         self.background {
             ZStack {
                 Color.black.ignoresSafeArea()
                 
-                // Halo superior izquierdo cyan tenue
-                Circle()
-                    .fill(Color.cyan.opacity(0.10))
-                    .frame(width: 450, height: 450)
-                    .blur(radius: 120)
-                    .offset(x: -120, y: -220)
+                RadialGradient(
+                    colors: [Color.cyan.opacity(0.30), Color.blue.opacity(0.12), .clear],
+                    center: .topLeading,
+                    startRadius: 20,
+                    endRadius: 460
+                )
+                .ignoresSafeArea()
                 
-                // Halo superior derecho índigo/morado tenue
-                Circle()
-                    .fill(Color.indigo.opacity(0.08))
-                    .frame(width: 480, height: 480)
-                    .blur(radius: 130)
-                    .offset(x: 140, y: -160)
+                RadialGradient(
+                    colors: [Color.indigo.opacity(0.28), Color.purple.opacity(0.10), .clear],
+                    center: .bottomTrailing,
+                    startRadius: 20,
+                    endRadius: 480
+                )
+                .ignoresSafeArea()
             }
             .ignoresSafeArea()
         }
     }
 }
 
-public struct GlassButtonStyle: ButtonStyle {
+public struct GlassFallbackButtonStyle: ButtonStyle {
     var isProminent: Bool = false
     
     public init(isProminent: Bool = false) {
@@ -107,9 +141,4 @@ public struct GlassButtonStyle: ButtonStyle {
             .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
             .animation(.easeInOut(duration: 0.15), value: configuration.isPressed)
     }
-}
-
-public extension ButtonStyle where Self == GlassButtonStyle {
-    static var glass: GlassButtonStyle { GlassButtonStyle(isProminent: false) }
-    static var glassProminent: GlassButtonStyle { GlassButtonStyle(isProminent: true) }
 }

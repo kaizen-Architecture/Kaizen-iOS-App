@@ -227,14 +227,11 @@ public struct LibraryView: View {
     
     public var body: some View {
         NavigationStack {
-            ZStack {
-                Color.black.ignoresSafeArea()
-                
-                VStack(spacing: 0) {
-                    topFilterBars
-                    mainCatalogContent
-                }
+            VStack(spacing: 0) {
+                topFilterBars
+                mainCatalogContent
             }
+            .ambientGlowBackground()
             .overlay(alignment: .top) {
                 SyncProgressBanner()
             }
@@ -334,11 +331,8 @@ public struct LibraryView: View {
                                         .font(.subheadline.weight(.medium))
                                         .padding(.horizontal, 14)
                                         .padding(.vertical, 7)
-                                        .background(
-                                            isSelected ? Color.cyan : Color.white.opacity(0.08),
-                                            in: Capsule()
-                                        )
-                                        .foregroundStyle(isSelected ? Color.black : Color.white)
+                                        .foregroundStyle(.white)
+                                        .kaizenGlass(interactive: true, tint: isSelected ? .cyan : nil, in: Capsule())
                                     }
                                     .buttonStyle(.plain)
                                 }
@@ -362,11 +356,8 @@ public struct LibraryView: View {
                                         .font(.subheadline.weight(.medium))
                                         .padding(.horizontal, 13)
                                         .padding(.vertical, 7)
-                                        .background(
-                                            isShelfSelected ? Color.cyan : Color.white.opacity(0.08),
-                                            in: Capsule()
-                                        )
-                                        .foregroundStyle(isShelfSelected ? Color.black : Color.white)
+                                        .foregroundStyle(.white)
+                                        .kaizenGlass(interactive: true, tint: isShelfSelected ? .cyan : nil, in: Capsule())
                                     }
                                     .buttonStyle(.plain)
                                     
@@ -427,11 +418,8 @@ public struct LibraryView: View {
                         .font(.caption.weight(.medium))
                         .padding(.horizontal, 12)
                         .padding(.vertical, 5)
-                        .background(
-                            isSelected ? Color.cyan : Color.white.opacity(0.06),
-                            in: Capsule()
-                        )
-                        .foregroundStyle(isSelected ? Color.black : Color.white)
+                        .foregroundStyle(.white)
+                        .kaizenGlass(interactive: true, tint: isSelected ? .cyan : nil, in: Capsule())
                     }
                     .buttonStyle(.plain)
                 }
@@ -764,7 +752,7 @@ public struct MangaDetailView: View {
             }
             .padding(.horizontal, 16)
             .frame(height: 48)
-            .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .kaizenGlass(interactive: true, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
         .buttonStyle(.plain)
     }

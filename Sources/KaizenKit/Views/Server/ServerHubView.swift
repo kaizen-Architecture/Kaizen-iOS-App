@@ -200,23 +200,8 @@ public struct ServerHubView: View {
                             }
                             .padding(.horizontal, 14)
                             .padding(.vertical, 8)
-                            .background(
-                                isSelected ? AnyShapeStyle(Color.cyan) : AnyShapeStyle(.ultraThinMaterial),
-                                in: Capsule()
-                            )
-                            .foregroundStyle(isSelected ? Color.black : Color.white)
-                            .overlay(
-                                Capsule().stroke(
-                                    LinearGradient(
-                                        colors: isSelected
-                                            ? [Color.white.opacity(0.55), Color.clear]
-                                            : [Color.white.opacity(0.24), Color.white.opacity(0.06)],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    ),
-                                    lineWidth: 1
-                                )
-                            )
+                            .foregroundStyle(.white)
+                            .kaizenGlass(interactive: true, tint: isSelected ? .cyan : nil, in: Capsule())
                         }
                         .buttonStyle(.plain)
                         .id(sec)
@@ -226,7 +211,6 @@ public struct ServerHubView: View {
                 .padding(.vertical, 8)
                 .frame(maxWidth: isPad ? .infinity : nil, alignment: isPad ? .center : .leading)
             }
-            .background(Color.black.opacity(0.85))
             .overlay(alignment: .bottom) {
                 Divider().background(Color.white.opacity(0.08))
             }

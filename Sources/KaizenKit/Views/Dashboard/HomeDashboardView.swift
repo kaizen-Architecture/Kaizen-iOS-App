@@ -117,7 +117,9 @@ public struct HomeDashboardView: View {
     
     private var dashboardScrollContent: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            if !isEmbedded {
+                Color.clear.ambientGlowBackground()
+            }
             
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
@@ -242,7 +244,7 @@ public struct HomeDashboardView: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .kaizenGlass(interactive: true, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
     
     // MARK: - 2. Gráfica de Descargas — Últimos 14 Días (Swift Charts)
@@ -291,7 +293,7 @@ public struct HomeDashboardView: View {
             }
         }
         .padding(15)
-        .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .kaizenGlass(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
     
     // MARK: - 3. Series y Almacenamiento por Fuente (trpc/manga.sourceStats)
@@ -343,7 +345,7 @@ public struct HomeDashboardView: View {
             }
         }
         .padding(15)
-        .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .kaizenGlass(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
     
     // MARK: - 4. Cola de Descargas en Vivo (trpc/manga.downloadQueue)
@@ -409,7 +411,7 @@ public struct HomeDashboardView: View {
             }
         }
         .padding(15)
-        .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .kaizenGlass(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
     
     // MARK: - 5. Últimas Descargas del Servidor (trpc/manga.history)
@@ -437,7 +439,7 @@ public struct HomeDashboardView: View {
             }
         }
         .padding(15)
-        .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .kaizenGlass(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
     
     @ViewBuilder

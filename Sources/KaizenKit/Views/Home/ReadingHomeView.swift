@@ -151,7 +151,7 @@ public struct ReadingHomeView: View {
                 .font(.caption.weight(.bold))
                 .foregroundStyle(.cyan)
                 .frame(width: 32, height: 32)
-                .glassEffect(.regular.interactive(), in: Circle())
+                .kaizenGlass(interactive: true, in: Circle())
         }
         .accessibilityLabel(isEn ? "Profile" : "Perfil")
     }
@@ -197,7 +197,7 @@ public struct ReadingHomeView: View {
                         .font(.subheadline.weight(.semibold))
                         .padding(.horizontal, 6)
                 }
-                .buttonStyle(.glass)
+                .kaizenGlassButton(prominent: false)
                 .padding(.top, 2)
             }
             
