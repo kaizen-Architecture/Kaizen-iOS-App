@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// Motor visual Liquid Glass de Kaizen (Xcode 26 SDK + Retrocompatibilidad iOS 18):
-/// Reproduce fielmente el acabado de cristal ahumado con bisel especular luminoso
-/// y píldoras activas en cian neón con halo exterior de los mockups de diseño.
+/// Motor visual Cyberpunk Liquid Glass de Kaizen (Xcode 26 SDK + Retrocompatibilidad iOS 18):
+/// Proporciona superficies de cristal ahumado con degradado interno, bisel especular cian/blanco,
+/// sombra de elevación 3D profunda, píldoras neón y fondo degradado atmosférico.
 public extension View {
     @ViewBuilder
     func kaizenGlass<S: Shape>(interactive: Bool = false, tint: Color? = nil, in shape: S) -> some View {
@@ -13,9 +13,9 @@ public extension View {
                     shape.fill(
                         LinearGradient(
                             colors: [
-                                Color(red: 0.30, green: 0.96, blue: 1.0),
+                                Color(red: 0.35, green: 0.98, blue: 1.0),
                                 tint,
-                                tint.opacity(0.88)
+                                Color(red: 0.0, green: 0.72, blue: 0.92)
                             ],
                             startPoint: .top,
                             endPoint: .bottom
@@ -26,43 +26,49 @@ public extension View {
                     shape.stroke(
                         LinearGradient(
                             colors: [
-                                Color.white.opacity(0.85),
-                                Color.white.opacity(0.25),
+                                Color.white.opacity(0.90),
+                                Color.white.opacity(0.30),
                                 Color.clear
                             ],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
-                        lineWidth: 1.2
+                        lineWidth: 1.3
                     )
                 )
-                .shadow(color: tint.opacity(0.55), radius: 12, x: 0, y: 0)
-                .shadow(color: Color.black.opacity(0.35), radius: 6, x: 0, y: 3)
+                .shadow(color: tint.opacity(0.60), radius: 12, x: 0, y: 0)
+                .shadow(color: Color.black.opacity(0.45), radius: 6, x: 0, y: 3)
+                .contentShape(shape)
         } else {
-            // Superficie de cristal ahumado con refracción nativa iOS 26 + luz interna + bisel especular
+            // Superficie de cristal ahumado con degradado interno + bisel especular cian/blanco + sombra 3D
             self
                 .background {
                     ZStack {
-                        if #available(iOS 26.0, *) {
-                            Color.clear
-                                .glassEffect(
-                                    interactive ? .regular.interactive() : .regular,
-                                    in: shape
-                                )
-                        } else {
-                            shape.fill(.ultraThinMaterial)
-                        }
+                        shape.fill(.ultraThinMaterial)
                         
-                        // Reflejo diagonal interno de cristal esmerilado
+                        // Degradado interno de cristal ahumado con tinte cian/azul sutil para dar volumen sobre el fondo
                         shape.fill(
                             LinearGradient(
                                 colors: [
-                                    Color.white.opacity(0.13),
-                                    Color.white.opacity(0.05),
-                                    Color.white.opacity(0.02)
+                                    Color(red: 0.16, green: 0.23, blue: 0.34).opacity(0.68),
+                                    Color(red: 0.09, green: 0.13, blue: 0.21).opacity(0.76),
+                                    Color(red: 0.06, green: 0.08, blue: 0.14).opacity(0.84)
                                 ],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
+                            )
+                        )
+                        
+                        // Reflejo especular diagonal superior
+                        shape.fill(
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(0.14),
+                                    Color.white.opacity(0.03),
+                                    Color.clear
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .center
                             )
                         )
                     }
@@ -71,18 +77,20 @@ public extension View {
                     shape.stroke(
                         LinearGradient(
                             colors: [
-                                Color.white.opacity(0.45),
-                                Color.white.opacity(0.15),
-                                Color.cyan.opacity(0.18),
-                                Color.white.opacity(0.22)
+                                Color.white.opacity(0.55),
+                                Color.cyan.opacity(0.40),
+                                Color.white.opacity(0.12),
+                                Color.cyan.opacity(0.24)
                             ],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
-                        lineWidth: 1.15
+                        lineWidth: 1.25
                     )
                 )
-                .shadow(color: Color.black.opacity(0.55), radius: 16, x: 0, y: 8)
+                .shadow(color: Color.black.opacity(0.72), radius: 16, x: 0, y: 9)
+                .shadow(color: Color.cyan.opacity(0.10), radius: 10, x: 0, y: 0)
+                .contentShape(shape)
         }
     }
     
@@ -96,37 +104,48 @@ public extension View {
         self.buttonStyle(GlassFallbackButtonStyle(isProminent: prominent))
     }
     
-    /// Resplandor ambiental profundo con foco central y esquinas para que las tarjetas refracten luz real
+    /// Fondo degradado Cyberpunk profundo con nebulosas cian, azul eléctrico y violeta
+    /// para que las tarjetas redondeadas de cristal destaquen con relieve y transparencia real.
     @ViewBuilder
     func ambientGlowBackground() -> some View {
         self.background {
             ZStack {
-                Color(red: 0.03, green: 0.04, blue: 0.06).ignoresSafeArea()
+                // Base degradada diagonal (no negro plano)
+                LinearGradient(
+                    colors: [
+                        Color(red: 0.05, green: 0.10, blue: 0.20),
+                        Color(red: 0.03, green: 0.06, blue: 0.12),
+                        Color(red: 0.06, green: 0.04, blue: 0.15)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
                 
-                // Halo superior izquierdo cian
+                // Foco superior izquierdo Cian Neón
                 RadialGradient(
-                    colors: [Color.cyan.opacity(0.32), Color.blue.opacity(0.12), .clear],
+                    colors: [Color.cyan.opacity(0.36), Color.blue.opacity(0.16), .clear],
                     center: .topLeading,
                     startRadius: 10,
-                    endRadius: 520
+                    endRadius: 560
                 )
                 .ignoresSafeArea()
                 
-                // Nebulosa central azul/cian detrás de las tarjetas principales
+                // Foco central Azul Eléctrico / Cian detrás de los paneles
                 RadialGradient(
-                    colors: [Color.cyan.opacity(0.16), Color.indigo.opacity(0.12), .clear],
+                    colors: [Color.cyan.opacity(0.20), Color.indigo.opacity(0.16), .clear],
                     center: .center,
                     startRadius: 20,
-                    endRadius: 580
+                    endRadius: 620
                 )
                 .ignoresSafeArea()
                 
-                // Halo inferior derecho índigo/violeta
+                // Foco inferior derecho Índigo / Violeta Cyberpunk
                 RadialGradient(
-                    colors: [Color.indigo.opacity(0.32), Color.purple.opacity(0.14), .clear],
+                    colors: [Color.indigo.opacity(0.38), Color.purple.opacity(0.18), .clear],
                     center: .bottomTrailing,
                     startRadius: 10,
-                    endRadius: 540
+                    endRadius: 560
                 )
                 .ignoresSafeArea()
             }
@@ -144,7 +163,7 @@ public struct GlassFallbackButtonStyle: ButtonStyle {
     
     public func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .padding(.horizontal, 14)
+            .padding(.horizontal, 15)
             .padding(.vertical, 9)
             .background {
                 ZStack {
@@ -152,8 +171,9 @@ public struct GlassFallbackButtonStyle: ButtonStyle {
                         Capsule().fill(
                             LinearGradient(
                                 colors: [
-                                    Color(red: 0.30, green: 0.96, blue: 1.0),
-                                    Color.cyan
+                                    Color(red: 0.35, green: 0.98, blue: 1.0),
+                                    Color.cyan,
+                                    Color(red: 0.0, green: 0.72, blue: 0.92)
                                 ],
                                 startPoint: .top,
                                 endPoint: .bottom
@@ -164,8 +184,8 @@ public struct GlassFallbackButtonStyle: ButtonStyle {
                         Capsule().fill(
                             LinearGradient(
                                 colors: [
-                                    Color.white.opacity(0.18),
-                                    Color.white.opacity(0.06)
+                                    Color(red: 0.18, green: 0.25, blue: 0.38).opacity(0.75),
+                                    Color(red: 0.08, green: 0.12, blue: 0.20).opacity(0.85)
                                 ],
                                 startPoint: .top,
                                 endPoint: .bottom
@@ -179,21 +199,22 @@ public struct GlassFallbackButtonStyle: ButtonStyle {
                 Capsule().stroke(
                     LinearGradient(
                         colors: isProminent
-                            ? [Color.white.opacity(0.85), Color.cyan.opacity(0.4)]
-                            : [Color.white.opacity(0.48), Color.white.opacity(0.14)],
+                            ? [Color.white.opacity(0.90), Color.cyan.opacity(0.50)]
+                            : [Color.white.opacity(0.55), Color.cyan.opacity(0.30)],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     ),
-                    lineWidth: 1.15
+                    lineWidth: 1.2
                 )
             )
             .shadow(
-                color: isProminent ? Color.cyan.opacity(0.55) : Color.black.opacity(0.45),
-                radius: isProminent ? 12 : 6,
-                y: isProminent ? 0 : 3
+                color: isProminent ? Color.cyan.opacity(0.60) : Color.black.opacity(0.55),
+                radius: isProminent ? 12 : 8,
+                y: isProminent ? 0 : 4
             )
+            .contentShape(Capsule())
             .opacity(configuration.isPressed ? 0.78 : 1.0)
-            .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
+            .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
             .animation(.easeInOut(duration: 0.15), value: configuration.isPressed)
     }
 }

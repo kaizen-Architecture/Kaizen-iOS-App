@@ -29,17 +29,31 @@ public struct LiveDownloadQueueSheet: View {
     private var isEn: Bool { appState.currentLanguage == "en" }
     private var isPad: Bool { sizeClass == .regular }
     
-    private var filteredJobs: [DownloadQueueJob] {
-        filter == .all ? jobs : jobs.filter { $0.status == filter.rawValue }
+    /// Excluir los capítulos ya completados de la cola de descargas
+    private var nonCompletedJobs: [DownloadQueueJob] {
+        jobs.filter { $0.status != "completed" }
     }
     
-    private var activeCount: Int { jobs.filter { $0.status == "active" }.count }
-    private var waitingCount: Int { jobs.filter { $0.status == "waiting" }.count }
-    private var failedCount: Int { jobs.filter { $0.status == "failed" }.count }
+    private var filteredJobs: [DownloadQueueJob] {
+        switch filter {
+        case .all:
+            return nonCompletedJobs
+        case .active:
+            return nonCompletedJobs.filter { $0.status == "active" }
+        case .waiting:
+            return nonCompletedJobs.filter { $0.status == "waiting" || $0.status == "delayed" }
+        case .failed:
+            return nonCompletedJobs.filter { $0.status == "failed" }
+        }
+    }
+    
+    private var activeCount: Int { nonCompletedJobs.filter { $0.status == "active" }.count }
+    private var waitingCount: Int { nonCompletedJobs.filter { $0.status == "waiting" || $0.status == "delayed" }.count }
+    private var failedCount: Int { nonCompletedJobs.filter { $0.status == "failed" }.count }
     
     private func title(for filter: QueueFilter) -> String {
         switch filter {
-        case .all: return isEn ? "All (\(jobs.count))" : "Todas (\(jobs.count))"
+        case .all: return isEn ? "All (\(nonCompletedJobs.count))" : "Todas (\(nonCompletedJobs.count))"
         case .active: return isEn ? "Active (\(activeCount))" : "Activas (\(activeCount))"
         case .waiting: return isEn ? "Queued (\(waitingCount))" : "En cola (\(waitingCount))"
         case .failed: return isEn ? "Failed (\(failedCount))" : "Fallidas (\(failedCount))"
@@ -142,14 +156,15 @@ public struct LiveDownloadQueueSheet: View {
     
     // MARK: - Cabecera con Contador y Botones Neon
     
+    @ViewBuilder
     private var headerAndActionsSection: some View {
-        ViewThatFits(in: .horizontal) {
+        if isPad {
             HStack(alignment: .center, spacing: 16) {
                 headerTitleBlock
                 Spacer()
                 actionButtonsBlock
             }
-            
+        } else {
             VStack(alignment: .leading, spacing: 12) {
                 headerTitleBlock
                 actionButtonsBlock
@@ -193,18 +208,9 @@ public struct LiveDownloadQueueSheet: View {
             } label: {
                 Label(isEn ? "Retry failed" : "Reintentar fallidos", systemImage: "arrow.clockwise")
                     .font(.footnote.weight(.bold))
-                    .foregroundStyle(.cyan)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 9)
-                    .background(Color.cyan.opacity(0.14), in: Capsule())
-                    .overlay(
-                        Capsule().stroke(Color.cyan.opacity(0.85), lineWidth: 1.3)
-                    )
-                    .shadow(color: Color.cyan.opacity(0.45), radius: 10, x: 0, y: 0)
             }
-            .buttonStyle(.plain)
-            .disabled(isExecutingAction || failedCount == 0)
-            .opacity(failedCount == 0 ? 0.5 : 1.0)
+            .kaizenGlassButton(prominent: true)
+            .disabled(isExecutingAction)
         }
     }
     
@@ -220,15 +226,16 @@ public struct LiveDownloadQueueSheet: View {
                     } label: {
                         Text(title(for: f))
                             .font(.caption.weight(isSelected ? .bold : .semibold))
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 7)
+                            .padding(.horizontal, 15)
+                            .padding(.vertical, 8)
                             .foregroundStyle(isSelected ? Color.black : Color.white)
-                            .kaizenGlass(interactive: true, tint: isSelected ? .cyan : nil, in: Capsule())
+                            .kaizenGlass(interactive: false, tint: isSelected ? .cyan : nil, in: Capsule())
                     }
                     .buttonStyle(.plain)
+                    .contentShape(Capsule())
                 }
             }
-            .padding(.vertical, 4)
+            .padding(.vertical, 6)
         }
     }
     
