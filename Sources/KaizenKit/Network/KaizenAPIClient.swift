@@ -516,7 +516,9 @@ public actor KaizenAPIClient {
             let downloadedCount = (countDict?["chapters"] as? Int) ?? 0
             let meta = dict["metadata"] as? [String: Any]
             let status = meta?["status"] as? String
-            let coverUrl = "\(baseStr)/api/v1/mangas/\(id)/cover"
+            let rawCover = (meta?["cover"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let hasServerCover = !rawCover.isEmpty && !rawCover.contains("cover-not-found") && !rawCover.contains("kaizen.png")
+            let coverUrl: String? = hasServerCover ? "\(baseStr)/api/v1/mangas/\(id)/cover" : nil
             
             return KaizenPlannedManga(
                 id: id,
@@ -560,7 +562,9 @@ public actor KaizenAPIClient {
             let isLocked = (dict["isLocked"] as? Bool) ?? false
             let meta = dict["metadata"] as? [String: Any]
             let status = meta?["status"] as? String
-            let coverUrl = "\(baseStr)/api/v1/mangas/\(id)/cover"
+            let rawCover = (meta?["cover"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let hasServerCover = !rawCover.isEmpty && !rawCover.contains("cover-not-found") && !rawCover.contains("kaizen.png")
+            let coverUrl: String? = hasServerCover ? "\(baseStr)/api/v1/mangas/\(id)/cover" : nil
             return KaizenScheduledManga(
                 id: id,
                 title: title,

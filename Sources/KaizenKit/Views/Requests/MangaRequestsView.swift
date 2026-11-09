@@ -243,6 +243,37 @@ public final class MangaRequestsStore {
             errorMessage = error.localizedDescription
         }
     }
+    
+    public func cancelPlannedManga(_ item: KaizenPlannedManga, apiClient: KaizenAPIClient, appState: AppState, isEn: Bool) async {
+        guard let session = appState.session else { return }
+        processingRequestIds.insert(item.id)
+        errorMessage = nil
+        defer { processingRequestIds.remove(item.id) }
+        do {
+            try await apiClient.deleteManga(
+                serverUrl: session.serverUrl,
+                token: session.apiToken,
+                mangaId: item.id,
+                shouldRemoveFiles: true
+            )
+            // Si existía una petición asociada con el mismo título, marcarla también como cancelada
+            for matchingReq in requests where matchingReq.title.localizedCaseInsensitiveCompare(item.title) == .orderedSame && matchingReq.status.uppercased() != "CANCELLED" {
+                try? await apiClient.updateRequestStatus(
+                    serverUrl: session.serverUrl,
+                    token: session.apiToken,
+                    requestId: matchingReq.id,
+                    status: "CANCELLED"
+                )
+            }
+            successMessage = isEn
+                ? "Removed '\(item.title)' from waiting list."
+                : "Eliminada '\(item.title)' de la lista de espera."
+            await loadAll(apiClient: apiClient, session: session, existingMangas: appState.mangas)
+            await appState.loadLibrary(client: apiClient, force: true)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
 }
 
 private enum RequestFilter: String, CaseIterable, Identifiable {
@@ -260,6 +291,7 @@ public struct MangaRequestsView: View {
     @State private var filter: RequestFilter = .pending
     @State private var showNewRequest = false
     @State private var inspectingRequest: MangaRequestItem? = nil
+    @State private var plannedMangaToCancel: KaizenPlannedManga? = nil
     let apiClient: KaizenAPIClient
     public var isEmbedded: Bool = false
     
@@ -331,6 +363,30 @@ public struct MangaRequestsView: View {
                 .sheet(item: $inspectingRequest) { req in
                     requestAvailabilitySheet(for: req)
                 }
+                .alert(
+                    isEn ? "Cancel Waiting Series?" : "¿Cancelar serie en espera?",
+                    isPresented: Binding(
+                        get: { plannedMangaToCancel != nil },
+                        set: { if !$0 { plannedMangaToCancel = nil } }
+                    ),
+                    presenting: plannedMangaToCancel
+                ) { item in
+                    Button(isEn ? "Remove from Waiting List" : "Eliminar de la espera", role: .destructive) {
+                        Task {
+                            await store.cancelPlannedManga(item, apiClient: apiClient, appState: appState, isEn: isEn)
+                        }
+                        plannedMangaToCancel = nil
+                    }
+                    Button(isEn ? "Keep Waiting" : "Mantener en espera", role: .cancel) {
+                        plannedMangaToCancel = nil
+                    }
+                } message: { item in
+                    Text(
+                        isEn
+                            ? "This will remove '\(item.title)' (\(item.remoteChaptersCount)/\(item.minChaptersForDownload) ch.) from the server waiting list."
+                            : "Se eliminará '\(item.title)' (\(item.remoteChaptersCount)/\(item.minChaptersForDownload) caps.) de la lista de espera del servidor Kaizen."
+                    )
+                }
         } else {
             NavigationStack {
                 requestsMainContent
@@ -353,6 +409,30 @@ public struct MangaRequestsView: View {
                     }
                     .sheet(item: $inspectingRequest) { req in
                         requestAvailabilitySheet(for: req)
+                    }
+                    .alert(
+                        isEn ? "Cancel Waiting Series?" : "¿Cancelar serie en espera?",
+                        isPresented: Binding(
+                            get: { plannedMangaToCancel != nil },
+                            set: { if !$0 { plannedMangaToCancel = nil } }
+                        ),
+                        presenting: plannedMangaToCancel
+                    ) { item in
+                        Button(isEn ? "Remove from Waiting List" : "Eliminar de la espera", role: .destructive) {
+                            Task {
+                                await store.cancelPlannedManga(item, apiClient: apiClient, appState: appState, isEn: isEn)
+                            }
+                            plannedMangaToCancel = nil
+                        }
+                        Button(isEn ? "Keep Waiting" : "Mantener en espera", role: .cancel) {
+                            plannedMangaToCancel = nil
+                        }
+                    } message: { item in
+                        Text(
+                            isEn
+                                ? "This will remove '\(item.title)' (\(item.remoteChaptersCount)/\(item.minChaptersForDownload) ch.) from the server waiting list."
+                                : "Se eliminará '\(item.title)' (\(item.remoteChaptersCount)/\(item.minChaptersForDownload) caps.) de la lista de espera del servidor Kaizen."
+                        )
                     }
             }
         }
@@ -722,31 +802,65 @@ public struct MangaRequestsView: View {
                     .buttonStyle(.plain)
                     .padding(.top, 2)
                 } else if let matched = appState.mangas.first(where: { $0.title.localizedCaseInsensitiveCompare(req.title) == .orderedSame }) {
-                    NavigationLink(value: matched) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "book.fill")
-                            Text(isEn ? "Open" : "Abrir")
+                    HStack(spacing: 6) {
+                        NavigationLink(value: matched) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "book.fill")
+                                Text(isEn ? "Open" : "Abrir")
+                            }
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.cyan)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 28)
+                            .background(Color.cyan.opacity(0.14), in: Capsule())
+                            .overlay(Capsule().stroke(Color.cyan.opacity(0.42), lineWidth: 1))
                         }
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(.cyan)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 28)
-                        .background(Color.cyan.opacity(0.14), in: Capsule())
-                        .overlay(Capsule().stroke(Color.cyan.opacity(0.42), lineWidth: 1))
+                        .buttonStyle(.plain)
+                        
+                        Button {
+                            Task {
+                                await store.updateStatus(apiClient: apiClient, appState: appState, requestId: req.id, status: "CANCELLED")
+                            }
+                        } label: {
+                            Image(systemName: "trash")
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(.red.opacity(0.9))
+                                .frame(width: 28, height: 28)
+                                .background(Color.red.opacity(0.12), in: Circle())
+                                .overlay(Circle().stroke(Color.red.opacity(0.42), lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isProcessing)
                     }
-                    .buttonStyle(.plain)
                     .padding(.top, 2)
                 } else {
-                    HStack(spacing: 4) {
-                        Image(systemName: "checkmark.seal.fill")
-                        Text(isEn ? "Approved" : "Aprobada")
+                    HStack(spacing: 6) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "checkmark.seal.fill")
+                            Text(isEn ? "Approved" : "Aprobada")
+                        }
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.green)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 28)
+                        .background(Color.green.opacity(0.14), in: Capsule())
+                        .overlay(Capsule().stroke(Color.green.opacity(0.38), lineWidth: 1))
+                        
+                        Button {
+                            Task {
+                                await store.updateStatus(apiClient: apiClient, appState: appState, requestId: req.id, status: "CANCELLED")
+                            }
+                        } label: {
+                            Image(systemName: "trash")
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(.red.opacity(0.9))
+                                .frame(width: 28, height: 28)
+                                .background(Color.red.opacity(0.12), in: Circle())
+                                .overlay(Circle().stroke(Color.red.opacity(0.42), lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isProcessing)
                     }
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(.green)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 28)
-                    .background(Color.green.opacity(0.14), in: Capsule())
-                    .overlay(Capsule().stroke(Color.green.opacity(0.38), lineWidth: 1))
                     .padding(.top, 2)
                 }
             }
@@ -1260,44 +1374,83 @@ public struct MangaRequestsView: View {
                 .padding(.horizontal, 2)
             
             if appState.isManagement {
-                Button {
-                    Task {
-                        await store.forceDownloadPlannedManga(
-                            item,
-                            apiClient: apiClient,
-                            appState: appState,
-                            isEn: isEn
-                        )
-                    }
-                } label: {
-                    HStack(spacing: 4) {
-                        if isProcessing {
-                            ProgressView().tint(.cyan).scaleEffect(0.65)
-                        } else {
-                            Image(systemName: "bolt.fill")
-                                .font(.caption2.weight(.bold))
+                HStack(spacing: 6) {
+                    Button {
+                        Task {
+                            await store.forceDownloadPlannedManga(
+                                item,
+                                apiClient: apiClient,
+                                appState: appState,
+                                isEn: isEn
+                            )
                         }
-                        Text(isEn ? "Force Download" : "Descargar ya")
-                            .font(.caption2.weight(.bold))
-                            .lineLimit(1)
+                    } label: {
+                        HStack(spacing: 4) {
+                            if isProcessing {
+                                ProgressView().tint(.cyan).scaleEffect(0.65)
+                            } else {
+                                Image(systemName: "bolt.fill")
+                                    .font(.caption2.weight(.bold))
+                            }
+                            Text(isEn ? "Download Now" : "Descargar ya")
+                                .font(.caption2.weight(.bold))
+                                .lineLimit(1)
+                        }
+                        .foregroundStyle(.cyan)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 28)
+                        .background(Color.cyan.opacity(0.15), in: Capsule())
+                        .overlay(Capsule().stroke(Color.cyan.opacity(0.50), lineWidth: 1))
                     }
-                    .foregroundStyle(.cyan)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 28)
-                    .background(Color.cyan.opacity(0.15), in: Capsule())
-                    .overlay(Capsule().stroke(Color.cyan.opacity(0.50), lineWidth: 1))
+                    .buttonStyle(.plain)
+                    .disabled(isProcessing)
+                    
+                    // Botón circular compacto para eliminar/cancelar una serie en espera de alcanzar 50 capítulos
+                    Button {
+                        plannedMangaToCancel = item
+                    } label: {
+                        Image(systemName: "trash")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.red.opacity(0.92))
+                            .frame(width: 28, height: 28)
+                            .background(Color.red.opacity(0.14), in: Circle())
+                            .overlay(Circle().stroke(Color.red.opacity(0.48), lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isProcessing)
+                    .accessibilityLabel(isEn ? "Cancel waiting series" : "Cancelar serie en espera")
                 }
-                .buttonStyle(.plain)
-                .disabled(isProcessing)
                 .padding(.top, 2)
             }
         }
         .padding(isPad ? 8 : 6)
         .frame(maxHeight: .infinity, alignment: .top)
         .kaizenGlass(interactive: false, in: RoundedRectangle(cornerRadius: isPad ? 18 : 14, style: .continuous))
+        .contextMenu {
+            if appState.isManagement {
+                Button {
+                    Task {
+                        await store.forceDownloadPlannedManga(item, apiClient: apiClient, appState: appState, isEn: isEn)
+                    }
+                } label: {
+                    Label(
+                        isEn ? "Download Now (Remove 50 ch. wait)" : "Descargar ya (Quitar espera de 50 caps.)",
+                        systemImage: "bolt.fill"
+                    )
+                }
+                Button(role: .destructive) {
+                    plannedMangaToCancel = item
+                } label: {
+                    Label(
+                        isEn ? "Remove from Waiting List" : "Eliminar / Cancelar espera",
+                        systemImage: "trash"
+                    )
+                }
+            }
+        }
     }
     
-    // MARK: - Portada Vertical 2:3 con Badges Superiores y Barra Neón Inferior
+    // MARK: - Portada Vertical 2:3 con Carátula por Defecto Oficial de Kaizen (`KaizenLogo`)
     
     private func posterCoverView(
         url: URL?,
@@ -1313,29 +1466,18 @@ public struct MangaRequestsView: View {
         return RoundedRectangle(cornerRadius: radius, style: .continuous)
             .fill(
                 LinearGradient(
-                    colors: [Color(red: 0.14, green: 0.22, blue: 0.36), Color(red: 0.07, green: 0.10, blue: 0.18)],
+                    colors: [Color(red: 0.12, green: 0.20, blue: 0.34), Color(red: 0.05, green: 0.08, blue: 0.16)],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
             )
             .aspectRatio(2/3, contentMode: .fit)
             .overlay {
-                if let url {
-                    RemoteImage(
-                        url: url,
-                        token: appState.session?.apiToken,
-                        contentMode: .fill
-                    )
-                } else {
-                    VStack(spacing: 6) {
-                        Image(systemName: "book.closed.fill")
-                            .font(.title2)
-                            .foregroundStyle(.cyan.opacity(0.8))
-                        Text(String(title.prefix(2)).uppercased())
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(.white.opacity(0.75))
-                    }
-                }
+                RequestPosterCoverImage(
+                    url: url,
+                    token: appState.session?.apiToken,
+                    isPad: isPad
+                )
             }
             .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
             .overlay(
@@ -1537,5 +1679,88 @@ public struct MangaRequestsView: View {
             .background(color.opacity(0.18), in: Capsule())
             .overlay(Capsule().stroke(color.opacity(0.45), lineWidth: 1))
             .foregroundStyle(color)
+    }
+}
+
+/// Portada 2:3 para `Requests & Backlog` que utiliza el emblema oficial de Kaizen (`KaizenLogo` / `kaizen.png`)
+/// como carátula por defecto cuando la serie no tiene portada o el servidor devuelve 404.
+private struct RequestPosterCoverImage: View {
+    let url: URL?
+    let token: String?
+    let isPad: Bool
+    
+    @State private var uiImage: UIImage?
+    
+    var body: some View {
+        ZStack {
+            if let uiImage {
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .transition(.opacity)
+            } else {
+                kaizenDefaultCover
+            }
+        }
+        .task(id: url) {
+            await loadCover()
+        }
+    }
+    
+    private var kaizenDefaultCover: some View {
+        ZStack {
+            LinearGradient(
+                colors: [
+                    Color(red: 0.09, green: 0.16, blue: 0.30),
+                    Color(red: 0.05, green: 0.08, blue: 0.17),
+                    Color(red: 0.08, green: 0.06, blue: 0.20)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            
+            RadialGradient(
+                colors: [Color.cyan.opacity(0.26), Color.indigo.opacity(0.14), .clear],
+                center: .center,
+                startRadius: 6,
+                endRadius: isPad ? 110 : 80
+            )
+            
+            VStack(spacing: isPad ? 8 : 6) {
+                Image("KaizenLogo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: isPad ? 68 : 50, height: isPad ? 68 : 50)
+                    .clipShape(RoundedRectangle(cornerRadius: isPad ? 16 : 12, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: isPad ? 16 : 12, style: .continuous)
+                            .stroke(Color.cyan.opacity(0.55), lineWidth: 1)
+                    )
+                    .shadow(color: .cyan.opacity(0.35), radius: 10, y: 4)
+                
+                Text("KAIZEN")
+                    .font(.system(size: isPad ? 10 : 8, weight: .heavy, design: .rounded))
+                    .tracking(2.0)
+                    .foregroundStyle(Color.cyan.opacity(0.85))
+            }
+        }
+    }
+    
+    private func loadCover() async {
+        guard let url else {
+            uiImage = nil
+            return
+        }
+        if let cached = await ImageLoader.shared.cachedImage(for: url) {
+            uiImage = cached
+            return
+        }
+        if let downloaded = await ImageLoader.shared.image(for: url, token: token) {
+            withAnimation(.easeIn(duration: 0.2)) {
+                uiImage = downloaded
+            }
+        } else {
+            uiImage = nil
+        }
     }
 }
