@@ -38,6 +38,17 @@ actor ImageLoader {
     }
     
     func image(for url: URL, token: String?) async -> UIImage? {
+        // Carga inmediata para archivos locales en disco (Modo Offline)
+        if url.isFileURL {
+            if let image = UIImage(contentsOfFile: url.path) {
+                return image
+            }
+            if let data = try? Data(contentsOf: url), let image = UIImage(data: data) {
+                return image
+            }
+            return nil
+        }
+        
         if let cached = cachedImage(for: url) {
             return cached
         }

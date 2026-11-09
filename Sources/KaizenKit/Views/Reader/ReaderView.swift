@@ -902,6 +902,18 @@ private struct ReaderPageView: View {
             return
         }
         
+        // 0. Carga directa para páginas descargadas en disco local (0ms de red)
+        if url.isFileURL {
+            if let img = UIImage(contentsOfFile: url.path) ?? (try? Data(contentsOf: url)).flatMap({ UIImage(data: $0) }) {
+                self.uiImage = img
+                self.hasFailed = false
+            } else {
+                self.hasFailed = true
+            }
+            self.isLoading = false
+            return
+        }
+        
         // 1. Revisar caché inmediata en memoria o disco
         if let cached = await ImageLoader.shared.cachedImage(for: url) {
             self.uiImage = cached

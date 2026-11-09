@@ -130,7 +130,7 @@ public final class OfflineStorageManager {
         
         let imageFiles = items.filter { url in
             let ext = url.pathExtension.lowercased()
-            return ext == "jpg" || ext == "jpeg" || ext == "png" || ext == "webp"
+            return ext == "jpg" || ext == "jpeg" || ext == "png" || ext == "webp" || ext == "avif" || ext == "gif" || ext == "bmp"
         }.sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
         
         return imageFiles.isEmpty ? nil : imageFiles
