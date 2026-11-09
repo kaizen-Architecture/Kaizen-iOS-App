@@ -214,7 +214,7 @@ public final class OfflineStorageManager {
                 var next = 0
                 var finished = 0
                 
-                func enqueue() {
+                @MainActor func enqueue() {
                     while next < pageUrls.count, !cancelRequested {
                         let idx = next
                         next += 1
