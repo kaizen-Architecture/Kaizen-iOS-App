@@ -98,8 +98,9 @@ public actor KaizenAPIClient {
 
     /// Devuelve las URLs absolutas de las páginas de un capítulo.
     public func fetchChapterPages(serverUrl: URL, token: String, mangaId: Int, chapterId: Int, isPrefetch: Bool = false) async throws -> [String] {
-        let path = "/api/v1/mangas/\(mangaId)/chapters/\(chapterId)/pages" + (isPrefetch ? "?prefetch=true" : "")
-        var req = request(try endpoint(serverUrl, path: path), token: token)
+        let path = "/api/v1/mangas/\(mangaId)/chapters/\(chapterId)/pages"
+        let query = isPrefetch ? [URLQueryItem(name: "prefetch", value: "true")] : []
+        var req = request(try endpoint(serverUrl, path: path, query: query), token: token)
         if isPrefetch {
             req.setValue("true", forHTTPHeaderField: "X-Kaizen-Prefetch")
         }
@@ -116,6 +117,27 @@ public actor KaizenAPIClient {
             guard let url = pageDict["url"] as? String else { return nil }
             return url.hasPrefix("http") ? url : base + url
         }
+    }
+
+    /// Descarga el archivo CBZ completo de un capítulo en una sola petición HTTP en streaming.
+    public func downloadChapterArchive(
+        serverUrl: URL,
+        token: String,
+        mangaId: Int,
+        chapterId: Int,
+        destination: URL
+    ) async throws {
+        let path = "/api/v1/mangas/\(mangaId)/chapters/\(chapterId)/download"
+        let req = request(try endpoint(serverUrl, path: path), token: token)
+        let (tempUrl, response) = try await session.download(for: req)
+        guard let http = response as? HTTPURLResponse else {
+            throw KaizenError.unexpectedResponse
+        }
+        try checkREST(http)
+        if FileManager.default.fileExists(atPath: destination.path) {
+            try? FileManager.default.removeItem(at: destination)
+        }
+        try FileManager.default.moveItem(at: tempUrl, to: destination)
     }
 
     public func updateReadingProgress(serverUrl: URL, token: String, mangaId: Int, chapterId: Int, page: Int, isRead: Bool? = nil) async throws {

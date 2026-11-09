@@ -128,8 +128,8 @@ struct MainTabsView: View {
     
     private var availableTabs: [String] {
         appState.isManagement
-            ? ["reading", "library", "explore", "server"]
-            : ["reading", "library", "explore"]
+            ? ["reading", "library", "explore", "offline", "server"]
+            : ["reading", "library", "explore", "offline"]
     }
     
     var body: some View {
@@ -155,6 +155,12 @@ struct MainTabsView: View {
                 }
                 .tag("explore")
             
+            OfflineDownloadsView(apiClient: apiClient)
+                .tabItem {
+                    Label(isEn ? "Offline" : "Descargas", systemImage: "arrow.down.circle.fill")
+                }
+                .tag("offline")
+            
             if appState.isManagement {
                 ServerHubView(apiClient: apiClient)
                     .tabItem {
@@ -170,6 +176,50 @@ struct MainTabsView: View {
                     handleMainTabSwipe(value: value)
                 }
         )
+        .onChange(of: appState.currentLanguage, initial: true) { _, lang in
+            OfflineStorageManager.shared.language = lang
+        }
+        .overlay(alignment: .bottom) {
+            OfflineBatchBanner(isEn: isEn)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 78)
+        }
+        .alert(
+            isEn ? "Download for offline reading?" : "¿Descargar para leer sin conexión?",
+            isPresented: Binding(
+                get: { OfflineStorageManager.shared.pendingRequest != nil },
+                set: { if !$0 { OfflineStorageManager.shared.pendingRequest = nil } }
+            ),
+            presenting: OfflineStorageManager.shared.pendingRequest
+        ) { _ in
+            Button(isEn ? "Download" : "Descargar") {
+                OfflineStorageManager.shared.confirmPendingRequest()
+            }
+            Button(isEn ? "Cancel" : "Cancelar", role: .cancel) {
+                OfflineStorageManager.shared.pendingRequest = nil
+            }
+        } message: { request in
+            let size = ByteCountFormatter.string(fromByteCount: request.estimatedBytes, countStyle: .file)
+            let base = isEn
+                ? "\(request.chapters.count) chapter(s) of \(request.manga.title). Estimated space: ~\(size)."
+                : "\(request.chapters.count) capítulo(s) de \(request.manga.title). Espacio estimado: ~\(size)."
+            if OfflineStorageManager.shared.isExpensive {
+                Text(base + (isEn ? "\n\nYou are on mobile data. Continue the download?" : "\n\nEstás usando datos móviles. ¿Quieres seguir con la descarga?"))
+            } else {
+                Text(base)
+            }
+        }
+        .alert(
+            isEn ? "Download failed" : "Descarga interrumpida",
+            isPresented: Binding(
+                get: { OfflineStorageManager.shared.lastError != nil },
+                set: { if !$0 { OfflineStorageManager.shared.lastError = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(OfflineStorageManager.shared.lastError ?? "")
+        }
         .onChange(of: appState.isManagement) { _, isManagement in
             if !isManagement && appState.selectedMainTab == "server" {
                 appState.selectedMainTab = "reading"
