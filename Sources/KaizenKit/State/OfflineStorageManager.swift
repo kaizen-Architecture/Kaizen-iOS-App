@@ -2,7 +2,7 @@ import Foundation
 import UIKit
 import Network
 
-/// Gestor integral de descargas locales, almacenamiento seguro en Sandbox y sincronizaciÃ³n diferida.
+/// Gestor integral de descargas locales, almacenamiento seguro en Sandbox y sincronización diferida.
 /// Los archivos se guardan en `Application Support/KaizenOffline/{mangaId}/{chapterId}/`
 /// y se marcan como excluidos del backup de iCloud (`isExcludedFromBackup = true`).
 @MainActor
@@ -21,11 +21,11 @@ public final class OfflineStorageManager {
     private let pendingSyncFile: URL
     private let settingsFile: URL
     
-    // Monitor de red para reconexiÃ³n y sincronizaciÃ³n automÃ¡tica
+    // Monitor de red para reconexión y sincronización automática
     private let networkMonitor = NWPathMonitor()
     private let monitorQueue = DispatchQueue(label: "io.kaizen.networkMonitor")
     public private(set) var isOnline: Bool = true
-    /// `true` en datos mÃ³viles / punto de acceso personal (red "costosa").
+    /// `true` en datos móviles / punto de acceso personal (red "costosa").
     public private(set) var isExpensive: Bool = false
     
     /// Progreso de una descarga por lotes en curso (nil si no hay ninguna).
@@ -39,20 +39,20 @@ public final class OfflineStorageManager {
         }
     }
     public private(set) var batch: BatchProgress?
-    /// Ãšltimo error de descarga, mostrado al usuario (nunca se traga en silencio).
+    /// Último error de descarga, mostrado al usuario (nunca se traga en silencio).
     public var lastError: String?
     /// Idioma de la app ("es"/"en"), sincronizado desde `RootAppView` para los mensajes de error.
     public var language: String = "es"
     private func tr(_ es: String, _ en: String) -> String { language == "en" ? en : es }
     
-    /// PeticiÃ³n pendiente de confirmar por el usuario (tamaÃ±o estimado + aviso de datos mÃ³viles).
+    /// Petición pendiente de confirmar por el usuario (tamaño estimado + aviso de datos móviles).
     public struct DownloadRequest: Identifiable {
         public let id = UUID()
         public let manga: Manga
         public let chapters: [Chapter]
         public let apiClient: KaizenAPIClient
         public let session: UserSession?
-        /// EstimaciÃ³n: media de 9 MB por capÃ­tulo, o el tamaÃ±o real si el servidor lo informa.
+        /// Estimación: media de 9 MB por capítulo, o el tamaño real si el servidor lo informa.
         public var estimatedBytes: Int64 { Int64(chapters.count) * 9_000_000 }
     }
     public var pendingRequest: DownloadRequest?
@@ -80,7 +80,7 @@ public final class OfflineStorageManager {
         enforceRetentionPolicy()
     }
     
-    // MARK: - Estado de Red y SincronizaciÃ³n Diferida
+    // MARK: - Estado de Red y Sincronización Diferida
     
     private func startNetworkMonitoring() {
         networkMonitor.pathUpdateHandler = { [weak self] path in
@@ -136,7 +136,7 @@ public final class OfflineStorageManager {
         return imageFiles.isEmpty ? nil : imageFiles
     }
     
-    // MARK: - Descarga de CapÃ­tulos
+    // MARK: - Descarga de Capítulos
     
     /// Descarga una página a disco y devuelve su tamaño en bytes. No depende del actor principal.
     private nonisolated static func fetchPage(
@@ -166,7 +166,7 @@ public final class OfflineStorageManager {
         session: UserSession?
     ) async throws {
         guard let session else {
-            throw NSError(domain: "KaizenOffline", code: 4000, userInfo: [NSLocalizedDescriptionKey: tr("No hay sesiÃ³n activa con el servidor Kaizen.", "No active session with the Kaizen server.")])
+            throw NSError(domain: "KaizenOffline", code: 4000, userInfo: [NSLocalizedDescriptionKey: tr("No hay sesión activa con el servidor Kaizen.", "No active session with the Kaizen server.")])
         }
         
         let downloadKey = "\(manga.id)_\(chapter.id)"
@@ -177,7 +177,7 @@ public final class OfflineStorageManager {
         let chDir = chapterDirectory(mangaId: manga.id, chapterId: chapter.id)
         try fileManager.createDirectory(at: chDir, withIntermediateDirectories: true)
         
-        // 2. Descargar y guardar carÃ¡tula si aÃºn no existe
+        // 2. Descargar y guardar carátula si aún no existe
         var savedCoverFileName: String? = nil
         let mangaDir = mangaDirectory(mangaId: manga.id)
         try fileManager.createDirectory(at: mangaDir, withIntermediateDirectories: true)
@@ -191,16 +191,16 @@ public final class OfflineStorageManager {
             savedCoverFileName = "cover.jpg"
         }
         
-        // 3. Obtener URLs de pÃ¡ginas del capÃ­tulo
+        // 3. Obtener URLs de páginas del capítulo
         let pageUrls = try await apiClient.fetchChapterPages(
             serverUrl: session.serverUrl,
             token: session.apiToken,
             mangaId: manga.id,
             chapterId: chapter.id,
-            isPrefetch: false
+            isPrefetch: true
         )
         guard !pageUrls.isEmpty else {
-            throw NSError(domain: "KaizenOffline", code: 4002, userInfo: [NSLocalizedDescriptionKey: tr("El capÃ­tulo \(chapter.displayName) no tiene pÃ¡ginas disponibles en el servidor.", "Chapter \(chapter.displayName) has no pages available on the server.")])
+            throw NSError(domain: "KaizenOffline", code: 4002, userInfo: [NSLocalizedDescriptionKey: tr("El capítulo \(chapter.displayName) no tiene páginas disponibles en el servidor.", "Chapter \(chapter.displayName) has no pages available on the server.")])
         }
         
         // 4. Descargar páginas en paralelo (hasta 6 a la vez) y guardarlas en disco
@@ -290,13 +290,13 @@ public final class OfflineStorageManager {
         saveMetadata()
     }
     
-    /// Punto de entrada Ãºnico desde la UI. Un capÃ­tulo suelto en red no costosa se baja directo;
-    /// en el resto de casos se pide confirmaciÃ³n (tamaÃ±o estimado y aviso de datos mÃ³viles).
+    /// Punto de entrada único desde la UI. Un capítulo suelto en red no costosa se baja directo;
+    /// en el resto de casos se pide confirmación (tamaño estimado y aviso de datos móviles).
     public func requestDownload(manga: Manga, chapters: [Chapter], apiClient: KaizenAPIClient, session: UserSession?) {
         let pending = chapters.filter { !isChapterDownloaded(mangaId: manga.id, chapterId: $0.id) }
         guard !pending.isEmpty else { return }
         guard batch == nil else {
-            lastError = tr("Ya hay una descarga en curso. Espera a que termine o cancÃ©lala.", "A download is already in progress. Wait for it to finish or cancel it.")
+            lastError = tr("Ya hay una descarga en curso. Espera a que termine o cancélala.", "A download is already in progress. Wait for it to finish or cancel it.")
             return
         }
         let request = DownloadRequest(manga: manga, chapters: pending, apiClient: apiClient, session: session)
@@ -340,6 +340,7 @@ public final class OfflineStorageManager {
         lastError = nil
         batch = BatchProgress(mangaTitle: manga.title, done: 0, total: pending.count, currentChapterProgress: 0)
         defer { batch = nil; cancelRequested = false }
+        var skipped = 0
         
         for (idx, ch) in pending.enumerated() {
             if cancelRequested { break }
@@ -350,16 +351,23 @@ public final class OfflineStorageManager {
                 progressHandler?(idx + 1, pending.count)
             } catch is CancellationError {
                 break
+            } catch KaizenError.server(status: 404) {
+                // El capítulo existe en la base de datos pero su archivo no está en el servidor: se omite.
+                skipped += 1
             } catch {
-                // Un fallo (servidor caÃ­do, token, pÃ¡gina rota) detiene el lote y se informa.
-                lastError = error.localizedDescription
+                // Un fallo (servidor caído, token, página rota) detiene el lote y se informa.
+                lastError = (error as? KaizenError)?.userMessage(language: language) ?? error.localizedDescription
                 break
             }
+        }
+        if skipped > 0, lastError == nil, !cancelRequested {
+            lastError = tr("\(skipped) capítulo(s) no están disponibles en el servidor y se han omitido.",
+                           "\(skipped) chapter(s) are not available on the server and were skipped.")
         }
     }
 
     
-    // MARK: - EliminaciÃ³n de CapÃ­tulos / Mangas Locales
+    // MARK: - Eliminación de Capítulos / Mangas Locales
     
     public func deleteChapter(mangaId: Int, chapterId: Int) {
         let chDir = chapterDirectory(mangaId: mangaId, chapterId: chapterId)
@@ -398,7 +406,7 @@ public final class OfflineStorageManager {
         ByteCountFormatter.string(fromByteCount: totalStorageUsedBytes, countStyle: .file)
     }
     
-    // MARK: - Registro de Lectura Offline y SincronizaciÃ³n Diferida
+    // MARK: - Registro de Lectura Offline y Sincronización Diferida
     
     public func recordOfflineReading(
         mangaId: Int,
@@ -419,7 +427,7 @@ public final class OfflineStorageManager {
             saveMetadata()
         }
         
-        // 2. Si hay conexiÃ³n directa, enviar inmediatamente al servidor Kaizen
+        // 2. Si hay conexión directa, enviar inmediatamente al servidor Kaizen
         if isOnline, let session {
             Task {
                 do {
@@ -458,7 +466,7 @@ public final class OfflineStorageManager {
             return
         }
         
-        // 3. Encolar en disco si estamos sin conexiÃ³n
+        // 3. Encolar en disco si estamos sin conexión
         enqueuePendingSync(action: PendingSyncReadAction(
             mangaId: mangaId,
             chapterId: chapterId,
@@ -514,7 +522,7 @@ public final class OfflineStorageManager {
         savePendingSync()
     }
     
-    // MARK: - PolÃ­tica de RetenciÃ³n Temporal
+    // MARK: - Política de Retención Temporal
     
     private func enforceRetentionPolicy() {
         guard settings.retentionDays > 0 else { return }
