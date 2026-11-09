@@ -2,7 +2,7 @@ import Foundation
 import UIKit
 import Network
 
-/// Gestor integral de descargas locales, almacenamiento seguro en Sandbox y sincronización diferida.
+/// Gestor integral de descargas locales, almacenamiento seguro en Sandbox y sincronizaciÃ³n diferida.
 /// Los archivos se guardan en `Application Support/KaizenOffline/{mangaId}/{chapterId}/`
 /// y se marcan como excluidos del backup de iCloud (`isExcludedFromBackup = true`).
 @MainActor
@@ -21,11 +21,11 @@ public final class OfflineStorageManager {
     private let pendingSyncFile: URL
     private let settingsFile: URL
     
-    // Monitor de red para reconexión y sincronización automática
+    // Monitor de red para reconexiÃ³n y sincronizaciÃ³n automÃ¡tica
     private let networkMonitor = NWPathMonitor()
     private let monitorQueue = DispatchQueue(label: "io.kaizen.networkMonitor")
     public private(set) var isOnline: Bool = true
-    /// `true` en datos móviles / punto de acceso personal (red "costosa").
+    /// `true` en datos mÃ³viles / punto de acceso personal (red "costosa").
     public private(set) var isExpensive: Bool = false
     
     /// Progreso de una descarga por lotes en curso (nil si no hay ninguna).
@@ -39,20 +39,20 @@ public final class OfflineStorageManager {
         }
     }
     public private(set) var batch: BatchProgress?
-    /// Último error de descarga, mostrado al usuario (nunca se traga en silencio).
+    /// Ãšltimo error de descarga, mostrado al usuario (nunca se traga en silencio).
     public var lastError: String?
     /// Idioma de la app ("es"/"en"), sincronizado desde `RootAppView` para los mensajes de error.
     public var language: String = "es"
     private func tr(_ es: String, _ en: String) -> String { language == "en" ? en : es }
     
-    /// Petición pendiente de confirmar por el usuario (tamaño estimado + aviso de datos móviles).
+    /// PeticiÃ³n pendiente de confirmar por el usuario (tamaÃ±o estimado + aviso de datos mÃ³viles).
     public struct DownloadRequest: Identifiable {
         public let id = UUID()
         public let manga: Manga
         public let chapters: [Chapter]
         public let apiClient: KaizenAPIClient
         public let session: UserSession?
-        /// Estimación: media de 9 MB por capítulo, o el tamaño real si el servidor lo informa.
+        /// EstimaciÃ³n: media de 9 MB por capÃ­tulo, o el tamaÃ±o real si el servidor lo informa.
         public var estimatedBytes: Int64 { Int64(chapters.count) * 9_000_000 }
     }
     public var pendingRequest: DownloadRequest?
@@ -80,7 +80,7 @@ public final class OfflineStorageManager {
         enforceRetentionPolicy()
     }
     
-    // MARK: - Estado de Red y Sincronización Diferida
+    // MARK: - Estado de Red y SincronizaciÃ³n Diferida
     
     private func startNetworkMonitoring() {
         networkMonitor.pathUpdateHandler = { [weak self] path in
@@ -136,7 +136,28 @@ public final class OfflineStorageManager {
         return imageFiles.isEmpty ? nil : imageFiles
     }
     
-    // MARK: - Descarga de Capítulos
+    // MARK: - Descarga de CapÃ­tulos
+    
+    /// Descarga una página a disco y devuelve su tamaño en bytes. No depende del actor principal.
+    private nonisolated static func fetchPage(
+        url: URL,
+        token: String,
+        destination: URL,
+        failureMessage: @Sendable (Int) -> String
+    ) async throws -> Int64 {
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 25
+        if !token.isEmpty {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard status == 200 else {
+            throw NSError(domain: "KaizenOffline", code: 4003, userInfo: [NSLocalizedDescriptionKey: failureMessage(status)])
+        }
+        try data.write(to: destination, options: .atomic)
+        return Int64(data.count)
+    }
     
     public func downloadChapter(
         manga: Manga,
@@ -145,7 +166,7 @@ public final class OfflineStorageManager {
         session: UserSession?
     ) async throws {
         guard let session else {
-            throw NSError(domain: "KaizenOffline", code: 4000, userInfo: [NSLocalizedDescriptionKey: tr("No hay sesión activa con el servidor Kaizen.", "No active session with the Kaizen server.")])
+            throw NSError(domain: "KaizenOffline", code: 4000, userInfo: [NSLocalizedDescriptionKey: tr("No hay sesiÃ³n activa con el servidor Kaizen.", "No active session with the Kaizen server.")])
         }
         
         let downloadKey = "\(manga.id)_\(chapter.id)"
@@ -156,7 +177,7 @@ public final class OfflineStorageManager {
         let chDir = chapterDirectory(mangaId: manga.id, chapterId: chapter.id)
         try fileManager.createDirectory(at: chDir, withIntermediateDirectories: true)
         
-        // 2. Descargar y guardar carátula si aún no existe
+        // 2. Descargar y guardar carÃ¡tula si aÃºn no existe
         var savedCoverFileName: String? = nil
         let mangaDir = mangaDirectory(mangaId: manga.id)
         try fileManager.createDirectory(at: mangaDir, withIntermediateDirectories: true)
@@ -170,7 +191,7 @@ public final class OfflineStorageManager {
             savedCoverFileName = "cover.jpg"
         }
         
-        // 3. Obtener URLs de páginas del capítulo
+        // 3. Obtener URLs de pÃ¡ginas del capÃ­tulo
         let pageUrls = try await apiClient.fetchChapterPages(
             serverUrl: session.serverUrl,
             token: session.apiToken,
@@ -179,38 +200,51 @@ public final class OfflineStorageManager {
             isPrefetch: false
         )
         guard !pageUrls.isEmpty else {
-            throw NSError(domain: "KaizenOffline", code: 4002, userInfo: [NSLocalizedDescriptionKey: tr("El capítulo \(chapter.displayName) no tiene páginas disponibles en el servidor.", "Chapter \(chapter.displayName) has no pages available on the server.")])
+            throw NSError(domain: "KaizenOffline", code: 4002, userInfo: [NSLocalizedDescriptionKey: tr("El capÃ­tulo \(chapter.displayName) no tiene pÃ¡ginas disponibles en el servidor.", "Chapter \(chapter.displayName) has no pages available on the server.")])
         }
         
-        // 4. Descargar páginas en secuencia y guardarlas en disco
+        // 4. Descargar páginas en paralelo (hasta 6 a la vez) y guardarlas en disco
         var totalBytes: Int64 = 0
         let total = Double(pageUrls.count)
+        let token = session.apiToken
+        let maxConcurrent = 6
         
         do {
-            for (idx, pageStr) in pageUrls.enumerated() {
-                if cancelRequested { throw CancellationError() }
-                guard let pageURL = URL(string: pageStr) else { continue }
-                let pageExt = pageURL.pathExtension.isEmpty ? "jpg" : pageURL.pathExtension
-                let pageName = String(format: "page_%03d.%@", idx + 1, pageExt)
-                let destination = chDir.appendingPathComponent(pageName)
+            try await withThrowingTaskGroup(of: Int64.self) { group in
+                var next = 0
+                var finished = 0
                 
-                var request = URLRequest(url: pageURL)
-                request.timeoutInterval = 25
-                if !session.apiToken.isEmpty {
-                    request.setValue("Bearer \(session.apiToken)", forHTTPHeaderField: "Authorization")
+                func enqueue() {
+                    while next < pageUrls.count, !cancelRequested {
+                        let idx = next
+                        next += 1
+                        guard let pageURL = URL(string: pageUrls[idx]) else { finished += 1; continue }
+                        let ext = pageURL.pathExtension.isEmpty ? "jpg" : pageURL.pathExtension
+                        let destination = chDir.appendingPathComponent(String(format: "page_%03d.%@", idx + 1, ext))
+                        let en = language == "en"
+                        let name = chapter.displayName
+                        let pageNumber = idx + 1
+                        group.addTask {
+                            try await Self.fetchPage(url: pageURL, token: token, destination: destination) { status in
+                                en ? "The server answered \(status) while downloading page \(pageNumber) of \(name)."
+                                   : "El servidor respondió \(status) al bajar la página \(pageNumber) de \(name)."
+                            }
+                        }
+                        return
+                    }
                 }
-                let (data, response) = try await URLSession.shared.data(for: request)
-                let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-                guard status == 200 else {
-                    throw NSError(domain: "KaizenOffline", code: 4003, userInfo: [NSLocalizedDescriptionKey: tr("El servidor respondió \(status) al bajar la página \(idx + 1) de \(chapter.displayName).", "The server answered \(status) while downloading page \(idx + 1) of \(chapter.displayName).")])
+                
+                for _ in 0..<min(maxConcurrent, pageUrls.count) { enqueue() }
+                
+                while let bytes = try await group.next() {
+                    if cancelRequested { throw CancellationError() }
+                    totalBytes += bytes
+                    finished += 1
+                    let fraction = Double(finished) / total
+                    activeDownloads[downloadKey] = fraction
+                    batch?.currentChapterProgress = fraction
+                    enqueue()
                 }
-                
-                try data.write(to: destination, options: .atomic)
-                totalBytes += Int64(data.count)
-                
-                let fraction = Double(idx + 1) / total
-                activeDownloads[downloadKey] = fraction
-                batch?.currentChapterProgress = fraction
             }
         } catch {
             // Capítulo incompleto: no dejar páginas a medias en disco
@@ -256,13 +290,13 @@ public final class OfflineStorageManager {
         saveMetadata()
     }
     
-    /// Punto de entrada único desde la UI. Un capítulo suelto en red no costosa se baja directo;
-    /// en el resto de casos se pide confirmación (tamaño estimado y aviso de datos móviles).
+    /// Punto de entrada Ãºnico desde la UI. Un capÃ­tulo suelto en red no costosa se baja directo;
+    /// en el resto de casos se pide confirmaciÃ³n (tamaÃ±o estimado y aviso de datos mÃ³viles).
     public func requestDownload(manga: Manga, chapters: [Chapter], apiClient: KaizenAPIClient, session: UserSession?) {
         let pending = chapters.filter { !isChapterDownloaded(mangaId: manga.id, chapterId: $0.id) }
         guard !pending.isEmpty else { return }
         guard batch == nil else {
-            lastError = tr("Ya hay una descarga en curso. Espera a que termine o cancélala.", "A download is already in progress. Wait for it to finish or cancel it.")
+            lastError = tr("Ya hay una descarga en curso. Espera a que termine o cancÃ©lala.", "A download is already in progress. Wait for it to finish or cancel it.")
             return
         }
         let request = DownloadRequest(manga: manga, chapters: pending, apiClient: apiClient, session: session)
@@ -317,7 +351,7 @@ public final class OfflineStorageManager {
             } catch is CancellationError {
                 break
             } catch {
-                // Un fallo (servidor caído, token, página rota) detiene el lote y se informa.
+                // Un fallo (servidor caÃ­do, token, pÃ¡gina rota) detiene el lote y se informa.
                 lastError = error.localizedDescription
                 break
             }
@@ -325,7 +359,7 @@ public final class OfflineStorageManager {
     }
 
     
-    // MARK: - Eliminación de Capítulos / Mangas Locales
+    // MARK: - EliminaciÃ³n de CapÃ­tulos / Mangas Locales
     
     public func deleteChapter(mangaId: Int, chapterId: Int) {
         let chDir = chapterDirectory(mangaId: mangaId, chapterId: chapterId)
@@ -364,7 +398,7 @@ public final class OfflineStorageManager {
         ByteCountFormatter.string(fromByteCount: totalStorageUsedBytes, countStyle: .file)
     }
     
-    // MARK: - Registro de Lectura Offline y Sincronización Diferida
+    // MARK: - Registro de Lectura Offline y SincronizaciÃ³n Diferida
     
     public func recordOfflineReading(
         mangaId: Int,
@@ -385,7 +419,7 @@ public final class OfflineStorageManager {
             saveMetadata()
         }
         
-        // 2. Si hay conexión directa, enviar inmediatamente al servidor Kaizen
+        // 2. Si hay conexiÃ³n directa, enviar inmediatamente al servidor Kaizen
         if isOnline, let session {
             Task {
                 do {
@@ -424,7 +458,7 @@ public final class OfflineStorageManager {
             return
         }
         
-        // 3. Encolar en disco si estamos sin conexión
+        // 3. Encolar en disco si estamos sin conexiÃ³n
         enqueuePendingSync(action: PendingSyncReadAction(
             mangaId: mangaId,
             chapterId: chapterId,
@@ -480,7 +514,7 @@ public final class OfflineStorageManager {
         savePendingSync()
     }
     
-    // MARK: - Política de Retención Temporal
+    // MARK: - PolÃ­tica de RetenciÃ³n Temporal
     
     private func enforceRetentionPolicy() {
         guard settings.retentionDays > 0 else { return }
