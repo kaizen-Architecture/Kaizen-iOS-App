@@ -155,9 +155,9 @@ public struct ZipArchiveExtractor: Sendable {
         defer { inflateEnd(&stream) }
         
         var destination = Data(count: expectedSize)
-        return destination.withUnsafeMutableBytes { destBuffer -> Data? in
+        let actualBytes: Int? = destination.withUnsafeMutableBytes { destBuffer in
             guard let destAddress = destBuffer.baseAddress?.assumingMemoryBound(to: Bytef.self) else { return nil }
-            return compressed.withUnsafeBytes { srcBuffer -> Data? in
+            return compressed.withUnsafeBytes { srcBuffer in
                 guard let srcAddress = srcBuffer.baseAddress?.assumingMemoryBound(to: Bytef.self) else { return nil }
                 stream.next_in = UnsafeMutablePointer(mutating: srcAddress)
                 stream.avail_in = uInt(compressed.count)
@@ -166,9 +166,11 @@ public struct ZipArchiveExtractor: Sendable {
                 
                 let status = inflate(&stream, Z_FINISH)
                 guard status == Z_STREAM_END || status == Z_OK else { return nil }
-                let actualBytes = expectedSize - Int(stream.avail_out)
-                return destination.prefix(actualBytes)
+                return expectedSize - Int(stream.avail_out)
             }
         }
+        
+        guard let actualBytes else { return nil }
+        return destination.prefix(actualBytes)
     }
 }
