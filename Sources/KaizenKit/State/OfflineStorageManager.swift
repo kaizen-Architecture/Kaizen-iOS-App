@@ -310,7 +310,7 @@ public final class OfflineStorageManager {
                         mangaId: mangaId,
                         chapterId: chapterId,
                         page: page,
-                        totalPages: totalPages
+                        isRead: isRead
                     )
                     
                     if settings.autoDeleteWhenRead && isRead {
@@ -371,7 +371,7 @@ public final class OfflineStorageManager {
                     mangaId: action.mangaId,
                     chapterId: action.chapterId,
                     page: action.page,
-                    totalPages: action.totalPages
+                    isRead: action.isRead
                 )
                 
                 if settings.autoDeleteWhenRead && action.isRead {
