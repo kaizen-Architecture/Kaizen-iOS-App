@@ -176,6 +176,9 @@ struct MainTabsView: View {
                     handleMainTabSwipe(value: value)
                 }
         )
+        .onChange(of: appState.currentLanguage, initial: true) { _, lang in
+            OfflineStorageManager.shared.language = lang
+        }
         .overlay(alignment: .bottom) {
             OfflineBatchBanner(isEn: isEn)
                 .padding(.horizontal, 16)

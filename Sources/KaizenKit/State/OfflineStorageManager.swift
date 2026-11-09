@@ -41,6 +41,9 @@ public final class OfflineStorageManager {
     public private(set) var batch: BatchProgress?
     /// Último error de descarga, mostrado al usuario (nunca se traga en silencio).
     public var lastError: String?
+    /// Idioma de la app ("es"/"en"), sincronizado desde `RootAppView` para los mensajes de error.
+    public var language: String = "es"
+    private func tr(_ es: String, _ en: String) -> String { language == "en" ? en : es }
     
     /// Petición pendiente de confirmar por el usuario (tamaño estimado + aviso de datos móviles).
     public struct DownloadRequest: Identifiable {
@@ -142,7 +145,7 @@ public final class OfflineStorageManager {
         session: UserSession?
     ) async throws {
         guard let session else {
-            throw NSError(domain: "KaizenOffline", code: 4000, userInfo: [NSLocalizedDescriptionKey: "No hay sesión activa con el servidor Kaizen."])
+            throw NSError(domain: "KaizenOffline", code: 4000, userInfo: [NSLocalizedDescriptionKey: tr("No hay sesión activa con el servidor Kaizen.", "No active session with the Kaizen server.")])
         }
         
         let downloadKey = "\(manga.id)_\(chapter.id)"
@@ -173,10 +176,10 @@ public final class OfflineStorageManager {
             token: session.apiToken,
             mangaId: manga.id,
             chapterId: chapter.id,
-            isPrefetch: true
+            isPrefetch: false
         )
         guard !pageUrls.isEmpty else {
-            throw NSError(domain: "KaizenOffline", code: 4002, userInfo: [NSLocalizedDescriptionKey: "El capítulo \(chapter.displayName) no tiene páginas disponibles en el servidor."])
+            throw NSError(domain: "KaizenOffline", code: 4002, userInfo: [NSLocalizedDescriptionKey: tr("El capítulo \(chapter.displayName) no tiene páginas disponibles en el servidor.", "Chapter \(chapter.displayName) has no pages available on the server.")])
         }
         
         // 4. Descargar páginas en secuencia y guardarlas en disco
@@ -199,7 +202,7 @@ public final class OfflineStorageManager {
                 let (data, response) = try await URLSession.shared.data(for: request)
                 let status = (response as? HTTPURLResponse)?.statusCode ?? 0
                 guard status == 200 else {
-                    throw NSError(domain: "KaizenOffline", code: 4003, userInfo: [NSLocalizedDescriptionKey: "El servidor respondió \(status) al bajar la página \(idx + 1) de \(chapter.displayName)."])
+                    throw NSError(domain: "KaizenOffline", code: 4003, userInfo: [NSLocalizedDescriptionKey: tr("El servidor respondió \(status) al bajar la página \(idx + 1) de \(chapter.displayName).", "The server answered \(status) while downloading page \(idx + 1) of \(chapter.displayName).")])
                 }
                 
                 try data.write(to: destination, options: .atomic)
@@ -259,7 +262,7 @@ public final class OfflineStorageManager {
         let pending = chapters.filter { !isChapterDownloaded(mangaId: manga.id, chapterId: $0.id) }
         guard !pending.isEmpty else { return }
         guard batch == nil else {
-            lastError = "Ya hay una descarga en curso. Espera a que termine o cancélala."
+            lastError = tr("Ya hay una descarga en curso. Espera a que termine o cancélala.", "A download is already in progress. Wait for it to finish or cancel it.")
             return
         }
         let request = DownloadRequest(manga: manga, chapters: pending, apiClient: apiClient, session: session)
