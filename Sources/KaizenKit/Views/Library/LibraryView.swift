@@ -1340,7 +1340,7 @@ public struct MangaDetailView: View {
                     )
                 }
                 
-                let unreadList = chapters.filter { !$0.isRead }
+                let unreadList = chapters.filter { !$0.isRead }.sorted(by: { $0.index < $1.index })
                 if !unreadList.isEmpty {
                     Button {
                         let next25 = Array(unreadList.prefix(25))

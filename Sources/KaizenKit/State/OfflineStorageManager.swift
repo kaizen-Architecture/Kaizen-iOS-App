@@ -292,8 +292,11 @@ public final class OfflineStorageManager {
     
     /// Punto de entrada único desde la UI. Un capítulo suelto en red no costosa se baja directo;
     /// en el resto de casos se pide confirmación (tamaño estimado y aviso de datos móviles).
+    /// Los capítulos siempre se ordenan de menor a mayor (orden de lectura cronológico: Cap. 1, 2, 3...).
     public func requestDownload(manga: Manga, chapters: [Chapter], apiClient: KaizenAPIClient, session: UserSession?) {
-        let pending = chapters.filter { !isChapterDownloaded(mangaId: manga.id, chapterId: $0.id) }
+        let pending = chapters
+            .sorted(by: { $0.index < $1.index })
+            .filter { !isChapterDownloaded(mangaId: manga.id, chapterId: $0.id) }
         guard !pending.isEmpty else { return }
         guard batch == nil else {
             lastError = tr("Ya hay una descarga en curso. Espera a que termine o cancélala.", "A download is already in progress. Wait for it to finish or cancel it.")
@@ -334,7 +337,9 @@ public final class OfflineStorageManager {
         session: UserSession?,
         progressHandler: ((Int, Int) -> Void)? = nil
     ) async {
-        let pending = chapters.filter { !isChapterDownloaded(mangaId: manga.id, chapterId: $0.id) }
+        let pending = chapters
+            .sorted(by: { $0.index < $1.index })
+            .filter { !isChapterDownloaded(mangaId: manga.id, chapterId: $0.id) }
         guard !pending.isEmpty else { return }
         cancelRequested = false
         lastError = nil
