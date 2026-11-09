@@ -26,16 +26,16 @@ actor ImageLoader {
         try? FileManager.default.createDirectory(at: diskCacheDir, withIntermediateDirectories: true)
     }
     
-    nonisolated static func cacheKey(for url: URL, maxPixelSize: CGFloat? = nil) -> NSString {
+    nonisolated static func cacheKey(for url: URL, maxPixelSize: CGFloat? = nil) -> String {
         if let maxPixelSize {
-            return "\(url.absoluteString)#\(Int(maxPixelSize))" as NSString
+            return "\(url.absoluteString)#\(Int(maxPixelSize))"
         }
-        return url.absoluteString as NSString
+        return url.absoluteString
     }
     
     /// Lectura síncrona inmediata desde RAM para usar directamente en `RemoteImage.init` / `body`.
     nonisolated static func memoryCachedImage(for url: URL, maxPixelSize: CGFloat? = nil) -> UIImage? {
-        let key = cacheKey(for: url, maxPixelSize: maxPixelSize)
+        let key = cacheKey(for: url, maxPixelSize: maxPixelSize) as NSString
         if let hit = fastMemoryCache.object(forKey: key) {
             return hit
         }
@@ -75,36 +75,33 @@ actor ImageLoader {
         return diskCacheDir.appendingPathComponent(filename)
     }
     
-    func cachedImage(for url: URL, maxPixelSize: CGFloat? = nil) async -> UIImage? {
-        let memKey = Self.cacheKey(for: url, maxPixelSize: maxPixelSize)
-        if let mem = Self.fastMemoryCache.object(forKey: memKey) {
+    func cachedImage(for url: URL, maxPixelSize: CGFloat? = nil) -> UIImage? {
+        let keyStr = Self.cacheKey(for: url, maxPixelSize: maxPixelSize)
+        if let mem = Self.fastMemoryCache.object(forKey: keyStr as NSString) {
             return mem
         }
         let file = diskPath(for: url)
-        return await Task.detached(priority: .userInitiated) {
-            guard let data = try? Data(contentsOf: file),
-                  let img = Self.decodeImage(from: data, maxPixelSize: maxPixelSize) else {
-                return nil
-            }
-            Self.fastMemoryCache.setObject(img, forKey: memKey, cost: Self.imageCost(img))
-            return img
-        }.value
+        guard let data = try? Data(contentsOf: file),
+              let img = Self.decodeImage(from: data, maxPixelSize: maxPixelSize) else {
+            return nil
+        }
+        Self.fastMemoryCache.setObject(img, forKey: keyStr as NSString, cost: Self.imageCost(img))
+        return img
     }
     
     func image(for url: URL, token: String?, maxPixelSize: CGFloat? = nil) async -> UIImage? {
-        if let cached = await cachedImage(for: url, maxPixelSize: maxPixelSize) {
+        if let cached = cachedImage(for: url, maxPixelSize: maxPixelSize) {
             return cached
         }
         
-        let taskKey = Self.cacheKey(for: url, maxPixelSize: maxPixelSize) as String
+        let taskKey = Self.cacheKey(for: url, maxPixelSize: maxPixelSize)
         if let existing = inFlightTasks[taskKey] {
             return await existing.value
         }
         
         let diskFile = diskPath(for: url)
-        let memKey = Self.cacheKey(for: url, maxPixelSize: maxPixelSize)
         
-        let task = Task.detached(priority: .utility) { () -> UIImage? in
+        let task = Task<UIImage?, Never> {
             var request = URLRequest(url: url)
             request.timeoutInterval = 20
             request.cachePolicy = .returnCacheDataElseLoad
@@ -118,7 +115,7 @@ actor ImageLoader {
                 return nil
             }
             
-            Self.fastMemoryCache.setObject(image, forKey: memKey, cost: Self.imageCost(image))
+            Self.fastMemoryCache.setObject(image, forKey: taskKey as NSString, cost: Self.imageCost(image))
             try? data.write(to: diskFile, options: .atomic)
             return image
         }
