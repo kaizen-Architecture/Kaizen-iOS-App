@@ -119,6 +119,27 @@ public actor KaizenAPIClient {
         }
     }
 
+    /// Descarga el archivo CBZ completo de un capítulo en una sola petición HTTP en streaming.
+    public func downloadChapterArchive(
+        serverUrl: URL,
+        token: String,
+        mangaId: Int,
+        chapterId: Int,
+        destination: URL
+    ) async throws {
+        let path = "/api/v1/mangas/\(mangaId)/chapters/\(chapterId)/download"
+        let req = request(try endpoint(serverUrl, path: path), token: token)
+        let (tempUrl, response) = try await session.download(for: req)
+        guard let http = response as? HTTPURLResponse else {
+            throw KaizenError.unexpectedResponse
+        }
+        try checkREST(http)
+        if FileManager.default.fileExists(atPath: destination.path) {
+            try? FileManager.default.removeItem(at: destination)
+        }
+        try FileManager.default.moveItem(at: tempUrl, to: destination)
+    }
+
     public func updateReadingProgress(serverUrl: URL, token: String, mangaId: Int, chapterId: Int, page: Int, isRead: Bool? = nil) async throws {
         var chDict: [String: Any] = ["id": chapterId, "lastReadPage": page]
         if let isRead { chDict["isRead"] = isRead }

@@ -191,65 +191,101 @@ public final class OfflineStorageManager {
             savedCoverFileName = "cover.jpg"
         }
         
-        // 3. Obtener URLs de páginas del capítulo
-        let pageUrls = try await apiClient.fetchChapterPages(
-            serverUrl: session.serverUrl,
-            token: session.apiToken,
-            mangaId: manga.id,
-            chapterId: chapter.id,
-            isPrefetch: true
-        )
-        guard !pageUrls.isEmpty else {
-            throw NSError(domain: "KaizenOffline", code: 4002, userInfo: [NSLocalizedDescriptionKey: tr("El capítulo \(chapter.displayName) no tiene páginas disponibles en el servidor.", "Chapter \(chapter.displayName) has no pages available on the server.")])
-        }
-        
-        // 4. Descargar páginas en paralelo (hasta 6 a la vez) y guardarlas en disco
+        // 3. INTENTO DIRECTO: Descargar archivo CBZ completo en 1 petición HTTP en streaming
+        var didDownloadArchive = false
         var totalBytes: Int64 = 0
-        let total = Double(pageUrls.count)
-        let token = session.apiToken
-        let maxConcurrent = 6
+        var pageCount: Int = 0
         
         do {
-            try await withThrowingTaskGroup(of: Int64.self) { group in
-                var next = 0
-                var finished = 0
-                
-                @MainActor func enqueue() {
-                    while next < pageUrls.count, !cancelRequested {
-                        let idx = next
-                        next += 1
-                        guard let pageURL = URL(string: pageUrls[idx]) else { finished += 1; continue }
-                        let ext = pageURL.pathExtension.isEmpty ? "jpg" : pageURL.pathExtension
-                        let destination = chDir.appendingPathComponent(String(format: "page_%03d.%@", idx + 1, ext))
-                        let en = language == "en"
-                        let name = chapter.displayName
-                        let pageNumber = idx + 1
-                        group.addTask {
-                            try await Self.fetchPage(url: pageURL, token: token, destination: destination) { status in
-                                en ? "The server answered \(status) while downloading page \(pageNumber) of \(name)."
-                                   : "El servidor respondió \(status) al bajar la página \(pageNumber) de \(name)."
+            let tempCbz = chDir.appendingPathComponent("temp_\(chapter.id).cbz")
+            defer { try? fileManager.removeItem(at: tempCbz) }
+            
+            try await apiClient.downloadChapterArchive(
+                serverUrl: session.serverUrl,
+                token: session.apiToken,
+                mangaId: manga.id,
+                chapterId: chapter.id,
+                destination: tempCbz
+            )
+            
+            let extracted = try ZipArchiveExtractor.extract(archiveURL: tempCbz, to: chDir)
+            if !extracted.isEmpty {
+                totalBytes = extracted.reduce(0) { $0 + $1.size }
+                pageCount = extracted.count
+                didDownloadArchive = true
+                activeDownloads[downloadKey] = 1.0
+                batch?.currentChapterProgress = 1.0
+            }
+        } catch is CancellationError {
+            try? fileManager.removeItem(at: chDir)
+            throw CancellationError()
+        } catch {
+            // Si el servidor no tiene el endpoint /download o falla la extracción,
+            // limpiamos la carpeta y pasamos al fallback por páginas
+            try? fileManager.removeItem(at: chDir)
+            try? fileManager.createDirectory(at: chDir, withIntermediateDirectories: true)
+        }
+        
+        // 4. FALLBACK: Si no se pudo descargar como archivo CBZ, usar el método de páginas paralelas
+        if !didDownloadArchive {
+            let pageUrls = try await apiClient.fetchChapterPages(
+                serverUrl: session.serverUrl,
+                token: session.apiToken,
+                mangaId: manga.id,
+                chapterId: chapter.id,
+                isPrefetch: true
+            )
+            guard !pageUrls.isEmpty else {
+                throw NSError(domain: "KaizenOffline", code: 4002, userInfo: [NSLocalizedDescriptionKey: tr("El capítulo \(chapter.displayName) no tiene páginas disponibles en el servidor.", "Chapter \(chapter.displayName) has no pages available on the server.")])
+            }
+            
+            let total = Double(pageUrls.count)
+            let token = session.apiToken
+            let maxConcurrent = 6
+            pageCount = pageUrls.count
+            
+            do {
+                try await withThrowingTaskGroup(of: Int64.self) { group in
+                    var next = 0
+                    var finished = 0
+                    
+                    @MainActor func enqueue() {
+                        while next < pageUrls.count, !cancelRequested {
+                            let idx = next
+                            next += 1
+                            guard let pageURL = URL(string: pageUrls[idx]) else { finished += 1; continue }
+                            let ext = pageURL.pathExtension.isEmpty ? "jpg" : pageURL.pathExtension
+                            let destination = chDir.appendingPathComponent(String(format: "page_%03d.%@", idx + 1, ext))
+                            let en = language == "en"
+                            let name = chapter.displayName
+                            let pageNumber = idx + 1
+                            group.addTask {
+                                try await Self.fetchPage(url: pageURL, token: token, destination: destination) { status in
+                                    en ? "The server answered \(status) while downloading page \(pageNumber) of \(name)."
+                                       : "El servidor respondió \(status) al bajar la página \(pageNumber) de \(name)."
+                                }
                             }
+                            return
                         }
-                        return
+                    }
+                    
+                    for _ in 0..<min(maxConcurrent, pageUrls.count) { enqueue() }
+                    
+                    while let bytes = try await group.next() {
+                        if cancelRequested { throw CancellationError() }
+                        totalBytes += bytes
+                        finished += 1
+                        let fraction = Double(finished) / total
+                        activeDownloads[downloadKey] = fraction
+                        batch?.currentChapterProgress = fraction
+                        enqueue()
                     }
                 }
-                
-                for _ in 0..<min(maxConcurrent, pageUrls.count) { enqueue() }
-                
-                while let bytes = try await group.next() {
-                    if cancelRequested { throw CancellationError() }
-                    totalBytes += bytes
-                    finished += 1
-                    let fraction = Double(finished) / total
-                    activeDownloads[downloadKey] = fraction
-                    batch?.currentChapterProgress = fraction
-                    enqueue()
-                }
+            } catch {
+                // Capítulo incompleto: no dejar páginas a medias en disco
+                try? fileManager.removeItem(at: chDir)
+                throw error
             }
-        } catch {
-            // Capítulo incompleto: no dejar páginas a medias en disco
-            try? fileManager.removeItem(at: chDir)
-            throw error
         }
         
         // 5. Registrar en metadatos
@@ -258,7 +294,7 @@ public final class OfflineStorageManager {
             mangaId: manga.id,
             index: chapter.index,
             title: chapter.displayName,
-            pageCount: pageUrls.count,
+            pageCount: pageCount,
             totalSizeBytes: totalBytes,
             downloadedAt: Date(),
             lastReadPage: chapter.lastReadPage,
