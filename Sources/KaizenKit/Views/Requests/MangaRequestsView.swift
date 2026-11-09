@@ -69,11 +69,12 @@ public final class MangaRequestsStore {
         }
         
         // Resolver portadas restantes en segundo plano vía AniList para que todas las tarjetas tengan portada 2:3
-        let missingTitles = requests
-            .map(\.title)
+        let reqTitles = requests.map(\.title)
+        let plannedTitles = plannedMangas.filter { $0.coverUrl == nil }.map(\.title)
+        let missingTitles = Array(Set(reqTitles + plannedTitles))
             .filter { coverCache[$0.lowercased()] == nil }
         
-        for title in missingTitles.prefix(15) {
+        for title in missingTitles.prefix(20) {
             let key = title.lowercased()
             if let cover = await apiClient.fetchAniListCover(title: title) {
                 coverCache[key] = cover
@@ -242,6 +243,37 @@ public final class MangaRequestsStore {
             errorMessage = error.localizedDescription
         }
     }
+    
+    public func cancelPlannedManga(_ item: KaizenPlannedManga, apiClient: KaizenAPIClient, appState: AppState, isEn: Bool) async {
+        guard let session = appState.session else { return }
+        processingRequestIds.insert(item.id)
+        errorMessage = nil
+        defer { processingRequestIds.remove(item.id) }
+        do {
+            try await apiClient.deleteManga(
+                serverUrl: session.serverUrl,
+                token: session.apiToken,
+                mangaId: item.id,
+                shouldRemoveFiles: true
+            )
+            // Si existía una petición asociada con el mismo título, marcarla también como cancelada
+            for matchingReq in requests where matchingReq.title.localizedCaseInsensitiveCompare(item.title) == .orderedSame && matchingReq.status.uppercased() != "CANCELLED" {
+                try? await apiClient.updateRequestStatus(
+                    serverUrl: session.serverUrl,
+                    token: session.apiToken,
+                    requestId: matchingReq.id,
+                    status: "CANCELLED"
+                )
+            }
+            successMessage = isEn
+                ? "Removed '\(item.title)' from waiting list."
+                : "Eliminada '\(item.title)' de la lista de espera."
+            await loadAll(apiClient: apiClient, session: session, existingMangas: appState.mangas)
+            await appState.loadLibrary(client: apiClient, force: true)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
 }
 
 private enum RequestFilter: String, CaseIterable, Identifiable {
@@ -258,6 +290,8 @@ public struct MangaRequestsView: View {
     @State private var store = MangaRequestsStore()
     @State private var filter: RequestFilter = .pending
     @State private var showNewRequest = false
+    @State private var inspectingRequest: MangaRequestItem? = nil
+    @State private var plannedMangaToCancel: KaizenPlannedManga? = nil
     let apiClient: KaizenAPIClient
     public var isEmbedded: Bool = false
     
@@ -268,6 +302,14 @@ public struct MangaRequestsView: View {
     
     private var isEn: Bool { appState.currentLanguage == "en" }
     private var isPad: Bool { horizontalSizeClass == .regular }
+    
+    private var posterGridColumns: [GridItem] {
+        if isPad {
+            return [GridItem(.adaptive(minimum: 135, maximum: 185), spacing: 16, alignment: .top)]
+        } else {
+            return [GridItem(.adaptive(minimum: 98, maximum: 130), spacing: 10, alignment: .top)]
+        }
+    }
     
     private func bucket(_ status: String) -> RequestFilter {
         switch status.uppercased() {
@@ -318,6 +360,33 @@ public struct MangaRequestsView: View {
                 .sheet(isPresented: $showNewRequest) {
                     newRequestSheet
                 }
+                .sheet(item: $inspectingRequest) { req in
+                    requestAvailabilitySheet(for: req)
+                }
+                .alert(
+                    isEn ? "Cancel Waiting Series?" : "¿Cancelar serie en espera?",
+                    isPresented: Binding(
+                        get: { plannedMangaToCancel != nil },
+                        set: { if !$0 { plannedMangaToCancel = nil } }
+                    ),
+                    presenting: plannedMangaToCancel
+                ) { item in
+                    Button(isEn ? "Remove from Waiting List" : "Eliminar de la espera", role: .destructive) {
+                        Task {
+                            await store.cancelPlannedManga(item, apiClient: apiClient, appState: appState, isEn: isEn)
+                        }
+                        plannedMangaToCancel = nil
+                    }
+                    Button(isEn ? "Keep Waiting" : "Mantener en espera", role: .cancel) {
+                        plannedMangaToCancel = nil
+                    }
+                } message: { item in
+                    Text(
+                        isEn
+                            ? "This will remove '\(item.title)' (\(item.remoteChaptersCount)/\(item.minChaptersForDownload) ch.) from the server waiting list."
+                            : "Se eliminará '\(item.title)' (\(item.remoteChaptersCount)/\(item.minChaptersForDownload) caps.) de la lista de espera del servidor Kaizen."
+                    )
+                }
         } else {
             NavigationStack {
                 requestsMainContent
@@ -338,11 +407,38 @@ public struct MangaRequestsView: View {
                     .sheet(isPresented: $showNewRequest) {
                         newRequestSheet
                     }
+                    .sheet(item: $inspectingRequest) { req in
+                        requestAvailabilitySheet(for: req)
+                    }
+                    .alert(
+                        isEn ? "Cancel Waiting Series?" : "¿Cancelar serie en espera?",
+                        isPresented: Binding(
+                            get: { plannedMangaToCancel != nil },
+                            set: { if !$0 { plannedMangaToCancel = nil } }
+                        ),
+                        presenting: plannedMangaToCancel
+                    ) { item in
+                        Button(isEn ? "Remove from Waiting List" : "Eliminar de la espera", role: .destructive) {
+                            Task {
+                                await store.cancelPlannedManga(item, apiClient: apiClient, appState: appState, isEn: isEn)
+                            }
+                            plannedMangaToCancel = nil
+                        }
+                        Button(isEn ? "Keep Waiting" : "Mantener en espera", role: .cancel) {
+                            plannedMangaToCancel = nil
+                        }
+                    } message: { item in
+                        Text(
+                            isEn
+                                ? "This will remove '\(item.title)' (\(item.remoteChaptersCount)/\(item.minChaptersForDownload) ch.) from the server waiting list."
+                                : "Se eliminará '\(item.title)' (\(item.remoteChaptersCount)/\(item.minChaptersForDownload) caps.) de la lista de espera del servidor Kaizen."
+                        )
+                    }
             }
         }
     }
     
-    // MARK: - Contenido Principal Cyberpunk Glass
+    // MARK: - Contenido Principal Cyberpunk Glass (Cuadrícula Póster 2:3 igual que Library)
     
     private var requestsMainContent: some View {
         ZStack {
@@ -351,9 +447,8 @@ public struct MangaRequestsView: View {
             }
             
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    headerSection
-                    filterPillBar
+                VStack(alignment: .leading, spacing: 16) {
+                    unifiedTopBar
                     
                     if let error = store.errorMessage {
                         HStack(spacing: 8) {
@@ -409,55 +504,41 @@ public struct MangaRequestsView: View {
                         requestsGridSection
                     }
                 }
-                .padding(.horizontal, isPad ? 22 : 16)
-                .padding(.top, 14)
+                .padding(.horizontal, isPad ? 18 : 12)
+                .padding(.top, 10)
                 .padding(.bottom, 32)
             }
         }
     }
     
-    // MARK: - Cabecera + Filtros
+    // MARK: - Barra Superior Unificada (Título + Píldoras de Filtro + Botón Compacto)
     
-    private var headerSection: some View {
+    private var unifiedTopBar: some View {
         Group {
             if isPad {
-                HStack(alignment: .center, spacing: 14) {
-                    headerTitleBlock
-                    Spacer(minLength: 12)
+                HStack(alignment: .center, spacing: 12) {
+                    Text(isEn ? "Requests & Backlog" : "Peticiones")
+                        .font(.system(size: 24, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                    
+                    filterPillBar
+                    
+                    Spacer(minLength: 8)
+                    
                     requestNewButton
                 }
             } else {
-                VStack(alignment: .leading, spacing: 12) {
-                    headerTitleBlock
-                    requestNewButton
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(alignment: .center) {
+                        Text(isEn ? "Requests & Backlog" : "Peticiones")
+                            .font(.system(size: 20, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white)
+                        Spacer()
+                        requestNewButton
+                    }
+                    filterPillBar
                 }
             }
-        }
-    }
-    
-    private var headerTitleBlock: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 10) {
-                Text(isEn ? "Requests & Backlog" : "Peticiones")
-                    .font(.system(size: isPad ? 28 : 24, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
-                
-                Text(isEn ? "\(pendingCount) pending" : "\(pendingCount) pendientes")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(.black)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 5)
-                    .background(Color.cyan, in: Capsule())
-                    .shadow(color: .cyan.opacity(0.55), radius: 8)
-            }
-            
-            Text(
-                isEn
-                    ? "Check source availability, set chapter threshold (e.g. 50 chapters) and approve or reject."
-                    : "Comprueba disponibilidad en fuentes, fija el umbral (ej. hasta tener 50 capítulos) y aprueba o rechaza."
-            )
-            .font(.subheadline)
-            .foregroundStyle(.white.opacity(0.68))
         }
     }
     
@@ -465,16 +546,27 @@ public struct MangaRequestsView: View {
         Button {
             showNewRequest = true
         } label: {
-            HStack(spacing: 7) {
-                Image(systemName: "plus.circle.fill")
-                Text(isEn ? "Request Manga (50 ch.)" : "Solicitar Manga (50 caps.)")
+            HStack(spacing: 5) {
+                Image(systemName: "plus")
+                    .font(.caption.weight(.black))
+                Text(isEn ? "Request (50 ch.)" : "Solicitar (50 caps.)")
+                    .font(.caption.weight(.bold))
             }
-            .font(.subheadline.weight(.bold))
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
+            .foregroundStyle(.black)
+            .padding(.horizontal, 13)
+            .padding(.vertical, 8)
+            .background(
+                LinearGradient(
+                    colors: [Color(red: 0.35, green: 0.98, blue: 1.0), Color.cyan],
+                    startPoint: .top,
+                    endPoint: .bottom
+                ),
+                in: Capsule()
+            )
+            .overlay(Capsule().stroke(Color.white.opacity(0.65), lineWidth: 1))
             .contentShape(Capsule())
         }
-        .kaizenGlassButton(prominent: true)
+        .buttonStyle(.plain)
     }
     
     private var filterPillBar: some View {
@@ -489,18 +581,17 @@ public struct MangaRequestsView: View {
                     } label: {
                         Text(title(for: f))
                             .font(.caption.weight(.bold))
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 9)
+                            .padding(.horizontal, 13)
+                            .padding(.vertical, 7)
                             .foregroundStyle(isSelected ? Color.black : Color.white.opacity(0.88))
                             .background {
                                 if isSelected {
                                     Capsule()
                                         .fill(Color.cyan)
-                                        .shadow(color: .cyan.opacity(0.5), radius: 8)
                                 } else {
                                     Capsule()
-                                        .fill(Color.white.opacity(0.06))
-                                        .overlay(Capsule().stroke(Color.white.opacity(0.14), lineWidth: 1))
+                                        .fill(Color.white.opacity(0.07))
+                                        .overlay(Capsule().stroke(Color.white.opacity(0.16), lineWidth: 1))
                                 }
                             }
                             .contentShape(Capsule())
@@ -512,16 +603,12 @@ public struct MangaRequestsView: View {
         }
     }
     
-    // MARK: - Grid de Tarjetas de Peticiones
+    // MARK: - Grid de Tarjetas Póster 2:3 de Peticiones (Misma estructura que Library)
     
     private var requestsGridSection: some View {
-        let columns = isPad
-            ? [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)]
-            : [GridItem(.flexible(), spacing: 14)]
-        
-        return LazyVGrid(columns: columns, spacing: 16) {
+        LazyVGrid(columns: posterGridColumns, spacing: isPad ? 18 : 12) {
             ForEach(visibleRequests) { req in
-                requestCard(req)
+                requestPosterCard(req)
             }
         }
     }
@@ -546,151 +633,340 @@ public struct MangaRequestsView: View {
         guard let date else { return isEn ? "Recently" : "Reciente" }
         let rel = RelativeDateTimeFormatter()
         rel.locale = Locale(identifier: isEn ? "en_US" : "es_ES")
-        rel.unitsStyle = .short
+        rel.unitsStyle = .abbreviated
         return rel.localizedString(for: date, relativeTo: Date())
     }
     
-    private func requestCard(_ req: MangaRequestItem) -> some View {
+    private func requestPosterCard(_ req: MangaRequestItem) -> some View {
         let coverURL = resolveCoverURL(for: req.title)
         let avail = store.availabilityByRequestId[req.id]
         let isProcessing = store.processingRequestIds.contains(req.id)
         let targetChapters = avail?.targetMinChapters ?? (req.startChapter > 1 ? req.startChapter : 50)
+        let chosenSource = avail?.selectedResult
+        let sourceLabel = chosenSource?.source ?? "@\(req.username ?? (isEn ? "reader" : "lector"))"
+        let availableChapters = chosenSource?.chapters ?? 0
+        let progressRatio: Double = {
+            guard targetChapters > 0 else { return 1.0 }
+            if availableChapters > 0 {
+                return min(Double(availableChapters) / Double(targetChapters), 1.0)
+            }
+            return bucket(req.status) == .approved ? 1.0 : 0.08
+        }()
+        let topBadgeText: String = {
+            if let chosenSource, chosenSource.chapters > 0 {
+                return "\(chosenSource.chapters)/\(targetChapters)"
+            }
+            switch bucket(req.status) {
+            case .pending: return isEn ? "Pending" : "Pendiente"
+            case .waitingChapters: return "0/\(targetChapters)"
+            case .approved: return isEn ? "Approved" : "Aprobada"
+            case .rejected: return isEn ? "Rejected" : "Rechazada"
+            }
+        }()
+        let subtitleText: String = {
+            if let chosenSource, chosenSource.chapters > 0 {
+                let pct = min(Int((Double(chosenSource.chapters) / Double(max(targetChapters, 1)) * 100).rounded()), 100)
+                return "@\(req.username ?? "admin") · \(pct)% (\(chosenSource.chapters)/\(targetChapters) ch.)"
+            }
+            return "@\(req.username ?? "admin") · " + (isEn ? "Wait \(targetChapters) ch." : "Espera \(targetChapters) caps.")
+        }()
         
-        return VStack(alignment: .leading, spacing: 14) {
-            // Bloque superior: Portada 2:3 + Metadatos de la petición
-            HStack(alignment: .top, spacing: 14) {
-                coverThumbnail(url: coverURL, title: req.title)
-                
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(alignment: .top) {
-                        Text(req.title)
-                            .font(.headline.weight(.bold))
-                            .foregroundStyle(.white)
-                            .lineLimit(2)
-                        
-                        Spacer(minLength: 4)
-                        
-                        statusBadge(for: req.status)
-                    }
-                    
-                    // Usuario y fecha
-                    HStack(spacing: 6) {
-                        Image(systemName: "person.crop.circle.fill")
-                            .font(.caption)
-                            .foregroundStyle(.cyan)
-                        Text("@\(req.username ?? (isEn ? "reader" : "lector"))")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.white.opacity(0.85))
-                        Text("• \(formattedDate(req.createdAt))")
-                            .font(.caption)
-                            .foregroundStyle(.white.opacity(0.55))
-                    }
-                    
-                    // Píldora del requisito de capítulos (ej. "Hasta tener 50 capítulos")
-                    HStack(spacing: 6) {
-                        Image(systemName: "flag.checkered.2.crossed")
-                            .font(.caption2.weight(.bold))
-                        Text(
-                            targetChapters > 1
-                                ? (isEn ? "Wait until \(targetChapters) chapters" : "Hasta tener \(targetChapters) capítulos")
-                                : (isEn ? "From Chapter 1 (Immediate)" : "Desde capítulo 1 (Inmediato)")
-                        )
-                        .font(.caption.weight(.bold))
-                    }
-                    .foregroundStyle(.cyan)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(Color.cyan.opacity(0.15), in: Capsule())
-                    .overlay(Capsule().stroke(Color.cyan.opacity(0.45), lineWidth: 1))
-                    
-                    // Si ya se comprobó disponibilidad, resumen rápido de estado
-                    if let avail, avail.hasChecked {
-                        if avail.results.isEmpty {
-                            HStack(spacing: 5) {
-                                Image(systemName: "xmark.octagon.fill")
-                                Text(isEn ? "Not available in active sources" : "No disponible en ninguna fuente activa")
-                            }
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(.orange)
-                            .padding(.top, 2)
-                        } else if let chosen = avail.selectedResult {
-                            let meetsThreshold = chosen.chapters >= targetChapters
-                            HStack(spacing: 5) {
-                                Image(systemName: meetsThreshold ? "checkmark.seal.fill" : "clock.badge.checkmark.fill")
-                                Text(
-                                    chosen.chapters > 0
-                                        ? (isEn
-                                            ? "Available on \(chosen.source) (\(chosen.chapters) ch.)"
-                                            : "Disponible en \(chosen.source) (\(chosen.chapters) caps.)")
-                                        : (isEn
-                                            ? "Found on \(avail.results.count) source(s)"
-                                            : "Disponible en \(avail.results.count) fuente(s)")
-                                )
-                            }
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(meetsThreshold ? .green : .cyan)
-                            .padding(.top, 2)
+        return VStack(alignment: .leading, spacing: isPad ? 7 : 5) {
+            // Portada 2:3 protagonista con píldoras superiores y barra de progreso neón inferior
+            posterCoverView(
+                url: coverURL,
+                title: req.title,
+                topLeftText: sourceLabel,
+                topRightText: topBadgeText,
+                topRightColor: bucket(req.status) == .rejected ? .red : .cyan,
+                progressRatio: progressRatio
+            )
+            .onTapGesture {
+                if appState.isManagement && bucket(req.status) == .pending {
+                    inspectingRequest = req
+                    if store.availabilityByRequestId[req.id] == nil {
+                        Task {
+                            await store.checkAvailability(for: req, apiClient: apiClient, session: appState.session, isEn: isEn)
                         }
                     }
                 }
             }
             
-            // Panel desplegable de Disponibilidad en Fuentes cuando se pulsa "Ver disponibilidad"
-            if let avail, avail.isChecking || avail.hasChecked {
-                availabilityDetailsPanel(for: req, avail: avail, targetChapters: targetChapters)
-            }
+            // Título 1 línea
+            Text(req.title)
+                .font(isPad ? .footnote.weight(.bold) : .caption.weight(.bold))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .padding(.horizontal, 2)
             
-            // Botonera de Acción para el Administrador
+            // Subtítulo compacto 1 línea
+            Text(subtitleText)
+                .font(.caption2)
+                .foregroundStyle(.white.opacity(0.68))
+                .lineLimit(1)
+                .padding(.horizontal, 2)
+            
+            // Fila de acciones compacta (28pt de alto)
             if appState.isManagement {
                 if bucket(req.status) == .pending {
-                    pendingActionButtons(for: req, avail: avail, isProcessing: isProcessing, targetChapters: targetChapters)
-                } else if bucket(req.status) == .rejected {
-                    HStack(spacing: 10) {
+                    HStack(spacing: 6) {
+                        if let chosen = chosenSource {
+                            // Si ya comprobó disponibilidad y encontró fuente -> Botón directo "Aceptar"
+                            Button {
+                                Task {
+                                    await store.approveAndAddRequest(req, apiClient: apiClient, appState: appState, isEn: isEn)
+                                }
+                            } label: {
+                                HStack(spacing: 4) {
+                                    if isProcessing {
+                                        ProgressView().tint(.cyan).scaleEffect(0.65)
+                                    } else {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .font(.caption2.weight(.bold))
+                                    }
+                                    Text(isEn ? "Add (\(chosen.source))" : "Añadir (\(chosen.source))")
+                                        .font(.caption2.weight(.bold))
+                                        .lineLimit(1)
+                                }
+                                .foregroundStyle(.cyan)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 28)
+                                .background(Color.cyan.opacity(0.16), in: Capsule())
+                                .overlay(Capsule().stroke(Color.cyan.opacity(0.55), lineWidth: 1))
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(isProcessing)
+                        } else {
+                            // Botón compacto "📡 Check" que abre el selector de fuentes y comprueba disponibilidad
+                            Button {
+                                inspectingRequest = req
+                                Task {
+                                    await store.checkAvailability(for: req, apiClient: apiClient, session: appState.session, isEn: isEn)
+                                }
+                            } label: {
+                                HStack(spacing: 4) {
+                                    if avail?.isChecking == true {
+                                        ProgressView().tint(.cyan).scaleEffect(0.65)
+                                    } else {
+                                        Image(systemName: "dot.radiowaves.left.and.right")
+                                            .font(.caption2.weight(.bold))
+                                    }
+                                    Text(isEn ? "Check" : "Fuentes")
+                                        .font(.caption2.weight(.bold))
+                                        .lineLimit(1)
+                                }
+                                .foregroundStyle(.cyan)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 28)
+                                .background(Color.cyan.opacity(0.15), in: Capsule())
+                                .overlay(Capsule().stroke(Color.cyan.opacity(0.48), lineWidth: 1))
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(isProcessing)
+                        }
+                        
+                        // Botón circular compacto "✕" para rechazar
                         Button {
                             Task {
-                                await store.updateStatus(apiClient: apiClient, appState: appState, requestId: req.id, status: "PENDING")
+                                await store.updateStatus(apiClient: apiClient, appState: appState, requestId: req.id, status: "CANCELLED")
                             }
                         } label: {
-                            Label(isEn ? "Move back to Pending" : "Devolver a Pendientes", systemImage: "arrow.uturn.backward.circle.fill")
-                                .font(.caption.weight(.bold))
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 8)
+                            Image(systemName: "xmark")
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(.white.opacity(0.85))
+                                .frame(width: 28, height: 28)
+                                .background(Color.white.opacity(0.08), in: Circle())
+                                .overlay(Circle().stroke(Color.cyan.opacity(0.38), lineWidth: 1))
                         }
-                        .kaizenGlassButton(prominent: false)
+                        .buttonStyle(.plain)
+                        .disabled(isProcessing)
                     }
-                } else if let matched = appState.mangas.first(where: { $0.title.localizedCaseInsensitiveCompare(req.title) == .orderedSame }) {
-                    NavigationLink(value: matched) {
-                        HStack {
-                            Image(systemName: "book.fill")
-                            Text(isEn ? "Open in Library" : "Abrir en la Biblioteca")
-                            Spacer()
-                            Image(systemName: "chevron.right")
+                    .padding(.top, 2)
+                } else if bucket(req.status) == .rejected {
+                    Button {
+                        Task {
+                            await store.updateStatus(apiClient: apiClient, appState: appState, requestId: req.id, status: "PENDING")
                         }
-                        .font(.caption.weight(.bold))
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.uturn.backward")
+                            Text(isEn ? "Restore" : "Restaurar")
+                        }
+                        .font(.caption2.weight(.bold))
                         .foregroundStyle(.cyan)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 9)
-                        .background(Color.cyan.opacity(0.14), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 28)
+                        .background(Color.cyan.opacity(0.14), in: Capsule())
+                        .overlay(Capsule().stroke(Color.cyan.opacity(0.42), lineWidth: 1))
                     }
                     .buttonStyle(.plain)
+                    .padding(.top, 2)
+                } else if let matched = appState.mangas.first(where: { $0.title.localizedCaseInsensitiveCompare(req.title) == .orderedSame }) {
+                    HStack(spacing: 6) {
+                        NavigationLink(value: matched) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "book.fill")
+                                Text(isEn ? "Open" : "Abrir")
+                            }
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.cyan)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 28)
+                            .background(Color.cyan.opacity(0.14), in: Capsule())
+                            .overlay(Capsule().stroke(Color.cyan.opacity(0.42), lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                        
+                        Button {
+                            Task {
+                                await store.updateStatus(apiClient: apiClient, appState: appState, requestId: req.id, status: "CANCELLED")
+                            }
+                        } label: {
+                            Image(systemName: "trash")
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(.red.opacity(0.9))
+                                .frame(width: 28, height: 28)
+                                .background(Color.red.opacity(0.12), in: Circle())
+                                .overlay(Circle().stroke(Color.red.opacity(0.42), lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isProcessing)
+                    }
+                    .padding(.top, 2)
+                } else {
+                    HStack(spacing: 6) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "checkmark.seal.fill")
+                            Text(isEn ? "Approved" : "Aprobada")
+                        }
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.green)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 28)
+                        .background(Color.green.opacity(0.14), in: Capsule())
+                        .overlay(Capsule().stroke(Color.green.opacity(0.38), lineWidth: 1))
+                        
+                        Button {
+                            Task {
+                                await store.updateStatus(apiClient: apiClient, appState: appState, requestId: req.id, status: "CANCELLED")
+                            }
+                        } label: {
+                            Image(systemName: "trash")
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(.red.opacity(0.9))
+                                .frame(width: 28, height: 28)
+                                .background(Color.red.opacity(0.12), in: Circle())
+                                .overlay(Circle().stroke(Color.red.opacity(0.42), lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isProcessing)
+                    }
+                    .padding(.top, 2)
                 }
             }
         }
-        .padding(16)
-        .background {
-            if let coverURL {
-                RemoteImage(
-                    url: coverURL,
-                    token: appState.session?.apiToken,
-                    contentMode: .fill
-                )
-                .blur(radius: 36)
-                .opacity(0.20)
-                .clipped()
+        .padding(isPad ? 8 : 6)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .kaizenGlass(interactive: false, in: RoundedRectangle(cornerRadius: isPad ? 18 : 14, style: .continuous))
+    }
+    
+    // MARK: - Hoja Inspector de Disponibilidad en Fuentes (al pulsar "📡 Check" en una tarjeta)
+    
+    private func requestAvailabilitySheet(for req: MangaRequestItem) -> some View {
+        let avail = store.availabilityByRequestId[req.id] ?? RequestAvailabilityState(targetMinChapters: req.startChapter > 1 ? req.startChapter : 50)
+        let targetChapters = avail.targetMinChapters
+        let isProcessing = store.processingRequestIds.contains(req.id)
+        let coverURL = resolveCoverURL(for: req.title)
+        
+        return NavigationStack {
+            ZStack {
+                Color.clear.ambientGlowBackground()
+                
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        HStack(alignment: .top, spacing: 14) {
+                            posterCoverView(
+                                url: coverURL,
+                                title: req.title,
+                                topLeftText: "@\(req.username ?? "admin")",
+                                topRightText: "\(targetChapters) ch.",
+                                topRightColor: .cyan,
+                                progressRatio: 0.4
+                            )
+                            .frame(width: 96)
+                            
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(req.title)
+                                    .font(.headline.weight(.bold))
+                                    .foregroundStyle(.white)
+                                
+                                Text(
+                                    isEn
+                                        ? "Select an available scraper source and chapter threshold before approving."
+                                        : "Selecciona una fuente disponible y el umbral de capítulos antes de aprobar."
+                                )
+                                .font(.caption)
+                                .foregroundStyle(.white.opacity(0.7))
+                            }
+                        }
+                        
+                        availabilityDetailsPanel(for: req, avail: avail, targetChapters: targetChapters)
+                        
+                        HStack(spacing: 10) {
+                            if let chosen = avail.selectedResult {
+                                Button {
+                                    Task {
+                                        await store.approveAndAddRequest(req, apiClient: apiClient, appState: appState, isEn: isEn)
+                                        inspectingRequest = nil
+                                    }
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        if isProcessing {
+                                            ProgressView().tint(.black).scaleEffect(0.8)
+                                        } else {
+                                            Image(systemName: "checkmark.circle.fill")
+                                        }
+                                        Text(
+                                            isEn
+                                                ? "Approve on \(chosen.source) (\(targetChapters) ch.)"
+                                                : "Aprobar en \(chosen.source) (\(targetChapters) caps.)"
+                                        )
+                                    }
+                                    .font(.subheadline.weight(.bold))
+                                    .frame(maxWidth: .infinity)
+                                }
+                                .kaizenGlassButton(prominent: true)
+                                .disabled(isProcessing)
+                            }
+                            
+                            Button {
+                                Task {
+                                    await store.updateStatus(apiClient: apiClient, appState: appState, requestId: req.id, status: "CANCELLED")
+                                    inspectingRequest = nil
+                                }
+                            } label: {
+                                HStack(spacing: 5) {
+                                    Image(systemName: "xmark")
+                                    Text(isEn ? "Reject" : "Rechazar")
+                                }
+                                .font(.subheadline.weight(.semibold))
+                            }
+                            .kaizenGlassButton(prominent: false)
+                            .disabled(isProcessing)
+                        }
+                    }
+                    .padding(20)
+                }
+            }
+            .navigationTitle(isEn ? "Check Availability" : "Comprobar Disponibilidad")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(isEn ? "Close" : "Cerrar") { inspectingRequest = nil }
+                }
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .kaizenGlass(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .presentationDetents([.medium, .large])
     }
     
     // MARK: - Panel de Disponibilidad en Fuentes y Umbral de 50 Capítulos
@@ -1060,173 +1336,198 @@ public struct MangaRequestsView: View {
                 .frame(maxWidth: .infinity)
                 .kaizenGlass(in: RoundedRectangle(cornerRadius: 24, style: .continuous))
             } else {
-                let columns = isPad
-                    ? [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)]
-                    : [GridItem(.flexible(), spacing: 14)]
-                
-                LazyVGrid(columns: columns, spacing: 16) {
+                LazyVGrid(columns: posterGridColumns, spacing: isPad ? 18 : 12) {
                     ForEach(store.plannedMangas) { item in
-                        plannedMangaCard(item)
+                        plannedMangaPosterCard(item)
                     }
                 }
             }
         }
     }
     
-    private func plannedMangaCard(_ item: KaizenPlannedManga) -> some View {
-        let coverURL = item.coverUrl.flatMap { URL(string: $0) }
+    private func plannedMangaPosterCard(_ item: KaizenPlannedManga) -> some View {
+        let coverURL = item.coverUrl.flatMap { URL(string: $0) } ?? resolveCoverURL(for: item.title)
         let isProcessing = store.processingRequestIds.contains(item.id)
         let pct = Int((item.progressRatio * 100).rounded())
+        let subtitle = "@admin · \(pct)% (\(item.remoteChaptersCount)/\(item.minChaptersForDownload) " + (isEn ? "ch." : "caps.") + ")"
         
-        return VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top, spacing: 14) {
-                coverThumbnail(url: coverURL, title: item.title)
-                
-                VStack(alignment: .leading, spacing: 7) {
-                    HStack(alignment: .top) {
-                        Text(item.title)
-                            .font(.headline.weight(.bold))
-                            .foregroundStyle(.white)
-                            .lineLimit(2)
-                        
-                        Spacer(minLength: 4)
-                        
-                        Text(item.source)
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(.cyan)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Color.cyan.opacity(0.16), in: Capsule())
-                    }
-                    
-                    Text(
-                        isEn
-                            ? "Waiting for \(item.minChaptersForDownload) chapters before downloading"
-                            : "Esperando hasta tener \(item.minChaptersForDownload) capítulos para descargar"
-                    )
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.7))
-                    
-                    // Barra de progreso hacia los 50 capítulos
-                    VStack(alignment: .leading, spacing: 5) {
-                        HStack {
-                            Text("\(item.remoteChaptersCount) / \(item.minChaptersForDownload) " + (isEn ? "chapters available" : "capítulos en fuente"))
-                                .font(.caption.weight(.bold))
-                                .foregroundStyle(.cyan)
-                            Spacer()
-                            Text("\(pct)%")
-                                .font(.caption2.weight(.bold))
-                                .foregroundStyle(.white.opacity(0.8))
-                        }
-                        
-                        GeometryReader { geo in
-                            ZStack(alignment: .leading) {
-                                Capsule()
-                                    .fill(Color.white.opacity(0.10))
-                                Capsule()
-                                    .fill(
-                                        LinearGradient(
-                                            colors: [.cyan, Color(red: 0.2, green: 0.6, blue: 1.0)],
-                                            startPoint: .leading,
-                                            endPoint: .trailing
-                                        )
-                                    )
-                                    .frame(width: max(geo.size.width * item.progressRatio, 8))
-                                    .shadow(color: .cyan.opacity(0.6), radius: 5)
-                            }
-                        }
-                        .frame(height: 8)
-                    }
-                    .padding(.top, 2)
-                }
-            }
+        return VStack(alignment: .leading, spacing: isPad ? 7 : 5) {
+            posterCoverView(
+                url: coverURL,
+                title: item.title,
+                topLeftText: item.source,
+                topRightText: "\(item.remoteChaptersCount)/\(item.minChaptersForDownload)",
+                topRightColor: .cyan,
+                progressRatio: item.progressRatio
+            )
             
+            Text(item.title)
+                .font(isPad ? .footnote.weight(.bold) : .caption.weight(.bold))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .padding(.horizontal, 2)
+            
+            Text(subtitle)
+                .font(.caption2)
+                .foregroundStyle(.white.opacity(0.68))
+                .lineLimit(1)
+                .padding(.horizontal, 2)
+            
+            if appState.isManagement {
+                HStack(spacing: 6) {
+                    Button {
+                        Task {
+                            await store.forceDownloadPlannedManga(
+                                item,
+                                apiClient: apiClient,
+                                appState: appState,
+                                isEn: isEn
+                            )
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            if isProcessing {
+                                ProgressView().tint(.cyan).scaleEffect(0.65)
+                            } else {
+                                Image(systemName: "bolt.fill")
+                                    .font(.caption2.weight(.bold))
+                            }
+                            Text(isEn ? "Download Now" : "Descargar ya")
+                                .font(.caption2.weight(.bold))
+                                .lineLimit(1)
+                        }
+                        .foregroundStyle(.cyan)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 28)
+                        .background(Color.cyan.opacity(0.15), in: Capsule())
+                        .overlay(Capsule().stroke(Color.cyan.opacity(0.50), lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isProcessing)
+                    
+                    // Botón circular compacto para eliminar/cancelar una serie en espera de alcanzar 50 capítulos
+                    Button {
+                        plannedMangaToCancel = item
+                    } label: {
+                        Image(systemName: "trash")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.red.opacity(0.92))
+                            .frame(width: 28, height: 28)
+                            .background(Color.red.opacity(0.14), in: Circle())
+                            .overlay(Circle().stroke(Color.red.opacity(0.48), lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isProcessing)
+                    .accessibilityLabel(isEn ? "Cancel waiting series" : "Cancelar serie en espera")
+                }
+                .padding(.top, 2)
+            }
+        }
+        .padding(isPad ? 8 : 6)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .kaizenGlass(interactive: false, in: RoundedRectangle(cornerRadius: isPad ? 18 : 14, style: .continuous))
+        .contextMenu {
             if appState.isManagement {
                 Button {
                     Task {
-                        await store.forceDownloadPlannedManga(
-                            item,
-                            apiClient: apiClient,
-                            appState: appState,
-                            isEn: isEn
-                        )
+                        await store.forceDownloadPlannedManga(item, apiClient: apiClient, appState: appState, isEn: isEn)
                     }
                 } label: {
-                    HStack(spacing: 6) {
-                        if isProcessing {
-                            ProgressView().tint(.black).scaleEffect(0.8)
-                        } else {
-                            Image(systemName: "bolt.fill")
-                        }
-                        Text(
-                            isEn
-                                ? "Download Now (Remove \(item.minChaptersForDownload) ch. wait)"
-                                : "Descargar ya (No esperar a \(item.minChaptersForDownload) caps.)"
-                        )
-                    }
-                    .font(.caption.weight(.bold))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 9)
-                    .contentShape(Capsule())
+                    Label(
+                        isEn ? "Download Now (Remove 50 ch. wait)" : "Descargar ya (Quitar espera de 50 caps.)",
+                        systemImage: "bolt.fill"
+                    )
                 }
-                .kaizenGlassButton(prominent: true)
-                .disabled(isProcessing)
+                Button(role: .destructive) {
+                    plannedMangaToCancel = item
+                } label: {
+                    Label(
+                        isEn ? "Remove from Waiting List" : "Eliminar / Cancelar espera",
+                        systemImage: "trash"
+                    )
+                }
             }
         }
-        .padding(16)
-        .background {
-            if let coverURL {
-                RemoteImage(
-                    url: coverURL,
-                    token: appState.session?.apiToken,
-                    contentMode: .fill
-                )
-                .blur(radius: 36)
-                .opacity(0.18)
-                .clipped()
-            }
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .kaizenGlass(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
     
-    // MARK: - Subvistas Auxiliares
+    // MARK: - Portada Vertical 2:3 con Carátula por Defecto Oficial de Kaizen (`KaizenLogo`)
     
-    private func coverThumbnail(url: URL?, title: String) -> some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [Color(red: 0.14, green: 0.22, blue: 0.36), Color(red: 0.07, green: 0.10, blue: 0.18)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
+    private func posterCoverView(
+        url: URL?,
+        title: String,
+        topLeftText: String,
+        topRightText: String,
+        topRightColor: Color,
+        progressRatio: Double
+    ) -> some View {
+        let radius: CGFloat = isPad ? 12 : 10
+        let clampedRatio = CGFloat(min(max(progressRatio, 0.04), 1.0))
+        
+        return RoundedRectangle(cornerRadius: radius, style: .continuous)
+            .fill(
+                LinearGradient(
+                    colors: [Color(red: 0.12, green: 0.20, blue: 0.34), Color(red: 0.05, green: 0.08, blue: 0.16)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
                 )
-            
-            if let url {
-                RemoteImage(
+            )
+            .aspectRatio(2/3, contentMode: .fit)
+            .overlay {
+                RequestPosterCoverImage(
                     url: url,
                     token: appState.session?.apiToken,
-                    contentMode: .fill
+                    isPad: isPad
                 )
-            } else {
-                VStack(spacing: 4) {
-                    Image(systemName: "book.closed.fill")
-                        .font(.title3)
-                        .foregroundStyle(.cyan.opacity(0.8))
-                    Text(String(title.prefix(2)).uppercased())
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(.white.opacity(0.75))
-                }
             }
-        }
-        .frame(width: 76, height: 112)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(Color.white.opacity(0.22), lineWidth: 1)
-        )
-        .shadow(color: .black.opacity(0.45), radius: 6, x: 0, y: 4)
+            .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
+                    .stroke(Color.white.opacity(0.18), lineWidth: 1)
+            )
+            .overlay(alignment: .top) {
+                HStack(spacing: 4) {
+                    Text(topLeftText)
+                        .font(.system(size: isPad ? 10 : 9, weight: .bold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .padding(.horizontal, isPad ? 7 : 5)
+                        .padding(.vertical, 3)
+                        .background(Color.black.opacity(0.74), in: Capsule())
+                        .overlay(Capsule().stroke(Color.white.opacity(0.22), lineWidth: 0.8))
+                    
+                    Spacer(minLength: 2)
+                    
+                    Text(topRightText)
+                        .font(.system(size: isPad ? 10 : 9, weight: .heavy).monospacedDigit())
+                        .foregroundStyle(topRightColor == .cyan ? Color.cyan : Color.white)
+                        .lineLimit(1)
+                        .padding(.horizontal, isPad ? 7 : 5)
+                        .padding(.vertical, 3)
+                        .background(Color.black.opacity(0.76), in: Capsule())
+                        .overlay(Capsule().stroke(topRightColor.opacity(0.75), lineWidth: 1))
+                }
+                .padding(isPad ? 6 : 4)
+            }
+            .overlay(alignment: .bottom) {
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule()
+                            .fill(Color.black.opacity(0.68))
+                        Capsule()
+                            .fill(
+                                LinearGradient(
+                                    colors: [Color(red: 0.35, green: 0.98, blue: 1.0), Color.cyan],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .frame(width: geo.size.width * clampedRatio)
+                    }
+                }
+                .frame(height: 4)
+                .padding(.horizontal, 6)
+                .padding(.bottom, 6)
+            }
     }
     
     private var emptyRequestsState: some View {
@@ -1378,5 +1679,88 @@ public struct MangaRequestsView: View {
             .background(color.opacity(0.18), in: Capsule())
             .overlay(Capsule().stroke(color.opacity(0.45), lineWidth: 1))
             .foregroundStyle(color)
+    }
+}
+
+/// Portada 2:3 para `Requests & Backlog` que utiliza el emblema oficial de Kaizen (`KaizenLogo` / `kaizen.png`)
+/// como carátula por defecto cuando la serie no tiene portada o el servidor devuelve 404.
+private struct RequestPosterCoverImage: View {
+    let url: URL?
+    let token: String?
+    let isPad: Bool
+    
+    @State private var uiImage: UIImage?
+    
+    var body: some View {
+        ZStack {
+            if let uiImage {
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .transition(.opacity)
+            } else {
+                kaizenDefaultCover
+            }
+        }
+        .task(id: url) {
+            await loadCover()
+        }
+    }
+    
+    private var kaizenDefaultCover: some View {
+        ZStack {
+            LinearGradient(
+                colors: [
+                    Color(red: 0.09, green: 0.16, blue: 0.30),
+                    Color(red: 0.05, green: 0.08, blue: 0.17),
+                    Color(red: 0.08, green: 0.06, blue: 0.20)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            
+            RadialGradient(
+                colors: [Color.cyan.opacity(0.26), Color.indigo.opacity(0.14), .clear],
+                center: .center,
+                startRadius: 6,
+                endRadius: isPad ? 110 : 80
+            )
+            
+            VStack(spacing: isPad ? 8 : 6) {
+                Image("KaizenLogo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: isPad ? 68 : 50, height: isPad ? 68 : 50)
+                    .clipShape(RoundedRectangle(cornerRadius: isPad ? 16 : 12, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: isPad ? 16 : 12, style: .continuous)
+                            .stroke(Color.cyan.opacity(0.55), lineWidth: 1)
+                    )
+                    .shadow(color: .cyan.opacity(0.35), radius: 10, y: 4)
+                
+                Text("KAIZEN")
+                    .font(.system(size: isPad ? 10 : 8, weight: .heavy, design: .rounded))
+                    .tracking(2.0)
+                    .foregroundStyle(Color.cyan.opacity(0.85))
+            }
+        }
+    }
+    
+    private func loadCover() async {
+        guard let url else {
+            uiImage = nil
+            return
+        }
+        if let cached = await ImageLoader.shared.cachedImage(for: url) {
+            uiImage = cached
+            return
+        }
+        if let downloaded = await ImageLoader.shared.image(for: url, token: token) {
+            withAnimation(.easeIn(duration: 0.2)) {
+                uiImage = downloaded
+            }
+        } else {
+            uiImage = nil
+        }
     }
 }
