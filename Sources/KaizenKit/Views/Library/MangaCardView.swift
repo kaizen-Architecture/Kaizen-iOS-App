@@ -33,6 +33,7 @@ public struct MangaCardView: View {
                         RoundedRectangle(cornerRadius: isPad ? 12 : 10, style: .continuous)
                             .stroke(Color.white.opacity(0.18), lineWidth: 1)
                     )
+                    .shadow(color: .black.opacity(0.45), radius: 6, y: 3)
                     .overlay(alignment: .bottom) {
                         if manga.safeReadingPercentage > 0 {
                             GeometryReader { geo in
@@ -48,6 +49,7 @@ public struct MangaCardView: View {
                                             )
                                         )
                                         .frame(width: geo.size.width * CGFloat(min(max(manga.safeReadingPercentage / 100.0, 0), 1)))
+                                        .shadow(color: Color.cyan.opacity(0.85), radius: 4)
                                 }
                             }
                             .frame(height: 4)
@@ -72,6 +74,7 @@ public struct MangaCardView: View {
                             in: Capsule()
                         )
                         .overlay(Capsule().stroke(Color.white.opacity(0.75), lineWidth: 1))
+                        .shadow(color: Color.cyan.opacity(0.65), radius: 6)
                         .padding(isPad ? 6 : 5)
                 }
                 
@@ -99,6 +102,6 @@ public struct MangaCardView: View {
         }
         .padding(isPad ? 8 : 5)
         .frame(maxHeight: .infinity, alignment: .top)
-        .kaizenCardGlass(in: RoundedRectangle(cornerRadius: isPad ? 18 : 14, style: .continuous))
+        .kaizenGlass(in: RoundedRectangle(cornerRadius: isPad ? 18 : 14, style: .continuous))
     }
 }

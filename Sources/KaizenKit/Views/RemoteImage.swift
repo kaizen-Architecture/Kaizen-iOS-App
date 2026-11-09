@@ -1,71 +1,22 @@
 import SwiftUI
 import UIKit
-import ImageIO
 import CryptoKit
 
-/// Descarga imágenes del servidor Kaizen enviando el API Token con caché de doble capa (memoria síncrona + disco)
-///, downsampling en segundo plano para miniaturas y deduplicación de tareas en vuelo.
+/// Descarga imágenes del servidor Kaizen enviando el API Token con caché de doble capa (memoria + disco)
+/// y deduplicación de tareas en vuelo para no saturar la red ni el servidor.
 actor ImageLoader {
     static let shared = ImageLoader()
-    
-    /// Caché en memoria thread-safe accesible de forma síncrona (`0ms`, sin salto de actor)
-    /// para evitar parpadeos y tirones al hacer scroll rápido en `LazyVGrid`.
-    nonisolated(unsafe) private static let fastMemoryCache: NSCache<NSString, UIImage> = {
-        let cache = NSCache<NSString, UIImage>()
-        cache.countLimit = 450
-        cache.totalCostLimit = 180 * 1024 * 1024 // 180 MB
-        return cache
-    }()
-    
+    private let memoryCache = NSCache<NSURL, UIImage>()
     private let diskCacheDir: URL
-    private var inFlightTasks: [String: Task<UIImage?, Never>] = [:]
+    private var inFlightTasks: [URL: Task<UIImage?, Never>] = [:]
     
     init() {
+        memoryCache.countLimit = 250
+        memoryCache.totalCostLimit = 200 * 1024 * 1024 // 200 MB
+        
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         diskCacheDir = caches.appendingPathComponent("KaizenImages", isDirectory: true)
         try? FileManager.default.createDirectory(at: diskCacheDir, withIntermediateDirectories: true)
-    }
-    
-    nonisolated static func cacheKey(for url: URL, maxPixelSize: CGFloat? = nil) -> String {
-        if let maxPixelSize {
-            return "\(url.absoluteString)#\(Int(maxPixelSize))"
-        }
-        return url.absoluteString
-    }
-    
-    /// Lectura síncrona inmediata desde RAM para usar directamente en `RemoteImage.init` / `body`.
-    nonisolated static func memoryCachedImage(for url: URL, maxPixelSize: CGFloat? = nil) -> UIImage? {
-        let key = cacheKey(for: url, maxPixelSize: maxPixelSize) as NSString
-        if let hit = fastMemoryCache.object(forKey: key) {
-            return hit
-        }
-        if maxPixelSize != nil, let fullHit = fastMemoryCache.object(forKey: url.absoluteString as NSString) {
-            return fullHit
-        }
-        return nil
-    }
-    
-    nonisolated private static func decodeImage(from data: Data, maxPixelSize: CGFloat?) -> UIImage? {
-        if let maxPixelSize, maxPixelSize > 0 {
-            let sourceOptions: [CFString: Any] = [kCGImageSourceShouldCache: false]
-            if let source = CGImageSourceCreateWithData(data as CFData, sourceOptions as CFDictionary) {
-                let downsampleOptions: [CFString: Any] = [
-                    kCGImageSourceCreateThumbnailFromImageAlways: true,
-                    kCGImageSourceShouldCacheImmediately: true,
-                    kCGImageSourceCreateThumbnailWithTransform: true,
-                    kCGImageSourceThumbnailMaxPixelSize: Int(maxPixelSize)
-                ]
-                if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOptions as CFDictionary) {
-                    return UIImage(cgImage: cgImage)
-                }
-            }
-        }
-        return UIImage(data: data)
-    }
-    
-    nonisolated private static func imageCost(_ image: UIImage) -> Int {
-        guard let cg = image.cgImage else { return 1024 * 100 }
-        return cg.bytesPerRow * cg.height
     }
     
     private func diskPath(for url: URL) -> URL {
@@ -74,31 +25,31 @@ actor ImageLoader {
         return diskCacheDir.appendingPathComponent(filename)
     }
     
-    func cachedImage(for url: URL, maxPixelSize: CGFloat? = nil) -> UIImage? {
-        let keyStr = Self.cacheKey(for: url, maxPixelSize: maxPixelSize)
-        if let mem = Self.fastMemoryCache.object(forKey: keyStr as NSString) {
+    func cachedImage(for url: URL) -> UIImage? {
+        if let mem = memoryCache.object(forKey: url as NSURL) {
             return mem
         }
         let file = diskPath(for: url)
-        guard let data = try? Data(contentsOf: file),
-              let img = Self.decodeImage(from: data, maxPixelSize: maxPixelSize) else {
-            return nil
+        if let data = try? Data(contentsOf: file), let img = UIImage(data: data) {
+            memoryCache.setObject(img, forKey: url as NSURL, cost: data.count)
+            return img
         }
-        Self.fastMemoryCache.setObject(img, forKey: keyStr as NSString, cost: Self.imageCost(img))
-        return img
+        return nil
     }
     
-    func image(for url: URL, token: String?, maxPixelSize: CGFloat? = nil) async -> UIImage? {
-        if let cached = cachedImage(for: url, maxPixelSize: maxPixelSize) {
+    func image(for url: URL, token: String?) async -> UIImage? {
+        if let cached = cachedImage(for: url) {
             return cached
         }
         
-        let taskKey = Self.cacheKey(for: url, maxPixelSize: maxPixelSize)
-        if let existing = inFlightTasks[taskKey] {
+        // Evitar duplicar descargas simultáneas de la misma URL
+        if let existing = inFlightTasks[url] {
             return await existing.value
         }
         
         let diskFile = diskPath(for: url)
+        let memCache = memoryCache
+        let cacheKey = url as NSURL
         
         let task = Task<UIImage?, Never> {
             var request = URLRequest(url: url)
@@ -110,60 +61,42 @@ actor ImageLoader {
             
             guard let (data, response) = try? await URLSession.shared.data(for: request),
                   (response as? HTTPURLResponse)?.statusCode == 200,
-                  let image = Self.decodeImage(from: data, maxPixelSize: maxPixelSize) else {
-                return nil
-            }
+                  let image = UIImage(data: data) else { return nil }
             
-            Self.fastMemoryCache.setObject(image, forKey: taskKey as NSString, cost: Self.imageCost(image))
+            memCache.setObject(image, forKey: cacheKey, cost: data.count)
             try? data.write(to: diskFile, options: .atomic)
             return image
         }
         
-        inFlightTasks[taskKey] = task
+        inFlightTasks[url] = task
         let result = await task.value
-        inFlightTasks.removeValue(forKey: taskKey)
+        inFlightTasks.removeValue(forKey: url)
         return result
     }
 }
 
-/// Imagen remota autenticada con lectura síncrona desde memoria (`0ms`) y downsampling fuera del hilo principal
+/// Imagen remota autenticada con soporte de caché persistente y visualización fluida
 public struct RemoteImage: View {
     public let url: URL?
     public let token: String?
     public var contentMode: ContentMode = .fill
-    public var maxPixelSize: CGFloat? = 440
     
     @State private var uiImage: UIImage?
-    @State private var loadedURL: URL?
     @State private var failed = false
     
-    public init(url: URL?, token: String?, contentMode: ContentMode = .fill, maxPixelSize: CGFloat? = 440) {
+    public init(url: URL?, token: String?, contentMode: ContentMode = .fill) {
         self.url = url
         self.token = token
         self.contentMode = contentMode
-        self.maxPixelSize = maxPixelSize
-        if let url, let mem = ImageLoader.memoryCachedImage(for: url, maxPixelSize: maxPixelSize) {
-            _uiImage = State(initialValue: mem)
-            _loadedURL = State(initialValue: url)
-        }
-    }
-    
-    private var resolvedImage: UIImage? {
-        if let uiImage, loadedURL == url {
-            return uiImage
-        }
-        if let url {
-            return ImageLoader.memoryCachedImage(for: url, maxPixelSize: maxPixelSize)
-        }
-        return nil
     }
     
     public var body: some View {
         ZStack {
-            if let img = resolvedImage {
-                Image(uiImage: img)
+            if let uiImage {
+                Image(uiImage: uiImage)
                     .resizable()
                     .aspectRatio(contentMode: contentMode)
+                    .transition(.opacity)
             } else if failed {
                 ZStack {
                     Color.white.opacity(0.06)
@@ -172,7 +105,10 @@ public struct RemoteImage: View {
                         .foregroundStyle(.secondary)
                 }
             } else {
-                Color.white.opacity(0.05)
+                ZStack {
+                    Color.white.opacity(0.05)
+                    ProgressView().tint(.cyan)
+                }
             }
         }
         .task(id: url) { await load() }
@@ -183,23 +119,17 @@ public struct RemoteImage: View {
             failed = true
             return
         }
-        if let mem = ImageLoader.memoryCachedImage(for: url, maxPixelSize: maxPixelSize) {
-            uiImage = mem
-            loadedURL = url
-            failed = false
-            return
-        }
-        if let cached = await ImageLoader.shared.cachedImage(for: url, maxPixelSize: maxPixelSize) {
+        // Intentar leer caché inmediatamente
+        if let cached = await ImageLoader.shared.cachedImage(for: url) {
             uiImage = cached
-            loadedURL = url
-            failed = false
             return
         }
         
         failed = false
-        if let image = await ImageLoader.shared.image(for: url, token: token, maxPixelSize: maxPixelSize) {
-            uiImage = image
-            loadedURL = url
+        if let image = await ImageLoader.shared.image(for: url, token: token) {
+            withAnimation(.easeIn(duration: 0.2)) {
+                uiImage = image
+            }
         } else {
             failed = true
         }

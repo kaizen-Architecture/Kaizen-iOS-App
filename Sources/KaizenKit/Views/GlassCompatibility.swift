@@ -99,43 +99,6 @@ public extension View {
         self.kaizenGlass(interactive: false, in: shape)
     }
     
-    /// Variante de alto rendimiento a 120 FPS para celdas en cuadrículas densas (`LazyVGrid` en `Library`, `Explore` y `Requests`):
-    /// Conserva el mismo acabado Cyberpunk (cristal ahumado cian/azul + reflejo especular + borde neón)
-    /// sin instanciar 25 `CABackdropLayer` (`.ultraThinMaterial`) ni múltiples sombras dinámicas por celda.
-    @ViewBuilder
-    func kaizenCardGlass<S: Shape>(in shape: S) -> some View {
-        self
-            .background {
-                shape.fill(
-                    LinearGradient(
-                        colors: [
-                            Color(red: 0.15, green: 0.22, blue: 0.33).opacity(0.92),
-                            Color(red: 0.08, green: 0.12, blue: 0.20).opacity(0.95),
-                            Color(red: 0.05, green: 0.07, blue: 0.13).opacity(0.97)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-            }
-            .overlay(
-                shape.stroke(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.48),
-                            Color.cyan.opacity(0.36),
-                            Color.white.opacity(0.10),
-                            Color.cyan.opacity(0.22)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 1.15
-                )
-            )
-            .contentShape(shape)
-    }
-    
     @ViewBuilder
     func kaizenGlassButton(prominent: Bool = false) -> some View {
         self.buttonStyle(GlassFallbackButtonStyle(isProminent: prominent))

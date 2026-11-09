@@ -150,80 +150,87 @@ public struct LibraryView: View {
     }
     
     private var filteredMangas: [Manga] {
-        let trimmedSearch = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let isSearching = !trimmedSearch.isEmpty
-        let historyIds = Set(appState.history.map(\.mangaId))
-        let activeShelfIds: Set<Int>? = {
-            guard let shelfId = selectedShelfId,
-                  let shelf = appState.shelves.first(where: { $0.id == shelfId }) else { return nil }
-            return Set(shelf.mangaIds)
-        }()
-        let allShelfMangaIds: Set<Int> = mode == .personalReading
-            ? Set(appState.shelves.flatMap(\.mangaIds))
-            : []
-        let upperStatus = selectedStatus?.uppercased()
-        
-        return appState.mangas.filter { manga in
+        appState.mangas.filter { manga in
             let matchesSearch: Bool
-            if !isSearching {
+            if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 matchesSearch = true
             } else {
-                let titleMatch = manga.title.localizedCaseInsensitiveContains(trimmedSearch)
-                let authorMatch = manga.authors?.contains { $0.localizedCaseInsensitiveContains(trimmedSearch) } ?? false
-                let altMatch = manga.altTitles?.contains { $0.localizedCaseInsensitiveContains(trimmedSearch) } ?? false
-                let genreMatch = manga.genres?.contains { $0.localizedCaseInsensitiveContains(trimmedSearch) } ?? false
+                let text = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                let titleMatch = manga.title.localizedCaseInsensitiveContains(text)
+                let authorMatch = manga.authors?.contains { $0.localizedCaseInsensitiveContains(text) } ?? false
+                let altMatch = manga.altTitles?.contains { $0.localizedCaseInsensitiveContains(text) } ?? false
+                let genreMatch = manga.genres?.contains { $0.localizedCaseInsensitiveContains(text) } ?? false
                 matchesSearch = titleMatch || authorMatch || altMatch || genreMatch
             }
-            guard matchesSearch else { return false }
             
             let matchesLibrary = selectedLibraryId == nil || manga.libraryId == selectedLibraryId
-            guard matchesLibrary else { return false }
             
-            if let upperStatus, manga.status?.uppercased() != upperStatus {
-                return false
+            let matchesStatus: Bool
+            if let selectedStatus {
+                matchesStatus = manga.status?.uppercased() == selectedStatus.uppercased()
+            } else {
+                matchesStatus = true
             }
             
-            if let selectedGenre,
-               !(manga.genres?.contains { $0.caseInsensitiveCompare(selectedGenre) == .orderedSame } ?? false) {
-                return false
+            let matchesGenre: Bool
+            if let selectedGenre {
+                matchesGenre = manga.genres?.contains { $0.caseInsensitiveCompare(selectedGenre) == .orderedSame } ?? false
+            } else {
+                matchesGenre = true
             }
             
-            if let activeShelfIds {
-                return activeShelfIds.contains(manga.id)
-            }
-            
-            let inHistory = historyIds.contains(manga.id)
-            switch selectedFilter {
-            case .all:
-                if mode == .personalReading {
-                    return manga.isFavorite || manga.readingPercentage > 0 || allShelfMangaIds.contains(manga.id)
+            let matchesFilterOrShelf: Bool
+            if let shelfId = selectedShelfId,
+               let shelf = appState.shelves.first(where: { $0.id == shelfId }) {
+                matchesFilterOrShelf = shelf.mangaIds.contains(manga.id)
+            } else {
+                switch selectedFilter {
+                case .all:
+                    if mode == .personalReading {
+                        let inAnyShelf = appState.shelves.contains { $0.mangaIds.contains(manga.id) }
+                        matchesFilterOrShelf = manga.isFavorite || manga.readingPercentage > 0 || inAnyShelf
+                    } else {
+                        matchesFilterOrShelf = true
+                    }
+                case .reading:
+                    let inHistory = appState.history.contains { $0.mangaId == manga.id }
+                    let hasStarted = (manga.totalChapters > manga.unreadCount && manga.totalChapters > 0)
+                        || (manga.readingPercentage > 0 && manga.readingPercentage < 100)
+                        || inHistory
+                    let hasUnread = manga.unreadCount > 0 || manga.readingPercentage < 100
+                    matchesFilterOrShelf = hasStarted && hasUnread
+                case .caughtUp:
+                    let inHistory = appState.history.contains { $0.mangaId == manga.id }
+                    let hasStarted = (manga.totalChapters > 0 && manga.totalChapters > manga.unreadCount)
+                        || manga.readingPercentage > 0
+                        || inHistory
+                    let noUnread = manga.unreadCount == 0 && manga.totalChapters > 0
+                    let isCaughtUpBase = (hasStarted && noUnread) || (manga.readingPercentage >= 100 && manga.unreadCount == 0)
+                    
+                    if !isCaughtUpBase {
+                        matchesFilterOrShelf = false
+                    } else {
+                        switch caughtUpSubFilter {
+                        case .all:
+                            matchesFilterOrShelf = true
+                        case .ongoing:
+                            matchesFilterOrShelf = manga.isOngoing
+                        case .completed:
+                            matchesFilterOrShelf = manga.isCompleted
+                        case .hiatus:
+                            matchesFilterOrShelf = manga.isHiatus
+                        }
+                    }
+                case .completed:
+                    let inHistory = appState.history.contains { $0.mangaId == manga.id }
+                    let hasRead = manga.readingPercentage >= 100 || (manga.totalChapters > 0 && manga.unreadCount == 0) || inHistory
+                    matchesFilterOrShelf = manga.isCompleted && hasRead
+                case .favorites:
+                    matchesFilterOrShelf = manga.isFavorite
                 }
-                return true
-            case .reading:
-                let hasStarted = (manga.totalChapters > manga.unreadCount && manga.totalChapters > 0)
-                    || (manga.readingPercentage > 0 && manga.readingPercentage < 100)
-                    || inHistory
-                let hasUnread = manga.unreadCount > 0 || manga.readingPercentage < 100
-                return hasStarted && hasUnread
-            case .caughtUp:
-                let hasStarted = (manga.totalChapters > 0 && manga.totalChapters > manga.unreadCount)
-                    || manga.readingPercentage > 0
-                    || inHistory
-                let noUnread = manga.unreadCount == 0 && manga.totalChapters > 0
-                let isCaughtUpBase = (hasStarted && noUnread) || (manga.readingPercentage >= 100 && manga.unreadCount == 0)
-                guard isCaughtUpBase else { return false }
-                switch caughtUpSubFilter {
-                case .all: return true
-                case .ongoing: return manga.isOngoing
-                case .completed: return manga.isCompleted
-                case .hiatus: return manga.isHiatus
-                }
-            case .completed:
-                let hasRead = manga.readingPercentage >= 100 || (manga.totalChapters > 0 && manga.unreadCount == 0) || inHistory
-                return manga.isCompleted && hasRead
-            case .favorites:
-                return manga.isFavorite
             }
+            
+            return matchesSearch && matchesLibrary && matchesStatus && matchesGenre && matchesFilterOrShelf
         }
     }
     

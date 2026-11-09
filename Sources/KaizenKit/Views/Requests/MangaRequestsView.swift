@@ -753,7 +753,7 @@ public struct MangaRequestsView: View {
         }
         .padding(isPad ? 8 : 6)
         .frame(maxHeight: .infinity, alignment: .top)
-        .kaizenCardGlass(in: RoundedRectangle(cornerRadius: isPad ? 18 : 14, style: .continuous))
+        .kaizenGlass(interactive: false, in: RoundedRectangle(cornerRadius: isPad ? 18 : 14, style: .continuous))
     }
     
     // MARK: - Hoja Inspector de Disponibilidad en Fuentes (al pulsar "📡 Check" en una tarjeta)
@@ -1294,7 +1294,7 @@ public struct MangaRequestsView: View {
         }
         .padding(isPad ? 8 : 6)
         .frame(maxHeight: .infinity, alignment: .top)
-        .kaizenCardGlass(in: RoundedRectangle(cornerRadius: isPad ? 18 : 14, style: .continuous))
+        .kaizenGlass(interactive: false, in: RoundedRectangle(cornerRadius: isPad ? 18 : 14, style: .continuous))
     }
     
     // MARK: - Portada Vertical 2:3 con Badges Superiores y Barra Neón Inferior
