@@ -527,7 +527,7 @@ public struct LibraryView: View {
                                     Task {
                                         if let detail = try? await apiClient.fetchMangaDetail(serverUrl: appState.session?.serverUrl ?? URL(string: "http://localhost")!, token: appState.session?.apiToken ?? "", mangaId: manga.id),
                                            let chapters = detail.chapters {
-                                            await OfflineStorageManager.shared.downloadManga(manga, chapters: chapters, apiClient: apiClient, session: appState.session)
+                                            OfflineStorageManager.shared.requestDownload(manga: manga, chapters: chapters, apiClient: apiClient, session: appState.session)
                                         }
                                     }
                                 } label: {
@@ -1332,9 +1332,7 @@ public struct MangaDetailView: View {
                 }
             } else {
                 Button {
-                    Task {
-                        await OfflineStorageManager.shared.downloadManga(currentManga, chapters: chapters, apiClient: apiClient, session: appState.session)
-                    }
+                    OfflineStorageManager.shared.requestDownload(manga: currentManga, chapters: chapters, apiClient: apiClient, session: appState.session)
                 } label: {
                     Label(
                         isEn ? "Download entire manga (\(chapters.count) ch.)" : "Descargar manga completo (\(chapters.count) caps.)",
@@ -1345,10 +1343,8 @@ public struct MangaDetailView: View {
                 let unreadList = chapters.filter { !$0.isRead }
                 if !unreadList.isEmpty {
                     Button {
-                        Task {
-                            let next25 = Array(unreadList.prefix(25))
-                            await OfflineStorageManager.shared.downloadManga(currentManga, chapters: next25, apiClient: apiClient, session: appState.session)
-                        }
+                        let next25 = Array(unreadList.prefix(25))
+                        OfflineStorageManager.shared.requestDownload(manga: currentManga, chapters: next25, apiClient: apiClient, session: appState.session)
                     } label: {
                         Label(
                             isEn ? "Download next 25 unread" : "Descargar siguientes 25 no leídos",
@@ -2108,14 +2104,12 @@ public struct MangaDetailView: View {
                 .help(isEn ? "Downloaded locally. Tap to remove." : "Descargado en local. Toca para borrar.")
             } else {
                 Button {
-                    Task {
-                        try? await OfflineStorageManager.shared.downloadChapter(
-                            manga: currentManga,
-                            chapter: chapter,
-                            apiClient: apiClient,
-                            session: appState.session
-                        )
-                    }
+                    OfflineStorageManager.shared.requestDownload(
+                        manga: currentManga,
+                        chapter: chapter,
+                        apiClient: apiClient,
+                        session: appState.session
+                    )
                 } label: {
                     Image(systemName: "arrow.down.circle")
                         .font(.subheadline)

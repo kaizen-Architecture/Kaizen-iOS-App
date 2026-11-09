@@ -151,17 +151,7 @@ public struct UserSettingsView: View {
                     )
                     .tint(.cyan)
                     
-                    Toggle(
-                        isEn ? "Download on Wi-Fi only" : "Solo descargar con Wi-Fi",
-                        isOn: Binding(
-                            get: { OfflineStorageManager.shared.settings.downloadWifiOnly },
-                            set: {
-                                OfflineStorageManager.shared.settings.downloadWifiOnly = $0
-                                OfflineStorageManager.shared.saveSettings()
-                            }
-                        )
-                    )
-                    .tint(.cyan)
+                    
                     
                     HStack {
                         Text(isEn ? "Storage Used" : "Espacio ocupado")

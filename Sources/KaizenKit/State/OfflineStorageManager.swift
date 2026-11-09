@@ -25,7 +25,35 @@ public final class OfflineStorageManager {
     private let networkMonitor = NWPathMonitor()
     private let monitorQueue = DispatchQueue(label: "io.kaizen.networkMonitor")
     public private(set) var isOnline: Bool = true
-    public private(set) var isWifi: Bool = true
+    /// `true` en datos móviles / punto de acceso personal (red "costosa").
+    public private(set) var isExpensive: Bool = false
+    
+    /// Progreso de una descarga por lotes en curso (nil si no hay ninguna).
+    public struct BatchProgress: Equatable {
+        public var mangaTitle: String
+        public var done: Int
+        public var total: Int
+        public var currentChapterProgress: Double
+        public var fraction: Double {
+            total == 0 ? 0 : (Double(done) + currentChapterProgress) / Double(total)
+        }
+    }
+    public private(set) var batch: BatchProgress?
+    /// Último error de descarga, mostrado al usuario (nunca se traga en silencio).
+    public var lastError: String?
+    
+    /// Petición pendiente de confirmar por el usuario (tamaño estimado + aviso de datos móviles).
+    public struct DownloadRequest: Identifiable {
+        public let id = UUID()
+        public let manga: Manga
+        public let chapters: [Chapter]
+        public let apiClient: KaizenAPIClient
+        public let session: UserSession?
+        /// Estimación: media de 9 MB por capítulo, o el tamaño real si el servidor lo informa.
+        public var estimatedBytes: Int64 { Int64(chapters.count) * 9_000_000 }
+    }
+    public var pendingRequest: DownloadRequest?
+    private var cancelRequested = false
     
     private init() {
         let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -56,7 +84,7 @@ public final class OfflineStorageManager {
             Task { @MainActor in
                 guard let self else { return }
                 self.isOnline = (path.status == .satisfied)
-                self.isWifi = path.usesInterfaceType(.wifi)
+                self.isExpensive = path.isExpensive
                 if self.isOnline {
                     Task { await self.flushPendingSyncsIfNeeded() }
                 }
@@ -113,9 +141,8 @@ public final class OfflineStorageManager {
         apiClient: KaizenAPIClient,
         session: UserSession?
     ) async throws {
-        guard let session else { return }
-        if settings.downloadWifiOnly && !isWifi {
-            throw NSError(domain: "KaizenOffline", code: 4001, userInfo: [NSLocalizedDescriptionKey: "Descarga pausada: Configurado solo para Wi-Fi"])
+        guard let session else {
+            throw NSError(domain: "KaizenOffline", code: 4000, userInfo: [NSLocalizedDescriptionKey: "No hay sesión activa con el servidor Kaizen."])
         }
         
         let downloadKey = "\(manga.id)_\(chapter.id)"
@@ -148,31 +175,44 @@ public final class OfflineStorageManager {
             chapterId: chapter.id,
             isPrefetch: true
         )
-        guard !pageUrls.isEmpty else { return }
+        guard !pageUrls.isEmpty else {
+            throw NSError(domain: "KaizenOffline", code: 4002, userInfo: [NSLocalizedDescriptionKey: "El capítulo \(chapter.displayName) no tiene páginas disponibles en el servidor."])
+        }
         
         // 4. Descargar páginas en secuencia y guardarlas en disco
         var totalBytes: Int64 = 0
         let total = Double(pageUrls.count)
         
-        for (idx, pageStr) in pageUrls.enumerated() {
-            guard let pageURL = URL(string: pageStr) else { continue }
-            let pageExt = pageURL.pathExtension.isEmpty ? "jpg" : pageURL.pathExtension
-            let pageName = String(format: "page_%03d.%@", idx + 1, pageExt)
-            let destination = chDir.appendingPathComponent(pageName)
-            
-            // Reutilizar o descargar imagen
-            var request = URLRequest(url: pageURL)
-            request.timeoutInterval = 25
-            if !session.apiToken.isEmpty {
-                request.setValue("Bearer \(session.apiToken)", forHTTPHeaderField: "Authorization")
+        do {
+            for (idx, pageStr) in pageUrls.enumerated() {
+                if cancelRequested { throw CancellationError() }
+                guard let pageURL = URL(string: pageStr) else { continue }
+                let pageExt = pageURL.pathExtension.isEmpty ? "jpg" : pageURL.pathExtension
+                let pageName = String(format: "page_%03d.%@", idx + 1, pageExt)
+                let destination = chDir.appendingPathComponent(pageName)
+                
+                var request = URLRequest(url: pageURL)
+                request.timeoutInterval = 25
+                if !session.apiToken.isEmpty {
+                    request.setValue("Bearer \(session.apiToken)", forHTTPHeaderField: "Authorization")
+                }
+                let (data, response) = try await URLSession.shared.data(for: request)
+                let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                guard status == 200 else {
+                    throw NSError(domain: "KaizenOffline", code: 4003, userInfo: [NSLocalizedDescriptionKey: "El servidor respondió \(status) al bajar la página \(idx + 1) de \(chapter.displayName)."])
+                }
+                
+                try data.write(to: destination, options: .atomic)
+                totalBytes += Int64(data.count)
+                
+                let fraction = Double(idx + 1) / total
+                activeDownloads[downloadKey] = fraction
+                batch?.currentChapterProgress = fraction
             }
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard (response as? HTTPURLResponse)?.statusCode == 200 else { continue }
-            
-            try data.write(to: destination, options: .atomic)
-            totalBytes += Int64(data.count)
-            
-            activeDownloads[downloadKey] = Double(idx + 1) / total
+        } catch {
+            // Capítulo incompleto: no dejar páginas a medias en disco
+            try? fileManager.removeItem(at: chDir)
+            throw error
         }
         
         // 5. Registrar en metadatos
@@ -213,6 +253,43 @@ public final class OfflineStorageManager {
         saveMetadata()
     }
     
+    /// Punto de entrada único desde la UI. Un capítulo suelto en red no costosa se baja directo;
+    /// en el resto de casos se pide confirmación (tamaño estimado y aviso de datos móviles).
+    public func requestDownload(manga: Manga, chapters: [Chapter], apiClient: KaizenAPIClient, session: UserSession?) {
+        let pending = chapters.filter { !isChapterDownloaded(mangaId: manga.id, chapterId: $0.id) }
+        guard !pending.isEmpty else { return }
+        guard batch == nil else {
+            lastError = "Ya hay una descarga en curso. Espera a que termine o cancélala."
+            return
+        }
+        let request = DownloadRequest(manga: manga, chapters: pending, apiClient: apiClient, session: session)
+        if pending.count == 1 && !isExpensive {
+            start(request)
+        } else {
+            pendingRequest = request
+        }
+    }
+    
+    public func confirmPendingRequest() {
+        guard let request = pendingRequest else { return }
+        pendingRequest = nil
+        start(request)
+    }
+    
+    public func requestDownload(manga: Manga, chapter: Chapter, apiClient: KaizenAPIClient, session: UserSession?) {
+        requestDownload(manga: manga, chapters: [chapter], apiClient: apiClient, session: session)
+    }
+    
+    public func cancelBatch() {
+        cancelRequested = true
+    }
+    
+    private func start(_ request: DownloadRequest) {
+        Task {
+            await downloadManga(request.manga, chapters: request.chapters, apiClient: request.apiClient, session: request.session)
+        }
+    }
+    
     public func downloadManga(
         _ manga: Manga,
         chapters: [Chapter],
@@ -221,15 +298,29 @@ public final class OfflineStorageManager {
         progressHandler: ((Int, Int) -> Void)? = nil
     ) async {
         let pending = chapters.filter { !isChapterDownloaded(mangaId: manga.id, chapterId: $0.id) }
+        guard !pending.isEmpty else { return }
+        cancelRequested = false
+        lastError = nil
+        batch = BatchProgress(mangaTitle: manga.title, done: 0, total: pending.count, currentChapterProgress: 0)
+        defer { batch = nil; cancelRequested = false }
+        
         for (idx, ch) in pending.enumerated() {
+            if cancelRequested { break }
+            batch?.currentChapterProgress = 0
             do {
                 try await downloadChapter(manga: manga, chapter: ch, apiClient: apiClient, session: session)
+                batch?.done = idx + 1
                 progressHandler?(idx + 1, pending.count)
+            } catch is CancellationError {
+                break
             } catch {
-                // Continuar con los siguientes si uno falla
+                // Un fallo (servidor caído, token, página rota) detiene el lote y se informa.
+                lastError = error.localizedDescription
+                break
             }
         }
     }
+
     
     // MARK: - Eliminación de Capítulos / Mangas Locales
     

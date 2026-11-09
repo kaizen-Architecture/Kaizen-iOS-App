@@ -287,3 +287,39 @@ private struct IdentifiableChapterWrapper: Identifiable {
     let manga: Manga
     let chapter: Chapter
 }
+
+/// Banner flotante con el progreso de la descarga por lotes en curso y botón para cancelar.
+public struct OfflineBatchBanner: View {
+    let isEn: Bool
+    
+    public var body: some View {
+        if let batch = OfflineStorageManager.shared.batch {
+            HStack(spacing: 12) {
+                ProgressView(value: batch.fraction)
+                    .progressViewStyle(.circular)
+                    .tint(.cyan)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(isEn ? "Downloading \(batch.mangaTitle)" : "Descargando \(batch.mangaTitle)")
+                        .font(.caption.weight(.semibold))
+                        .lineLimit(1)
+                    Text("\(min(batch.done + 1, batch.total))/\(batch.total) · \(Int(batch.fraction * 100))%")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                Button(isEn ? "Cancel" : "Cancelar") {
+                    OfflineStorageManager.shared.cancelBatch()
+                }
+                .font(.caption.weight(.bold))
+                .buttonStyle(.bordered)
+                .tint(.red)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.15), lineWidth: 1))
+            .frame(maxWidth: 520)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+    }
+}
