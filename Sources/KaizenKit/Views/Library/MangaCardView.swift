@@ -89,6 +89,21 @@ public struct MangaCardView: View {
                         .padding(isPad ? 6 : 5)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 }
+                
+                // Badge sutil de lectura sin conexión (Offline)
+                if OfflineStorageManager.shared.offlineMangas.contains(where: { $0.id == manga.id }) {
+                    HStack(spacing: 3) {
+                        Image(systemName: "arrow.down.circle.fill")
+                            .font(.system(size: isPad ? 11 : 9, weight: .bold))
+                    }
+                    .foregroundStyle(.black)
+                    .padding(isPad ? 4 : 3)
+                    .background(Color(red: 0.35, green: 0.98, blue: 0.70), in: Circle())
+                    .overlay(Circle().stroke(Color.white.opacity(0.85), lineWidth: 0.8))
+                    .shadow(color: Color.green.opacity(0.45), radius: 4)
+                    .padding(isPad ? 6 : 5)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                }
             }
             
             // Título con tipografía limpia sobre el marco de cristal

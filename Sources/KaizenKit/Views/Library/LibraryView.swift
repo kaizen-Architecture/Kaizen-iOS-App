@@ -514,6 +514,27 @@ public struct LibraryView: View {
                                 )
                             }
                             
+                            // Acciones de Descarga Local Sin Conexión
+                            let isOffline = OfflineStorageManager.shared.offlineMangas.contains(where: { $0.id == manga.id })
+                            if isOffline {
+                                Button(role: .destructive) {
+                                    OfflineStorageManager.shared.deleteManga(mangaId: manga.id)
+                                } label: {
+                                    Label(isEn ? "Delete Offline Downloads" : "Eliminar descargas locales", systemImage: "trash")
+                                }
+                            } else {
+                                Button {
+                                    Task {
+                                        if let detail = try? await apiClient.fetchMangaDetail(serverUrl: appState.session?.serverUrl ?? URL(string: "http://localhost")!, token: appState.session?.apiToken ?? "", mangaId: manga.id),
+                                           let chapters = detail.chapters {
+                                            await OfflineStorageManager.shared.downloadManga(manga, chapters: chapters, apiClient: apiClient, session: appState.session)
+                                        }
+                                    }
+                                } label: {
+                                    Label(isEn ? "Download for Offline Reading" : "Descargar para leer sin conexión", systemImage: "arrow.down.circle")
+                                }
+                            }
+                            
                             if !appState.shelves.isEmpty {
                                 Menu(isEn ? "Shelves" : "Estanterías") {
                                     ForEach(appState.shelves) { shelf in
@@ -1297,6 +1318,87 @@ public struct MangaDetailView: View {
             }
             .buttonStyle(.plain)
         }
+        
+        // Botón Maestro de Descarga Offline en Ficha
+        let isFullyOffline = OfflineStorageManager.shared.isMangaFullyDownloaded(mangaId: currentManga.id, totalAvailableChapters: chapters.count)
+        let offlineChaptersCount = OfflineStorageManager.shared.offlineMangas.first(where: { $0.id == currentManga.id })?.chapters.count ?? 0
+        
+        Menu {
+            if isFullyOffline {
+                Button(role: .destructive) {
+                    OfflineStorageManager.shared.deleteManga(mangaId: currentManga.id)
+                } label: {
+                    Label(isEn ? "Delete Offline Files (Local Only)" : "Eliminar descargas locales (Solo de este dispositivo)", systemImage: "trash")
+                }
+            } else {
+                Button {
+                    Task {
+                        await OfflineStorageManager.shared.downloadManga(currentManga, chapters: chapters, apiClient: apiClient, session: appState.session)
+                    }
+                } label: {
+                    Label(
+                        isEn ? "Download entire manga (\(chapters.count) ch.)" : "Descargar manga completo (\(chapters.count) caps.)",
+                        systemImage: "arrow.down.circle.fill"
+                    )
+                }
+                
+                let unreadList = chapters.filter { !$0.isRead }
+                if !unreadList.isEmpty {
+                    Button {
+                        Task {
+                            let next25 = Array(unreadList.prefix(25))
+                            await OfflineStorageManager.shared.downloadManga(currentManga, chapters: next25, apiClient: apiClient, session: appState.session)
+                        }
+                    } label: {
+                        Label(
+                            isEn ? "Download next 25 unread" : "Descargar siguientes 25 no leídos",
+                            systemImage: "arrow.down.circle"
+                        )
+                    }
+                }
+            }
+            
+            if offlineChaptersCount > 0 && !isFullyOffline {
+                Divider()
+                Button(role: .destructive) {
+                    OfflineStorageManager.shared.deleteManga(mangaId: currentManga.id)
+                } label: {
+                    Label(isEn ? "Delete downloaded chapters" : "Borrar capítulos descargados", systemImage: "trash")
+                }
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: isFullyOffline ? "checkmark.circle.fill" : "arrow.down.circle")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(isFullyOffline ? Color(red: 0.35, green: 0.98, blue: 0.70) : .cyan)
+                
+                Text(
+                    isFullyOffline
+                        ? (isEn ? "Downloaded for Offline" : "Disponible sin conexión")
+                        : (offlineChaptersCount > 0
+                            ? (isEn ? "Offline (\(offlineChaptersCount)/\(chapters.count)) ▾" : "En local (\(offlineChaptersCount)/\(chapters.count)) ▾")
+                            : (isEn ? "Download Offline ▾" : "Descargar sin conexión ▾"))
+                )
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.white)
+                
+                Spacer()
+                
+                if let meta = OfflineStorageManager.shared.offlineMangas.first(where: { $0.id == currentManga.id }) {
+                    Text(meta.formattedSize)
+                        .font(.caption2.weight(.bold))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.white.opacity(0.1), in: Capsule())
+                        .foregroundStyle(.cyan)
+                }
+            }
+            .padding(.horizontal, 14)
+            .frame(height: 42)
+            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(isFullyOffline ? Color.green.opacity(0.35) : Color.white.opacity(0.12), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
     }
     
     private var quickActionsRow: some View {
@@ -1980,7 +2082,51 @@ public struct MangaDetailView: View {
     }
     
     private func chapterTrailingActions(_ chapter: Chapter) -> some View {
-        HStack(spacing: 6) {
+        let isDownloaded = OfflineStorageManager.shared.isChapterDownloaded(mangaId: currentManga.id, chapterId: chapter.id)
+        let downloadKey = "\(currentManga.id)_\(chapter.id)"
+        let downloadProgress = OfflineStorageManager.shared.activeDownloads[downloadKey]
+        
+        return HStack(spacing: 6) {
+            // Botón de Descarga Offline Local
+            if let progress = downloadProgress {
+                ProgressView(value: progress)
+                    .progressViewStyle(.circular)
+                    .scaleEffect(0.65)
+                    .tint(.cyan)
+                    .frame(width: 34, height: 34)
+            } else if isDownloaded {
+                Button {
+                    OfflineStorageManager.shared.deleteChapter(mangaId: currentManga.id, chapterId: chapter.id)
+                } label: {
+                    Image(systemName: "arrow.down.circle.fill")
+                        .font(.subheadline)
+                        .foregroundStyle(Color(red: 0.35, green: 0.98, blue: 0.70))
+                        .frame(width: 34, height: 34)
+                        .background(Color.green.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+                }
+                .buttonStyle(.plain)
+                .help(isEn ? "Downloaded locally. Tap to remove." : "Descargado en local. Toca para borrar.")
+            } else {
+                Button {
+                    Task {
+                        try? await OfflineStorageManager.shared.downloadChapter(
+                            manga: currentManga,
+                            chapter: chapter,
+                            apiClient: apiClient,
+                            session: appState.session
+                        )
+                    }
+                } label: {
+                    Image(systemName: "arrow.down.circle")
+                        .font(.subheadline)
+                        .foregroundStyle(.white.opacity(0.7))
+                        .frame(width: 34, height: 34)
+                        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
+                }
+                .buttonStyle(.plain)
+                .help(isEn ? "Download for offline reading" : "Descargar para leer sin conexión")
+            }
+            
             Button {
                 toggleChapterRead(chapter)
             } label: {

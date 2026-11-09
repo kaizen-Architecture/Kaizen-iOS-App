@@ -128,8 +128,8 @@ struct MainTabsView: View {
     
     private var availableTabs: [String] {
         appState.isManagement
-            ? ["reading", "library", "explore", "server"]
-            : ["reading", "library", "explore"]
+            ? ["reading", "library", "explore", "offline", "server"]
+            : ["reading", "library", "explore", "offline"]
     }
     
     var body: some View {
@@ -154,6 +154,12 @@ struct MainTabsView: View {
                     Label(isEn ? "Explore" : "Explorar", systemImage: "safari.fill")
                 }
                 .tag("explore")
+            
+            OfflineDownloadsView(apiClient: apiClient)
+                .tabItem {
+                    Label(isEn ? "Offline" : "Descargas", systemImage: "arrow.down.circle.fill")
+                }
+                .tag("offline")
             
             if appState.isManagement {
                 ServerHubView(apiClient: apiClient)

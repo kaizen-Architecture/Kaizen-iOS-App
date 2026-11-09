@@ -74,10 +74,24 @@ public final class ReaderStore {
     public var isReportingCorrupt: Bool = false
     
     public func loadPages(apiClient: KaizenAPIClient, session: UserSession?) async {
-        guard let session else { return }
-        
         isBufferingChapter = true
         errorMessage = nil
+        
+        // 0. COMPROBAR MODO OFFLINE / DISCO LOCAL (prioridad absoluta, 0ms de red)
+        if let localPages = OfflineStorageManager.shared.localChapterPages(mangaId: mangaId, chapterId: currentChapterId) {
+            self.pages = localPages.map(\.absoluteString)
+            self.isLoading = false
+            self.errorMessage = nil
+            if currentPage > pages.count && !pages.isEmpty {
+                currentPage = 1
+            }
+            withAnimation(.easeOut(duration: 0.2)) {
+                self.isBufferingChapter = false
+            }
+            return
+        }
+        
+        guard let session else { return }
         
         // Si el lector se abrió desde "Continuar leyendo", Historial o Novedades sin la lista completa de capítulos,
         // cargarla automáticamente para que el avance continuo al siguiente capítulo siempre esté activo.
@@ -226,8 +240,21 @@ public final class ReaderStore {
     }
     
     public func saveProgress(apiClient: KaizenAPIClient, session: UserSession?) async {
-        guard let session, !pages.isEmpty else { return }
+        guard !pages.isEmpty else { return }
         let isFullyRead = currentPage >= pages.count
+        
+        // Registrar en el gestor offline (sincroniza en vivo si hay red o encola diferido si no hay conexión)
+        OfflineStorageManager.shared.recordOfflineReading(
+            mangaId: mangaId,
+            chapterId: currentChapterId,
+            page: currentPage,
+            totalPages: pages.count,
+            isRead: isFullyRead,
+            apiClient: apiClient,
+            session: session
+        )
+        
+        guard let session else { return }
         try? await apiClient.updateReadingProgress(
             serverUrl: session.serverUrl,
             token: session.apiToken,
@@ -566,9 +593,24 @@ public struct ReaderView: View {
                     .foregroundStyle(.white)
                     .lineLimit(1)
                 
-                Text((isEn ? "Chapter " : "Capítulo ") + "\(store.currentChapterIndex)")
-                    .font(.caption2.weight(.medium))
-                    .foregroundStyle(.cyan)
+                HStack(spacing: 4) {
+                    Text((isEn ? "Chapter " : "Capítulo ") + "\(store.currentChapterIndex)")
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(.cyan)
+                    
+                    if OfflineStorageManager.shared.isChapterDownloaded(mangaId: store.mangaId, chapterId: store.currentChapterId) {
+                        HStack(spacing: 2) {
+                            Image(systemName: "bolt.fill")
+                                .font(.system(size: 8))
+                            Text(isEn ? "Offline" : "Local")
+                                .font(.system(size: 9, weight: .bold))
+                        }
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(Color(red: 0.35, green: 0.98, blue: 0.70).opacity(0.2), in: Capsule())
+                        .foregroundStyle(Color(red: 0.35, green: 0.98, blue: 0.70))
+                    }
+                }
             }
             .frame(maxWidth: .infinity)
             

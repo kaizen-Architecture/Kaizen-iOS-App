@@ -125,6 +125,61 @@ public struct UserSettingsView: View {
                 }
                 
                 // Sección: Estanterías Lógicas del Lector
+                Section {
+                    Picker(isEn ? "Retention Period" : "Conservar capítulos", selection: Binding(
+                        get: { OfflineStorageManager.shared.settings.retentionDays },
+                        set: {
+                            OfflineStorageManager.shared.settings.retentionDays = $0
+                            OfflineStorageManager.shared.saveSettings()
+                        }
+                    )) {
+                        Text(isEn ? "Forever" : "Para siempre").tag(0)
+                        Text(isEn ? "7 Days" : "7 Días").tag(7)
+                        Text(isEn ? "30 Days" : "30 Días").tag(30)
+                        Text(isEn ? "90 Days" : "90 Días").tag(90)
+                    }
+                    
+                    Toggle(
+                        isEn ? "Auto-delete after reading" : "Borrar al terminar de leer",
+                        isOn: Binding(
+                            get: { OfflineStorageManager.shared.settings.autoDeleteWhenRead },
+                            set: {
+                                OfflineStorageManager.shared.settings.autoDeleteWhenRead = $0
+                                OfflineStorageManager.shared.saveSettings()
+                            }
+                        )
+                    )
+                    .tint(.cyan)
+                    
+                    Toggle(
+                        isEn ? "Download on Wi-Fi only" : "Solo descargar con Wi-Fi",
+                        isOn: Binding(
+                            get: { OfflineStorageManager.shared.settings.downloadWifiOnly },
+                            set: {
+                                OfflineStorageManager.shared.settings.downloadWifiOnly = $0
+                                OfflineStorageManager.shared.saveSettings()
+                            }
+                        )
+                    )
+                    .tint(.cyan)
+                    
+                    HStack {
+                        Text(isEn ? "Storage Used" : "Espacio ocupado")
+                        Spacer()
+                        Text(OfflineStorageManager.shared.formattedTotalStorage)
+                            .foregroundStyle(.secondary)
+                    }
+                } header: {
+                    Text(isEn ? "Offline Downloads & Storage" : "Descargas y Almacenamiento Local")
+                } footer: {
+                    Text(
+                        isEn
+                            ? "Local files are stored securely on this device and excluded from iCloud backup. Deleted downloads always remain safe on your Kaizen server."
+                            : "Los archivos se guardan en este dispositivo y se excluyen de la copia de iCloud. Al borrarlos del dispositivo siguen a salvo en tu servidor Kaizen."
+                    )
+                }
+                
+                // Sección: Estanterías Lógicas del Lector
                 Section(isEn ? "Your Reading Shelves" : "Tus Estanterías de Lectura") {
                     ForEach(appState.shelves) { shelf in
                         HStack {
