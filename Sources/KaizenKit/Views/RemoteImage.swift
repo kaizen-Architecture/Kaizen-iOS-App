@@ -60,8 +60,7 @@ actor ImageLoader {
                 }
             }
         }
-        guard let rawImage = UIImage(data: data) else { return nil }
-        return rawImage.byPreparingForDisplay() ?? rawImage
+        return UIImage(data: data)
     }
     
     nonisolated private static func imageCost(_ image: UIImage) -> Int {
