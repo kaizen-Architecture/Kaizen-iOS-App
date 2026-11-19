@@ -6,6 +6,10 @@ on:
     tags: [ "v*" ]
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-and-package:
     name: Build, Test & Package Kaizen iOS IPA
@@ -107,6 +111,19 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Clean old versioned IPAs from staging-latest release
+        if: github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ASSETS=$(gh release view staging-latest --json assets --jq '.assets[].name' 2>/dev/null || true)
+          for asset in $ASSETS; do
+            if [[ "$asset" == Kaizen_Staging_v*.ipa ]]; then
+              echo "Deleting old staging asset: $asset"
+              gh release delete-asset staging-latest "$asset" --yes || true
+            fi
+          done
+
       - name: Publish Staging / Prerelease (feat/** & fix/** branches)
         if: github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
@@ -117,7 +134,6 @@ jobs:
           prerelease: true
           generate_release_notes: true
           files: |
-            Kaizen_Staging_v*.ipa
             Kaizen_Staging.ipa
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

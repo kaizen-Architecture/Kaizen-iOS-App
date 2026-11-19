@@ -396,7 +396,9 @@ public struct ReaderView: View {
     private func webtoonScrollBase(proxy: ScrollViewProxy) -> some View {
         let scrollContent = ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(spacing: 0) {
-                if #unavailable(iOS 18.0) {
+                if #available(iOS 18.0, macOS 15.0, *) {
+                    EmptyView()
+                } else {
                     GeometryReader { g in
                         let minY = g.frame(in: .named("webtoonReaderScroll")).minY
                         Color.clear.preference(key: ReaderTopOffsetKey.self, value: minY)
