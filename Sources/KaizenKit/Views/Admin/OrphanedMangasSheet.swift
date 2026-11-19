@@ -168,7 +168,7 @@ public struct OrphanedMangasSheet: View {
                         } label: {
                             HStack(spacing: 12) {
                                 Image(systemName: selectedIds.contains(manga.id) ? "checkmark.circle.fill" : "circle")
-                                    .foregroundStyle(selectedIds.contains(manga.id) ? .cyan : .secondary)
+                                    .foregroundStyle(selectedIds.contains(manga.id) ? Color.cyan : Color.secondary)
                                     .font(.title3)
 
                                 VStack(alignment: .leading, spacing: 3) {
@@ -226,7 +226,7 @@ public struct OrphanedMangasSheet: View {
                         }
                     }
                     .disabled(selectedIds.isEmpty || targetSource.isEmpty || isRunning)
-                    .foregroundStyle((selectedIds.isEmpty || targetSource.isEmpty) ? .secondary : .cyan)
+                    .foregroundStyle((selectedIds.isEmpty || targetSource.isEmpty) ? Color.secondary : Color.cyan)
                     .listRowBackground(Color.cyan.opacity(0.14))
 
                     Button {
@@ -243,7 +243,7 @@ public struct OrphanedMangasSheet: View {
                         }
                     }
                     .disabled(selectedIds.isEmpty || isRunning)
-                    .foregroundStyle(selectedIds.isEmpty ? .secondary : .teal)
+                    .foregroundStyle(selectedIds.isEmpty ? Color.secondary : Color.teal)
                     .listRowBackground(Color.teal.opacity(0.12))
                 } footer: {
                     Text(isEn
