@@ -394,7 +394,23 @@ public struct ReaderView: View {
 
     @ViewBuilder
     private func webtoonScrollBase(proxy: ScrollViewProxy) -> some View {
-        let scrollContent = ScrollView(.vertical, showsIndicators: false) {
+        if #available(iOS 18.0, macOS 15.0, *) {
+            webtoonScrollContent(proxy: proxy)
+                .onScrollGeometryChange(for: CGFloat.self) { geo in
+                    -(geo.contentOffset.y + geo.contentInsets.top)
+                } action: { _, overscroll in
+                    handleTopOverscroll(overscroll)
+                }
+        } else {
+            webtoonScrollContent(proxy: proxy)
+                .onPreferenceChange(ReaderTopOffsetKey.self) { minY in
+                    handleTopOverscroll(minY)
+                }
+        }
+    }
+
+    private func webtoonScrollContent(proxy: ScrollViewProxy) -> some View {
+        ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(spacing: 0) {
                 if #available(iOS 18.0, macOS 15.0, *) {
                     EmptyView()
@@ -494,20 +510,6 @@ public struct ReaderView: View {
                     }
                 }
             }
-        }
-
-        if #available(iOS 18.0, macOS 15.0, *) {
-            scrollContent
-                .onScrollGeometryChange(for: CGFloat.self) { geo in
-                    -(geo.contentOffset.y + geo.contentInsets.top)
-                } action: { _, overscroll in
-                    handleTopOverscroll(overscroll)
-                }
-        } else {
-            scrollContent
-                .onPreferenceChange(ReaderTopOffsetKey.self) { minY in
-                    handleTopOverscroll(minY)
-                }
         }
     }
 

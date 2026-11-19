@@ -321,8 +321,8 @@ public final class AppState {
         do {
             async let fetchedMangas = client.fetchLibrary(serverUrl: session.serverUrl, token: session.apiToken)
             async let fetchedLibraries = client.fetchLibraries(serverUrl: session.serverUrl, token: session.apiToken)
-            async let fetchedOrphans = try? client.fetchMangaOrphanStatuses(serverUrl: session.serverUrl, token: session.apiToken)
-            let (rawMangas, libs, orphanMap) = try await (fetchedMangas, fetchedLibraries, fetchedOrphans)
+            let (rawMangas, libs) = try await (fetchedMangas, fetchedLibraries)
+            let orphanMap = try? await client.fetchMangaOrphanStatuses(serverUrl: session.serverUrl, token: session.apiToken)
             let mergedMangas: [Manga]
             if let orphanMap, !orphanMap.isEmpty {
                 mergedMangas = rawMangas.map { manga in
