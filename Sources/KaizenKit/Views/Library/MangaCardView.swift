@@ -104,6 +104,19 @@ public struct MangaCardView: View {
                     .padding(isPad ? 6 : 5)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                 }
+
+                // Indicador de manga huérfano (sin fuente activa)
+                if manga.isOrphaned {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: isPad ? 11 : 9, weight: .bold))
+                        .foregroundStyle(.black)
+                        .padding(isPad ? 5 : 4)
+                        .background(Color.orange, in: Circle())
+                        .overlay(Circle().stroke(Color.white.opacity(0.85), lineWidth: 0.8))
+                        .shadow(color: Color.orange.opacity(0.6), radius: 4)
+                        .padding(isPad ? 6 : 5)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                }
             }
             
             // Título con tipografía limpia sobre el marco de cristal

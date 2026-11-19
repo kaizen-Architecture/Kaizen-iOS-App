@@ -13,6 +13,7 @@ public final class AppState {
     // Caché en memoria para evitar recargas al cambiar de pestaña
     public var mangas: [Manga] = []
     public var libraries: [KaizenLibrary] = []
+    public var orphanedMangas: [Manga] { mangas.filter(\.isOrphaned) }
     public var serverSettings: KaizenServerSettings?
     public var isLoadingLibrary: Bool = false
     public var libraryErrorMessage: String?
@@ -320,15 +321,31 @@ public final class AppState {
         do {
             async let fetchedMangas = client.fetchLibrary(serverUrl: session.serverUrl, token: session.apiToken)
             async let fetchedLibraries = client.fetchLibraries(serverUrl: session.serverUrl, token: session.apiToken)
-            let (m, libs) = try await (fetchedMangas, fetchedLibraries)
-            self.mangas = m
+            async let fetchedOrphans = try? client.fetchMangaOrphanStatuses(serverUrl: session.serverUrl, token: session.apiToken)
+            let (rawMangas, libs, orphanMap) = try await (fetchedMangas, fetchedLibraries, fetchedOrphans)
+            let mergedMangas: [Manga]
+            if let orphanMap, !orphanMap.isEmpty {
+                mergedMangas = rawMangas.map { manga in
+                    var copy = manga
+                    if let status = orphanMap[manga.id] {
+                        copy.isOrphaned = status.isOrphaned
+                        copy.isSourceMissing = status.isSourceMissing
+                        copy.isSourceFailed = status.isSourceFailed
+                        copy.isAcceptedStandalone = status.isAcceptedStandalone
+                    }
+                    return copy
+                }
+            } else {
+                mergedMangas = rawMangas
+            }
+            self.mangas = mergedMangas
             self.libraries = libs
             self.lastLibrarySyncTime = Date()
             await syncRemoteReadingHistory(client: client)
             if isActualAdmin {
                 await refreshDownloadQueue(client: client)
             }
-            KaizenLogger.shared.info("Library", "Sincronizada biblioteca: \(m.count) mangas y \(libs.count) carpetas en el servidor")
+            KaizenLogger.shared.info("Library", "Sincronizada biblioteca: \(mergedMangas.count) mangas y \(libs.count) carpetas en el servidor")
         } catch let error as KaizenError {
             libraryErrorMessage = error.userMessage(language: currentLanguage)
             KaizenLogger.shared.error("Library", "Error sincronizando biblioteca: \(error.localizedDescription)")
@@ -413,10 +430,11 @@ public final class AppState {
             if let existingIdx = history.firstIndex(where: { $0.mangaId == item.manga.id }) {
                 let existing = history[existingIdx]
                 let isNewerOnServer = item.activityDate > existing.updatedAt.addingTimeInterval(2)
+                let isSameOrNewerOnServer = item.activityDate >= existing.updatedAt.addingTimeInterval(-2)
                 let isFurtherChapter = item.targetChapter.index > existing.chapterIndex
                 let isFurtherPageInSameChapter = (item.targetChapter.id == existing.chapterId && remotePageIdx > existing.pageIndex)
                 
-                if isNewerOnServer || isFurtherChapter || isFurtherPageInSameChapter {
+                if isNewerOnServer || (isSameOrNewerOnServer && (isFurtherChapter || isFurtherPageInSameChapter)) {
                     let keepTotalPages = (item.targetChapter.id == existing.chapterId) ? existing.totalPages : 1
                     history[existingIdx] = ReadingHistoryEntry(
                         id: existing.id,

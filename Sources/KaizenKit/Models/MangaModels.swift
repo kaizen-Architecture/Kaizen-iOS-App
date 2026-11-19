@@ -20,6 +20,10 @@ public struct Manga: Identifiable, Decodable, Sendable, Equatable, Hashable {
     public var isFavorite: Bool
     public var chapters: [Chapter]?
     public var lastReadChapter: Chapter? = nil
+    public var isOrphaned: Bool = false
+    public var isSourceMissing: Bool = false
+    public var isSourceFailed: Bool = false
+    public var isAcceptedStandalone: Bool = false
     
     public func hash(into hasher: inout Hasher) {
         hasher.combine(id)
@@ -34,7 +38,11 @@ public struct Manga: Identifiable, Decodable, Sendable, Equatable, Hashable {
         lhs.totalChapters == rhs.totalChapters &&
         lhs.chapters == rhs.chapters &&
         lhs.isLocked == rhs.isLocked &&
-        lhs.source == rhs.source
+        lhs.source == rhs.source &&
+        lhs.isOrphaned == rhs.isOrphaned &&
+        lhs.isSourceMissing == rhs.isSourceMissing &&
+        lhs.isSourceFailed == rhs.isSourceFailed &&
+        lhs.isAcceptedStandalone == rhs.isAcceptedStandalone
     }
     
     public init(
@@ -744,5 +752,71 @@ public struct KaizenPlannedManga: Identifiable, Codable, Sendable, Equatable {
     public var progressRatio: Double {
         guard minChaptersForDownload > 0 else { return 1.0 }
         return min(1.0, max(0.0, Double(remoteChaptersCount) / Double(minChaptersForDownload)))
+    }
+}
+
+/// Estado de orfandad de un manga respecto a su scraper/fuente en el servidor (`trpc/manga.query`)
+public struct MangaOrphanStatus: Sendable, Equatable {
+    public let isOrphaned: Bool
+    public let isSourceMissing: Bool
+    public let isSourceFailed: Bool
+    public let isAcceptedStandalone: Bool
+
+    public init(
+        isOrphaned: Bool,
+        isSourceMissing: Bool,
+        isSourceFailed: Bool,
+        isAcceptedStandalone: Bool
+    ) {
+        self.isOrphaned = isOrphaned
+        self.isSourceMissing = isSourceMissing
+        self.isSourceFailed = isSourceFailed
+        self.isAcceptedStandalone = isAcceptedStandalone
+    }
+}
+
+/// Resultado individual de migración en lote de fuente (`trpc/manga.batchMigrateSource`)
+public struct BatchMigrationItemResult: Identifiable, Sendable, Equatable {
+    public let id: Int
+    public let title: String
+    public let success: Bool
+    public let matchedTitle: String?
+    public let chaptersCount: Int?
+    public let reason: String?
+
+    public init(
+        id: Int,
+        title: String,
+        success: Bool,
+        matchedTitle: String? = nil,
+        chaptersCount: Int? = nil,
+        reason: String? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.success = success
+        self.matchedTitle = matchedTitle
+        self.chaptersCount = chaptersCount
+        self.reason = reason
+    }
+}
+
+/// Resultado global de migración en lote (`trpc/manga.batchMigrateSource`)
+public struct BatchMigrationResult: Sendable, Equatable {
+    public let total: Int
+    public let successCount: Int
+    public let failedCount: Int
+    public let results: [BatchMigrationItemResult]
+
+    public init(
+        total: Int,
+        successCount: Int,
+        failedCount: Int,
+        results: [BatchMigrationItemResult]
+    ) {
+        self.total = total
+        self.successCount = successCount
+        self.failedCount = failedCount
+        self.results = results
     }
 }

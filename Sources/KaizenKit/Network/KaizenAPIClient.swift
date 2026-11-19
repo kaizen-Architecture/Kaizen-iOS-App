@@ -924,6 +924,107 @@ public actor KaizenAPIClient {
         guard (200...299).contains(http.statusCode) else { throw KaizenError.server(status: http.statusCode) }
     }
 
+    // MARK: - Mangas Huérfanos y Migración de Fuentes (tRPC)
+
+    /// Consulta el estado de orfandad de todos los mangas desde `trpc/manga.query`.
+    public func fetchMangaOrphanStatuses(serverUrl: URL, token: String) async throws -> [Int: MangaOrphanStatus] {
+        let req = request(try trpcQueryURL(serverUrl, procedure: "manga.query", input: [:]), token: token)
+        let (data, http) = try await send(req)
+        guard (200...299).contains(http.statusCode),
+              let list = trpcRawData(data) as? [[String: Any]] else {
+            return [:]
+        }
+        var map: [Int: MangaOrphanStatus] = [:]
+        for dict in list {
+            guard let id = dict["id"] as? Int else { continue }
+            let isOrphaned = (dict["isOrphaned"] as? Bool) ?? false
+            let isSourceMissing = (dict["isSourceMissing"] as? Bool) ?? false
+            let isSourceFailed = (dict["isSourceFailed"] as? Bool) ?? false
+            let isAcceptedStandalone = (dict["isAcceptedStandalone"] as? Bool) ?? false
+            map[id] = MangaOrphanStatus(
+                isOrphaned: isOrphaned,
+                isSourceMissing: isSourceMissing,
+                isSourceFailed: isSourceFailed,
+                isAcceptedStandalone: isAcceptedStandalone
+            )
+        }
+        return map
+    }
+
+    /// Migra en lote una lista de mangas a una nueva fuente activa (`trpc/manga.batchMigrateSource`).
+    public func batchMigrateSource(
+        serverUrl: URL,
+        token: String,
+        mangaIds: [Int],
+        targetSource: String,
+        removeOldSources: Bool = true
+    ) async throws -> BatchMigrationResult {
+        let payload: [String: Any] = [
+            "mangaIds": mangaIds,
+            "targetSource": targetSource,
+            "removeOldSources": removeOldSources
+        ]
+        let req = try request(
+            try endpoint(serverUrl, path: "/api/trpc/manga.batchMigrateSource"),
+            method: "POST",
+            token: token,
+            json: ["json": payload]
+        )
+        let (data, http) = try await send(req)
+        guard (200...299).contains(http.statusCode) else {
+            throw KaizenError.server(status: http.statusCode)
+        }
+        guard let root = trpcPayload(data) else {
+            throw KaizenError.unexpectedResponse
+        }
+        let total = (root["total"] as? Int) ?? mangaIds.count
+        let successCount = (root["successCount"] as? Int) ?? 0
+        let failedCount = (root["failedCount"] as? Int) ?? max(total - successCount, 0)
+        let rawResults = (root["results"] as? [[String: Any]]) ?? []
+        let items: [BatchMigrationItemResult] = rawResults.compactMap { item in
+            guard let id = item["id"] as? Int else { return nil }
+            return BatchMigrationItemResult(
+                id: id,
+                title: (item["title"] as? String) ?? "#\(id)",
+                success: (item["success"] as? Bool) ?? false,
+                matchedTitle: item["matchedTitle"] as? String,
+                chaptersCount: item["chaptersCount"] as? Int,
+                reason: item["reason"] as? String
+            )
+        }
+        await KaizenLogger.shared.info("Admin", "Migración en lote a '\(targetSource)': \(successCount)/\(total) éxitos")
+        return BatchMigrationResult(
+            total: total,
+            successCount: successCount,
+            failedCount: failedCount,
+            results: items
+        )
+    }
+
+    /// Marca mangas como independientes para que dejen de considerarse huérfanos (`trpc/manga.setAcceptedStandalone`).
+    public func setAcceptedStandalone(
+        serverUrl: URL,
+        token: String,
+        mangaIds: [Int],
+        isAcceptedStandalone: Bool = true
+    ) async throws {
+        let payload: [String: Any] = [
+            "ids": mangaIds,
+            "isAcceptedStandalone": isAcceptedStandalone
+        ]
+        let req = try request(
+            try endpoint(serverUrl, path: "/api/trpc/manga.setAcceptedStandalone"),
+            method: "POST",
+            token: token,
+            json: ["json": payload]
+        )
+        let (_, http) = try await send(req)
+        guard (200...299).contains(http.statusCode) else {
+            throw KaizenError.server(status: http.statusCode)
+        }
+        await KaizenLogger.shared.info("Admin", "\(mangaIds.count) manga(s) marcados como independientes=\(isAcceptedStandalone)")
+    }
+
     // MARK: - Helpers privados
 
     /// Construye `<base>/<path>` respetando un posible prefijo en la URL del servidor.

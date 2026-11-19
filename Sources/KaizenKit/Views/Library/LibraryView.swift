@@ -6,6 +6,7 @@ public enum LibraryFilter: String, CaseIterable, Identifiable {
     case caughtUp = "Al día"
     case completed = "Completadas"
     case favorites = "Favoritos"
+    case orphaned = "Huérfanos"
     
     public var id: String { rawValue }
     
@@ -16,6 +17,7 @@ public enum LibraryFilter: String, CaseIterable, Identifiable {
         case .caughtUp: return language == "en" ? "Caught Up" : "Al día"
         case .completed: return language == "en" ? "Completed" : "Completadas"
         case .favorites: return language == "en" ? "Favorites" : "Favoritos"
+        case .orphaned: return language == "en" ? "Orphaned" : "Huérfanos"
         }
     }
 }
@@ -61,6 +63,7 @@ public struct LibraryView: View {
     @State private var showCreateLibraryAlert = false
     @State private var showAddMangaSheet = false
     @State private var showQueueSheet = false
+    @State private var showOrphanedSheet = false
     @State private var newLibraryPath = ""
     @State private var creationError: String?
     
@@ -227,6 +230,8 @@ public struct LibraryView: View {
                     matchesFilterOrShelf = manga.isCompleted && hasRead
                 case .favorites:
                     matchesFilterOrShelf = manga.isFavorite
+                case .orphaned:
+                    matchesFilterOrShelf = manga.isOrphaned
                 }
             }
             
@@ -238,6 +243,7 @@ public struct LibraryView: View {
         NavigationStack {
             VStack(spacing: 0) {
                 topFilterBars
+                orphanedBanner
                 mainCatalogContent
             }
             .ambientGlowBackground()
@@ -267,6 +273,11 @@ public struct LibraryView: View {
             }
             .sheet(isPresented: $showQueueSheet) {
                 LiveDownloadQueueSheet(apiClient: apiClient)
+            }
+            .sheet(isPresented: $showOrphanedSheet) {
+                OrphanedMangasSheet(apiClient: apiClient) {
+                    Task { await appState.loadLibrary(client: apiClient, force: true) }
+                }
             }
             .alert(isEn ? "New Reading Shelf" : "Nueva Estantería", isPresented: $showCreateShelfAlert) {
                 TextField(isEn ? "e.g. Manhwa Top, To Re-read..." : "Ej: Manhwa Top, Para releer...", text: $newShelfName)
@@ -308,6 +319,59 @@ public struct LibraryView: View {
     
     // MARK: - Subvistas de Filtros y Cabecera de Biblioteca
     
+    @ViewBuilder
+    private var orphanedBanner: some View {
+        let count = appState.orphanedMangas.count
+        if count > 0 && mode != .discoverCatalog && selectedFilter != .orphaned {
+            HStack(spacing: 10) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .font(.subheadline)
+                
+                Text(isEn
+                     ? "\(count) orphaned series without an active source"
+                     : "\(count) serie(s) huérfanas sin fuente activa")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .lineLimit(2)
+                
+                Spacer(minLength: 4)
+                
+                Button(isEn ? "View" : "Ver") {
+                    selectedShelfId = nil
+                    selectedFilter = .orphaned
+                }
+                .font(.caption.weight(.bold))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Color.orange.opacity(0.22), in: Capsule())
+                .foregroundStyle(.orange)
+                .buttonStyle(.plain)
+                
+                if appState.isManagement {
+                    Button(isEn ? "Fix" : "Solucionar") {
+                        showOrphanedSheet = true
+                    }
+                    .font(.caption.weight(.bold))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(Color.cyan.opacity(0.22), in: Capsule())
+                    .foregroundStyle(.cyan)
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(Color.orange.opacity(0.35), lineWidth: 1)
+            )
+            .padding(.horizontal, isPad ? 16 : 12)
+            .padding(.top, 6)
+        }
+    }
+    
     private var topFilterBars: some View {
         VStack(spacing: 8) {
             if mode != .discoverCatalog {
@@ -334,6 +398,10 @@ public struct LibraryView: View {
                                             } else if filter == .completed {
                                                 Image(systemName: "flag.checkered")
                                                     .font(.caption2)
+                                            } else if filter == .orphaned {
+                                                Image(systemName: "exclamationmark.triangle.fill")
+                                                    .font(.caption2)
+                                                    .foregroundStyle(isSelected ? .black : .orange)
                                             }
                                             Text(filter.label(language: appState.currentLanguage))
                                         }
@@ -735,17 +803,26 @@ public struct MangaDetailView: View {
         // 1. Priorizar el progreso real registrado en el historial del usuario
         if let historyEntry = appState.history.first(where: { $0.mangaId == currentManga.id }),
            let histCh = sorted.first(where: { $0.id == historyEntry.chapterId }) {
-            // Si el usuario estaba a mitad de este capítulo, continuar en él
-            if historyEntry.pageIndex < max(historyEntry.totalPages, 1) {
+            // Si el capítulo no está marcado como leído o el usuario quedó a mitad, continuar en él
+            if !histCh.isRead || (historyEntry.totalPages > 1 && historyEntry.pageIndex < historyEntry.totalPages - 1) {
                 return histCh
             }
             // Si ya lo completó, el candidato natural es el siguiente capítulo por número
-            if let next = sorted.first(where: { $0.index > histCh.index }) {
+            if let next = sorted.first(where: { $0.index > histCh.index && !$0.isRead }) ?? sorted.first(where: { $0.index > histCh.index }) {
                 return next
             }
         }
         // 2. Si no hay entrada de historial o ya se completó la serie, primer capítulo no leído
         return sorted.first { !$0.isRead }
+    }
+
+    private func effectiveResumePage(for chapter: Chapter) -> Int {
+        let serverPage = (chapter.lastReadPage > 0 && chapter.lastReadPage < 9000) ? chapter.lastReadPage : 1
+        if let historyEntry = appState.history.first(where: { $0.mangaId == currentManga.id && $0.chapterId == chapter.id }) {
+            let localPage = max(historyEntry.pageIndex + 1, 1)
+            return max(serverPage, localPage)
+        }
+        return serverPage
     }
     
     // MARK: - Fondo atmosférico (portada desenfocada) y hoja de administración
@@ -805,11 +882,6 @@ public struct MangaDetailView: View {
                     Button(isEn ? "Done" : "Listo") { showAdminSheet = false }
                 }
             }
-        .sheet(isPresented: $showSourcesSheet) {
-            MangaSourcesManagementSheet(manga: currentManga, apiClient: apiClient) {
-                Task { await loadDetail() }
-            }
-        }
         .alert(isEn ? "Redownload Chapter Range" : "Redescargar Rango de Capítulos", isPresented: $showRedownloadRangeAlert) {
             TextField(isEn ? "Start Chapter (e.g. 1)" : "Capítulo Inicio (ej: 1)", text: $rangeStartChapter)
             TextField(isEn ? "End Chapter (e.g. 20)" : "Capítulo Fin (ej: 20)", text: $rangeEndChapter)
@@ -981,7 +1053,7 @@ public struct MangaDetailView: View {
             await loadDetail()
         }
         .fullScreenCover(item: $readingChapter) { chapter in
-            let safePage = (chapter.lastReadPage > 0 && chapter.lastReadPage < 9000) ? chapter.lastReadPage : 1
+            let safePage = effectiveResumePage(for: chapter)
             ReaderView(
                 manga: currentManga,
                 mangaId: currentManga.id,
@@ -997,6 +1069,14 @@ public struct MangaDetailView: View {
         }
         .sheet(isPresented: $showAdminSheet) {
             adminSheetContent
+        }
+        .sheet(isPresented: $showSourcesSheet) {
+            MangaSourcesManagementSheet(manga: currentManga, apiClient: apiClient) {
+                Task {
+                    await appState.loadLibrary(client: apiClient, force: true)
+                    await loadDetail()
+                }
+            }
         }
         .alert(isEn ? "Delete Chapter" : "Eliminar Capítulo", isPresented: $showDeleteChapterAlert) {
             Button(isEn ? "Delete File & Chapter" : "Eliminar Capítulo y Archivo", role: .destructive) {
@@ -1136,6 +1216,10 @@ public struct MangaDetailView: View {
                 .background(Color.white.opacity(0.1))
             
             heroProgressRow
+            
+            if currentManga.isOrphaned {
+                orphanedWarningCard
+            }
         }
         .padding(16)
         .background(Color.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 16))
@@ -1198,6 +1282,9 @@ public struct MangaDetailView: View {
                     if currentManga.isLocked {
                         lockedBadge
                     }
+                    if currentManga.isOrphaned {
+                        orphanedBadge
+                    }
                 }
                 .padding(.top, 2)
             }
@@ -1254,6 +1341,85 @@ public struct MangaDetailView: View {
         .foregroundStyle(.orange)
         .fixedSize(horizontal: true, vertical: false)
     }
+
+    private var orphanedBadge: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 9))
+            Text(isEn ? "Orphaned" : "Huérfano")
+        }
+        .font(.caption2.weight(.bold))
+        .padding(.horizontal, 9)
+        .padding(.vertical, 4)
+        .background(Color.orange.opacity(0.22), in: Capsule())
+        .foregroundStyle(.orange)
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private var orphanedWarningCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .font(.subheadline)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(isEn ? "No active source" : "Sin fuente activa")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.orange)
+                    Text(isEn
+                         ? "This series is orphaned (missing or failed scraper), so it won't receive new chapter updates."
+                         : "Este manga está huérfano (fuente eliminada, caída o sin asignar) y no recibirá actualizaciones.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if appState.isManagement {
+                HStack(spacing: 8) {
+                    Button {
+                        showSourcesSheet = true
+                    } label: {
+                        Label(isEn ? "Assign Source" : "Asignar fuente", systemImage: "arrow.triangle.2.circlepath")
+                            .font(.caption.weight(.bold))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Color.cyan.opacity(0.2), in: Capsule())
+                            .foregroundStyle(.cyan)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        Task {
+                            guard let session = appState.session else { return }
+                            try? await apiClient.setAcceptedStandalone(
+                                serverUrl: session.serverUrl,
+                                token: session.apiToken,
+                                mangaIds: [currentManga.id],
+                                isAcceptedStandalone: true
+                            )
+                            await appState.loadLibrary(client: apiClient, force: true)
+                            await loadDetail()
+                        }
+                    } label: {
+                        Label(isEn ? "Mark Standalone" : "Independiente", systemImage: "checkmark.shield")
+                            .font(.caption.weight(.bold))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Color.teal.opacity(0.2), in: Capsule())
+                            .foregroundStyle(.teal)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+        )
+    }
     
     private var caughtUpBadge: some View {
         HStack(spacing: 4) {
@@ -1299,7 +1465,7 @@ public struct MangaDetailView: View {
             } label: {
                 HStack(spacing: 10) {
                     Image(systemName: "book.fill")
-                    let validPage = (next.lastReadPage > 0 && next.lastReadPage < 9000) ? next.lastReadPage : 1
+                    let validPage = effectiveResumePage(for: next)
                     if validPage > 1 {
                         Text(isEn ? "Continue Ch. \(next.index) (p. \(validPage))" : "Continuar Cap. \(next.index) (pág. \(validPage))")
                     } else {

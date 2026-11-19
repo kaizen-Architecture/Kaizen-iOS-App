@@ -223,6 +223,7 @@ public struct AdminDashboardView: View {
     @State private var store = AdminStore()
     @State private var showAddMangaSheet = false
     @State private var showLiveQueueSheet = false
+    @State private var showOrphanedSheet = false
     let apiClient: KaizenAPIClient
     
     public var isEmbedded: Bool = false
@@ -258,6 +259,11 @@ public struct AdminDashboardView: View {
     public var body: some View {
         if isEmbedded {
             content
+                .sheet(isPresented: $showOrphanedSheet) {
+                    OrphanedMangasSheet(apiClient: apiClient) {
+                        Task { await appState.loadLibrary(client: apiClient, force: true) }
+                    }
+                }
                 .task {
                     if let defaultSection {
                         store.selectedSection = defaultSection
@@ -291,6 +297,11 @@ public struct AdminDashboardView: View {
                 }
                 .sheet(isPresented: $showLiveQueueSheet) {
                     LiveDownloadQueueSheet(apiClient: apiClient)
+                }
+                .sheet(isPresented: $showOrphanedSheet) {
+                    OrphanedMangasSheet(apiClient: apiClient) {
+                        Task { await appState.loadLibrary(client: apiClient, force: true) }
+                    }
                 }
                 .task {
                     if let defaultSection {
@@ -892,6 +903,31 @@ public struct AdminDashboardView: View {
         }
         
         Section(isEn ? "Sources & sync" : "Fuentes y sincronización") {
+            Button {
+                showOrphanedSheet = true
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(.orange)
+                        .frame(width: 28)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(isEn ? "Orphaned manga" : "Mangas huérfanos")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.white)
+                        Text(isEn
+                             ? "\(appState.orphanedMangas.count) series without active source"
+                             : "\(appState.orphanedMangas.count) serie(s) sin fuente activa")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .buttonStyle(.plain)
             actionRow(title: isEn ? "Sync sources" : "Sincronizar fuentes",
                       subtitle: isEn ? "Pull scrapers from GitHub" : "Actualiza los scrapers desde GitHub",
                       icon: "arrow.down.doc.fill", color: .teal, key: "syncSources") {
