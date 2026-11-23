@@ -3,6 +3,8 @@ import SwiftUI
 public enum ServerSection: String, CaseIterable, Identifiable {
     case status
     case queue
+    case advisor
+    case core
     case scrapers
     case requests
     case operations
@@ -13,6 +15,8 @@ public enum ServerSection: String, CaseIterable, Identifiable {
         switch self {
         case .status: return isEn ? "Status" : "Estado"
         case .queue: return isEn ? "Queue" : "Colas"
+        case .advisor: return isEn ? "Advisor" : "Asesor"
+        case .core: return isEn ? "Kaizen Core" : "Núcleo Kaizen"
         case .scrapers: return isEn ? "Sources" : "Fuentes"
         case .requests: return isEn ? "Requests" : "Peticiones"
         case .operations: return isEn ? "Operations" : "Operaciones"
@@ -23,6 +27,8 @@ public enum ServerSection: String, CaseIterable, Identifiable {
         switch self {
         case .status: return "chart.bar.xaxis"
         case .queue: return "arrow.down.circle.fill"
+        case .advisor: return "wand.and.stars"
+        case .core: return "cpu"
         case .scrapers: return "globe.badge.chevron.backward"
         case .requests: return "tray.and.arrow.down.fill"
         case .operations: return "server.rack"
@@ -86,6 +92,10 @@ public struct ServerHubView: View {
                             initialFilter: selectedQueueFilter
                         )
                         .id(selectedQueueFilter)
+                    case .advisor:
+                        BetterSourceAdvisorView(apiClient: apiClient)
+                    case .core:
+                        KaizenCoreView(apiClient: apiClient)
                     case .scrapers:
                         AdminDashboardView(apiClient: apiClient, isEmbedded: true, defaultSection: .sources)
                     case .requests:

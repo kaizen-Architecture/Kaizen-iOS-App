@@ -1025,6 +1025,324 @@ public actor KaizenAPIClient {
         await KaizenLogger.shared.info("Admin", "\(mangaIds.count) manga(s) marcados como independientes=\(isAcceptedStandalone)")
     }
 
+    // MARK: - Acciones en Lote sobre Capítulos (REST v1 - Kaizen v2.1.0+)
+
+    public func executeChapterBatch(
+        serverUrl: URL,
+        token: String,
+        mangaId: Int,
+        action: ChapterBatchAction,
+        chapterIds: [Int]? = nil,
+        startIndex: Int? = nil,
+        endIndex: Int? = nil,
+        deleteFiles: Bool = true
+    ) async throws -> ChapterBatchResponse {
+        var payload: [String: Any] = ["action": action.rawValue]
+        if let chapterIds, !chapterIds.isEmpty {
+            payload["chapterIds"] = chapterIds
+        } else if let startIndex, let endIndex {
+            payload["startIndex"] = startIndex
+            payload["endIndex"] = endIndex
+        }
+        if action == .delete {
+            payload["deleteFiles"] = deleteFiles
+        }
+        var req = try request(
+            try endpoint(serverUrl, path: "/api/v1/mangas/\(mangaId)/chapters/batch"),
+            method: "POST",
+            token: token,
+            json: payload
+        )
+        req.timeoutInterval = 45
+        let (data, http) = try await send(req)
+        try checkREST(http)
+        let response = try decoder.decode(ChapterBatchResponse.self, from: data)
+        await KaizenLogger.shared.info("Chapters", "Batch \(action.rawValue) en manga \(mangaId): \(response.processedCount) procesados.")
+        return response
+    }
+
+    // MARK: - Better Source Advisor (REST v1 & tRPC)
+
+    public func fetchBetterSourceScanStatus(serverUrl: URL, token: String) async throws -> BetterSourceScanStatus {
+        let req = request(try endpoint(serverUrl, path: "/api/v1/system/better-sources"), token: token)
+        let (data, http) = try await send(req)
+        try checkREST(http)
+        return try decoder.decode(BetterSourceScanStatus.self, from: data)
+    }
+
+    public func startBetterSourceScan(
+        serverUrl: URL,
+        token: String,
+        limit: Int? = nil,
+        readingOnly: Bool = false
+    ) async throws -> BetterSourceScanStatus {
+        var payload: [String: Any] = ["action": "start"]
+        if readingOnly {
+            payload["readingOnly"] = true
+        } else if let limit, limit > 0 {
+            payload["limit"] = limit
+        }
+        let req = try request(
+            try endpoint(serverUrl, path: "/api/v1/system/better-sources"),
+            method: "POST",
+            token: token,
+            json: payload
+        )
+        let (data, http) = try await send(req)
+        try checkREST(http)
+        return try decoder.decode(BetterSourceScanStatus.self, from: data)
+    }
+
+    public func cancelBetterSourceScan(serverUrl: URL, token: String) async throws -> BetterSourceScanStatus {
+        let req = try request(
+            try endpoint(serverUrl, path: "/api/v1/system/better-sources"),
+            method: "POST",
+            token: token,
+            json: ["action": "cancel"]
+        )
+        let (data, http) = try await send(req)
+        try checkREST(http)
+        return try decoder.decode(BetterSourceScanStatus.self, from: data)
+    }
+
+    public func switchBetterSource(
+        serverUrl: URL,
+        token: String,
+        mangaId: Int,
+        newSource: String,
+        newSourceTitle: String? = nil
+    ) async throws {
+        var payload: [String: Any] = [
+            "action": "switch",
+            "mangaId": mangaId,
+            "newSource": newSource
+        ]
+        if let newSourceTitle, !newSourceTitle.isEmpty {
+            payload["newSourceTitle"] = newSourceTitle
+        }
+        let req = try request(
+            try endpoint(serverUrl, path: "/api/v1/system/better-sources"),
+            method: "POST",
+            token: token,
+            json: payload
+        )
+        let (_, http) = try await send(req)
+        try checkREST(http)
+        await KaizenLogger.shared.info("Advisor", "Fuente principal cambiada a '\(newSource)' para manga \(mangaId).")
+    }
+
+    public func suggestBetterSources(serverUrl: URL, token: String, mangaId: Int) async throws -> MangaBetterSourceReport {
+        var req = try request(
+            try endpoint(serverUrl, path: "/api/trpc/manga.suggestBetterSources"),
+            method: "POST",
+            token: token,
+            json: ["json": ["mangaId": mangaId]]
+        )
+        req.timeoutInterval = 60
+        let (data, http) = try await send(req)
+        guard (200...299).contains(http.statusCode) else {
+            throw KaizenError.server(status: http.statusCode)
+        }
+        guard let payload = trpcPayload(data) else {
+            return MangaBetterSourceReport(currentSource: "", currentMaxChapter: 0, suggestions: [])
+        }
+        let currentSource = payload["currentSource"] as? String ?? ""
+        let currentMax = payload["currentMaxChapter"] as? Int ?? (payload["localMax"] as? Int ?? 0)
+        let rawList = (payload["suggestions"] as? [[String: Any]]) ?? (payload["candidates"] as? [[String: Any]]) ?? []
+        let suggestions: [MangaBetterSourceSuggestion] = rawList.compactMap { item in
+            guard let source = item["source"] as? String else { return nil }
+            let matchedTitle = item["matchedTitle"] as? String ?? (item["title"] as? String ?? "")
+            let remoteMax = item["remoteMaxChapter"] as? Int ?? (item["maxChapter"] as? Int ?? 0)
+            let remoteTotal = item["remoteTotalEntries"] as? Int ?? (item["totalChapters"] as? Int ?? remoteMax)
+            let gain = item["chapterGain"] as? Int ?? (item["delta"] as? Int ?? max(0, remoteMax - currentMax))
+            return MangaBetterSourceSuggestion(
+                source: source,
+                matchedTitle: matchedTitle,
+                remoteMaxChapter: remoteMax,
+                remoteTotalEntries: remoteTotal,
+                chapterGain: gain
+            )
+        }
+        return MangaBetterSourceReport(
+            currentSource: currentSource,
+            currentMaxChapter: currentMax,
+            suggestions: suggestions
+        )
+    }
+
+    // MARK: - Kaizen Core (`kaizen-mangal`) REST v1 (`/api/v1/system/core`)
+
+    public func fetchKaizenCoreStatus(serverUrl: URL, token: String) async throws -> KaizenCoreSystemResponse {
+        var req = request(try endpoint(serverUrl, path: "/api/v1/system/core"), token: token)
+        req.timeoutInterval = 30
+        let (data, http) = try await send(req)
+        try checkREST(http)
+        guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let diagObj = root["diagnostics"] else {
+            throw KaizenError.unexpectedResponse
+        }
+        let diagData = try JSONSerialization.data(withJSONObject: diagObj)
+        let diagnostics = try decoder.decode(KaizenCoreDiagnostics.self, from: diagData)
+
+        let rawConfig = root["config"] as? [[String: Any]] ?? []
+        let items: [KaizenCoreConfigItem] = rawConfig.compactMap { item in
+            guard let key = item["key"] as? String else { return nil }
+            let rawVal = item["value"]
+            let valueStr: String
+            let valueType: String
+            if let b = rawVal as? Bool {
+                valueStr = b ? "true" : "false"
+                valueType = "boolean"
+            } else if let n = rawVal as? NSNumber {
+                // Distinguish Bool bridged as NSNumber from numeric values
+                if CFGetTypeID(n) == CFBooleanGetTypeID() {
+                    valueStr = n.boolValue ? "true" : "false"
+                    valueType = "boolean"
+                } else {
+                    valueStr = n.stringValue
+                    valueType = "number"
+                }
+            } else if let s = rawVal as? String {
+                valueStr = s
+                valueType = "string"
+            } else {
+                valueStr = ""
+                valueType = "string"
+            }
+            let desc = item["description"] as? String
+            return KaizenCoreConfigItem(key: key, value: valueStr, valueType: valueType, description: desc)
+        }
+        return KaizenCoreSystemResponse(diagnostics: diagnostics, config: items)
+    }
+
+    public func checkKaizenCoreUpdates(serverUrl: URL, token: String) async throws -> KaizenCoreVersionCheck {
+        var req = try request(
+            try endpoint(serverUrl, path: "/api/v1/system/core"),
+            method: "POST",
+            token: token,
+            json: ["action": "check"]
+        )
+        req.timeoutInterval = 30
+        let (data, http) = try await send(req)
+        try checkREST(http)
+        return try decoder.decode(KaizenCoreVersionCheck.self, from: data)
+    }
+
+    public func updateKaizenCore(serverUrl: URL, token: String, force: Bool = false) async throws -> KaizenCoreMutationResult {
+        var req = try request(
+            try endpoint(serverUrl, path: "/api/v1/system/core"),
+            method: "POST",
+            token: token,
+            json: ["action": "update", "force": force]
+        )
+        req.timeoutInterval = 90
+        let (data, http) = try await send(req)
+        try checkREST(http)
+        return try decoder.decode(KaizenCoreMutationResult.self, from: data)
+    }
+
+    public func rollbackKaizenCore(serverUrl: URL, token: String) async throws -> KaizenCoreMutationResult {
+        var req = try request(
+            try endpoint(serverUrl, path: "/api/v1/system/core"),
+            method: "POST",
+            token: token,
+            json: ["action": "rollback"]
+        )
+        req.timeoutInterval = 45
+        let (data, http) = try await send(req)
+        try checkREST(http)
+        return try decoder.decode(KaizenCoreMutationResult.self, from: data)
+    }
+
+    public func setKaizenCoreConfig(
+        serverUrl: URL,
+        token: String,
+        key: String,
+        value: Any
+    ) async throws {
+        let req = try request(
+            try endpoint(serverUrl, path: "/api/v1/system/core"),
+            method: "POST",
+            token: token,
+            json: ["action": "setConfig", "key": key, "value": value]
+        )
+        let (_, http) = try await send(req)
+        try checkREST(http)
+        await KaizenLogger.shared.info("Core", "Ajuste Kaizen Core actualizado: \(key)")
+    }
+
+    // MARK: - AI Studio Server-Side Scraper Upload & Live Test (tRPC)
+
+    public func uploadLuaScraper(serverUrl: URL, token: String, name: String, content: String) async throws {
+        let req = try request(
+            try endpoint(serverUrl, path: "/api/trpc/sources.upload"),
+            method: "POST",
+            token: token,
+            json: ["json": ["name": name, "content": content]]
+        )
+        let (_, http) = try await send(req)
+        guard (200...299).contains(http.statusCode) else {
+            throw KaizenError.server(status: http.statusCode)
+        }
+        await KaizenLogger.shared.info("AIStudio", "Scraper '\(name)' subido al servidor Kaizen.")
+    }
+
+    public func testLuaScraper(
+        serverUrl: URL,
+        token: String,
+        sourceName: String,
+        query: String,
+        selectedMangaIndex: Int = 0
+    ) async throws -> ScraperTestResult {
+        var req = try request(
+            try endpoint(serverUrl, path: "/api/trpc/sources.testScraper"),
+            method: "POST",
+            token: token,
+            json: ["json": [
+                "sourceName": sourceName,
+                "query": query,
+                "selectedMangaIndex": selectedMangaIndex
+            ]]
+        )
+        // Server enforces 20s per step across search -> chapters -> pages
+        req.timeoutInterval = 75
+        let (data, http) = try await send(req)
+        guard (200...299).contains(http.statusCode) else {
+            throw KaizenError.server(status: http.statusCode)
+        }
+        guard let payload = trpcPayload(data) else {
+            return ScraperTestResult(success: false, failedPhase: "search", logs: ["Empty response from testScraper"])
+        }
+        let success = payload["success"] as? Bool ?? false
+        let failedPhase = payload["failedPhase"] as? String
+        let logs = payload["logs"] as? [String] ?? []
+        let searchResults = payload["searchResults"] as? [[String: Any]] ?? []
+        let errorKey = payload["errorKey"] as? String
+        let errorDetail = payload["errorDetail"] as? String
+        return ScraperTestResult(
+            success: success,
+            failedPhase: failedPhase,
+            logs: logs,
+            searchResultsCount: searchResults.count,
+            errorKey: errorKey,
+            errorDetail: errorDetail
+        )
+    }
+
+    public func removeLuaScraper(serverUrl: URL, token: String, name: String) async throws {
+        let req = try request(
+            try endpoint(serverUrl, path: "/api/trpc/sources.remove"),
+            method: "POST",
+            token: token,
+            json: ["json": ["name": name]]
+        )
+        let (_, http) = try await send(req)
+        guard (200...299).contains(http.statusCode) else {
+            throw KaizenError.server(status: http.statusCode)
+        }
+        await KaizenLogger.shared.info("AIStudio", "Scraper '\(name)' eliminado del servidor Kaizen.")
+    }
+
     // MARK: - Helpers privados
 
     /// Construye `<base>/<path>` respetando un posible prefijo en la URL del servidor.

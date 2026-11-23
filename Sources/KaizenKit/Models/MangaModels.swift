@@ -178,6 +178,7 @@ public struct Chapter: Identifiable, Codable, Sendable, Equatable, Hashable {
     public var isRead: Bool
     public var lastReadPage: Int
     public let lastReadAt: String?
+    public let source: String?
     
     public func hash(into hasher: inout Hasher) {
         hasher.combine(id)
@@ -193,7 +194,8 @@ public struct Chapter: Identifiable, Codable, Sendable, Equatable, Hashable {
         isFavorite: Bool = false,
         isRead: Bool = false,
         lastReadPage: Int = 0,
-        lastReadAt: String? = nil
+        lastReadAt: String? = nil,
+        source: String? = nil
     ) {
         self.id = id
         self.mangaId = mangaId
@@ -205,10 +207,11 @@ public struct Chapter: Identifiable, Codable, Sendable, Equatable, Hashable {
         self.isRead = isRead
         self.lastReadPage = lastReadPage
         self.lastReadAt = lastReadAt
+        self.source = source
     }
     
     private enum CodingKeys: String, CodingKey {
-        case id, mangaId, index, fileName, size, createdAt, isFavorite, isRead, lastReadPage, lastReadAt
+        case id, mangaId, index, fileName, size, createdAt, isFavorite, isRead, lastReadPage, lastReadAt, source
     }
     
     public init(from decoder: Decoder) throws {
@@ -232,6 +235,8 @@ public struct Chapter: Identifiable, Codable, Sendable, Equatable, Hashable {
         self.isRead = (try? container.decodeIfPresent(Bool.self, forKey: .isRead)) ?? false
         self.lastReadPage = (try? container.decodeIfPresent(Int.self, forKey: .lastReadPage)) ?? 0
         self.lastReadAt = try? container.decodeIfPresent(String.self, forKey: .lastReadAt)
+        let rawSource = try? container.decodeIfPresent(String.self, forKey: .source)
+        self.source = (rawSource?.isEmpty == false) ? rawSource : nil
     }
     
     public var displayName: String {
@@ -818,5 +823,411 @@ public struct BatchMigrationResult: Sendable, Equatable {
         self.successCount = successCount
         self.failedCount = failedCount
         self.results = results
+    }
+}
+
+// MARK: - Acciones en Lote sobre Capítulos (REST v1 - Kaizen v2.1.0+)
+
+/// Acción soportada por `POST /api/v1/mangas/{id}/chapters/batch`
+public enum ChapterBatchAction: String, Codable, Sendable, CaseIterable {
+    case markRead
+    case markUnread
+    case reportCorrupt
+    case delete
+    case redownload
+}
+
+/// Respuesta de `POST /api/v1/mangas/{id}/chapters/batch`
+public struct ChapterBatchResponse: Codable, Sendable, Equatable {
+    public let success: Bool
+    public let action: String
+    public let mangaId: Int
+    public let processedCount: Int
+    public let failedIds: [Int]
+
+    public init(
+        success: Bool,
+        action: String,
+        mangaId: Int,
+        processedCount: Int,
+        failedIds: [Int] = []
+    ) {
+        self.success = success
+        self.action = action
+        self.mangaId = mangaId
+        self.processedCount = processedCount
+        self.failedIds = failedIds
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.success = (try? c.decodeIfPresent(Bool.self, forKey: .success)) ?? true
+        self.action = (try? c.decodeIfPresent(String.self, forKey: .action)) ?? ""
+        self.mangaId = (try? c.decodeIfPresent(Int.self, forKey: .mangaId)) ?? 0
+        self.processedCount = (try? c.decodeIfPresent(Int.self, forKey: .processedCount)) ?? 0
+        self.failedIds = (try? c.decodeIfPresent([Int].self, forKey: .failedIds)) ?? []
+    }
+}
+
+// MARK: - Better Source Advisor (REST v1 & tRPC)
+
+/// Recomendación individual de una mejor fuente en `GET /api/v1/system/better-sources`
+public struct BetterSourceRecommendation: Identifiable, Codable, Sendable, Equatable {
+    public var id: Int { mangaId }
+    public let mangaId: Int
+    public let title: String
+    public let currentSource: String
+    public let currentMaxChapter: Int
+    public let bestSource: String
+    public let bestMatchedTitle: String
+    public let bestMaxChapter: Int
+    public let delta: Int
+    public let isReading: Bool
+
+    public init(
+        mangaId: Int,
+        title: String,
+        currentSource: String,
+        currentMaxChapter: Int,
+        bestSource: String,
+        bestMatchedTitle: String,
+        bestMaxChapter: Int,
+        delta: Int,
+        isReading: Bool = false
+    ) {
+        self.mangaId = mangaId
+        self.title = title
+        self.currentSource = currentSource
+        self.currentMaxChapter = currentMaxChapter
+        self.bestSource = bestSource
+        self.bestMatchedTitle = bestMatchedTitle
+        self.bestMaxChapter = bestMaxChapter
+        self.delta = delta
+        self.isReading = isReading
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.mangaId = try c.decode(Int.self, forKey: .mangaId)
+        self.title = (try? c.decodeIfPresent(String.self, forKey: .title)) ?? ""
+        self.currentSource = (try? c.decodeIfPresent(String.self, forKey: .currentSource)) ?? ""
+        self.currentMaxChapter = (try? c.decodeIfPresent(Int.self, forKey: .currentMaxChapter)) ?? 0
+        self.bestSource = (try? c.decodeIfPresent(String.self, forKey: .bestSource)) ?? ""
+        self.bestMatchedTitle = (try? c.decodeIfPresent(String.self, forKey: .bestMatchedTitle)) ?? self.title
+        self.bestMaxChapter = (try? c.decodeIfPresent(Int.self, forKey: .bestMaxChapter)) ?? 0
+        self.delta = (try? c.decodeIfPresent(Int.self, forKey: .delta)) ?? max(0, self.bestMaxChapter - self.currentMaxChapter)
+        self.isReading = (try? c.decodeIfPresent(Bool.self, forKey: .isReading)) ?? false
+    }
+}
+
+/// Estado en vivo del escaneo global de Better Source Advisor (`GET /api/v1/system/better-sources`)
+public struct BetterSourceScanStatus: Codable, Sendable, Equatable {
+    public let isRunning: Bool
+    public let cancelled: Bool
+    public let processedCount: Int
+    public let totalCount: Int
+    public let totalReleasingInLibrary: Int
+    public let totalReadingReleasingInLibrary: Int
+    public let currentMangaTitle: String?
+    public let startedAt: String?
+    public let finishedAt: String?
+    public let recommendations: [BetterSourceRecommendation]
+
+    public var progressRatio: Double {
+        guard totalCount > 0 else { return 0 }
+        return min(1.0, max(0.0, Double(processedCount) / Double(totalCount)))
+    }
+
+    public init(
+        isRunning: Bool = false,
+        cancelled: Bool = false,
+        processedCount: Int = 0,
+        totalCount: Int = 0,
+        totalReleasingInLibrary: Int = 0,
+        totalReadingReleasingInLibrary: Int = 0,
+        currentMangaTitle: String? = nil,
+        startedAt: String? = nil,
+        finishedAt: String? = nil,
+        recommendations: [BetterSourceRecommendation] = []
+    ) {
+        self.isRunning = isRunning
+        self.cancelled = cancelled
+        self.processedCount = processedCount
+        self.totalCount = totalCount
+        self.totalReleasingInLibrary = totalReleasingInLibrary
+        self.totalReadingReleasingInLibrary = totalReadingReleasingInLibrary
+        self.currentMangaTitle = currentMangaTitle
+        self.startedAt = startedAt
+        self.finishedAt = finishedAt
+        self.recommendations = recommendations
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.isRunning = (try? c.decodeIfPresent(Bool.self, forKey: .isRunning)) ?? false
+        self.cancelled = (try? c.decodeIfPresent(Bool.self, forKey: .cancelled)) ?? false
+        self.processedCount = (try? c.decodeIfPresent(Int.self, forKey: .processedCount)) ?? 0
+        self.totalCount = (try? c.decodeIfPresent(Int.self, forKey: .totalCount)) ?? 0
+        self.totalReleasingInLibrary = (try? c.decodeIfPresent(Int.self, forKey: .totalReleasingInLibrary)) ?? 0
+        self.totalReadingReleasingInLibrary = (try? c.decodeIfPresent(Int.self, forKey: .totalReadingReleasingInLibrary)) ?? 0
+        self.currentMangaTitle = try? c.decodeIfPresent(String.self, forKey: .currentMangaTitle)
+        self.startedAt = try? c.decodeIfPresent(String.self, forKey: .startedAt)
+        self.finishedAt = try? c.decodeIfPresent(String.self, forKey: .finishedAt)
+        self.recommendations = (try? c.decodeIfPresent([BetterSourceRecommendation].self, forKey: .recommendations)) ?? []
+    }
+}
+
+/// Sugerencia por manga individual (`trpc/manga.suggestBetterSources`)
+public struct MangaBetterSourceSuggestion: Identifiable, Codable, Sendable, Equatable {
+    public var id: String { source }
+    public let source: String
+    public let matchedTitle: String
+    public let remoteMaxChapter: Int
+    public let remoteTotalEntries: Int
+    public let chapterGain: Int
+
+    public init(
+        source: String,
+        matchedTitle: String,
+        remoteMaxChapter: Int,
+        remoteTotalEntries: Int,
+        chapterGain: Int
+    ) {
+        self.source = source
+        self.matchedTitle = matchedTitle
+        self.remoteMaxChapter = remoteMaxChapter
+        self.remoteTotalEntries = remoteTotalEntries
+        self.chapterGain = chapterGain
+    }
+}
+
+/// Respuesta de `trpc/manga.suggestBetterSources`
+public struct MangaBetterSourceReport: Sendable, Equatable {
+    public let currentSource: String
+    public let currentMaxChapter: Int
+    public let suggestions: [MangaBetterSourceSuggestion]
+
+    public init(currentSource: String, currentMaxChapter: Int, suggestions: [MangaBetterSourceSuggestion]) {
+        self.currentSource = currentSource
+        self.currentMaxChapter = currentMaxChapter
+        self.suggestions = suggestions
+    }
+}
+
+// MARK: - Kaizen Core (`kaizen-mangal`) REST v1 (`/api/v1/system/core`)
+
+public struct KaizenCoreDoctorTLS: Codable, Sendable, Equatable {
+    public let configured: String?
+    public let resolved: String?
+    public let chromeMajor: Int?
+
+    private enum CodingKeys: String, CodingKey {
+        case configured, resolved
+        case chromeMajor = "chrome_major"
+    }
+}
+
+public struct KaizenCoreDoctorBrowser: Codable, Sendable, Equatable {
+    public let available: Bool
+    public let mode: String?
+    public let target: String?
+    public let error: String?
+
+    public init(available: Bool = false, mode: String? = nil, target: String? = nil, error: String? = nil) {
+        self.available = available
+        self.mode = mode
+        self.target = target
+        self.error = error
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.available = (try? c.decodeIfPresent(Bool.self, forKey: .available)) ?? false
+        self.mode = try? c.decodeIfPresent(String.self, forKey: .mode)
+        self.target = try? c.decodeIfPresent(String.self, forKey: .target)
+        self.error = try? c.decodeIfPresent(String.self, forKey: .error)
+    }
+}
+
+public struct KaizenCoreDoctorSolver: Codable, Sendable, Equatable {
+    public let configured: Bool
+    public let reachable: Bool
+    public let fallbackEnabled: Bool
+    public let error: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case configured, reachable, error
+        case fallbackEnabled = "fallback_enabled"
+    }
+
+    public init(configured: Bool = false, reachable: Bool = false, fallbackEnabled: Bool = false, error: String? = nil) {
+        self.configured = configured
+        self.reachable = reachable
+        self.fallbackEnabled = fallbackEnabled
+        self.error = error
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.configured = (try? c.decodeIfPresent(Bool.self, forKey: .configured)) ?? false
+        self.reachable = (try? c.decodeIfPresent(Bool.self, forKey: .reachable)) ?? false
+        self.fallbackEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .fallbackEnabled)) ?? false
+        self.error = try? c.decodeIfPresent(String.self, forKey: .error)
+    }
+}
+
+public struct KaizenCoreDoctorInfo: Codable, Sendable, Equatable {
+    public let ok: Bool
+    public let tlsProfile: KaizenCoreDoctorTLS?
+    public let browser: KaizenCoreDoctorBrowser?
+    public let solver: KaizenCoreDoctorSolver?
+    public let warnings: [String]
+
+    private enum CodingKeys: String, CodingKey {
+        case ok, browser, solver, warnings
+        case tlsProfile = "tls_profile"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.ok = (try? c.decodeIfPresent(Bool.self, forKey: .ok)) ?? false
+        self.tlsProfile = try? c.decodeIfPresent(KaizenCoreDoctorTLS.self, forKey: .tlsProfile)
+        self.browser = try? c.decodeIfPresent(KaizenCoreDoctorBrowser.self, forKey: .browser)
+        self.solver = try? c.decodeIfPresent(KaizenCoreDoctorSolver.self, forKey: .solver)
+        self.warnings = (try? c.decodeIfPresent([String].self, forKey: .warnings)) ?? []
+    }
+}
+
+public struct KaizenCoreBinaryStatus: Codable, Sendable, Equatable {
+    public let available: Bool
+    public let version: String?
+    public let contractVersion: Int?
+    public let binaryPath: String?
+    public let doctor: KaizenCoreDoctorInfo?
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.available = (try? c.decodeIfPresent(Bool.self, forKey: .available)) ?? false
+        self.version = try? c.decodeIfPresent(String.self, forKey: .version)
+        self.contractVersion = try? c.decodeIfPresent(Int.self, forKey: .contractVersion)
+        self.binaryPath = try? c.decodeIfPresent(String.self, forKey: .binaryPath)
+        self.doctor = try? c.decodeIfPresent(KaizenCoreDoctorInfo.self, forKey: .doctor)
+    }
+}
+
+public struct KaizenCoreVersionCheck: Codable, Sendable, Equatable {
+    public let checkedAt: String?
+    public let installedCoreVersion: String?
+    public let installedContractVersion: Int?
+    public let activeBinaryPath: String?
+    public let usingManagedBinary: Bool
+    public let canRollback: Bool
+    public let autoUpdateEnabled: Bool
+    public let latestCoreVersion: String?
+    public let coreUpdateAvailable: Bool
+    public let currentKaizenVersion: String?
+    public let latestKaizenVersion: String?
+    public let kaizenUpdateAvailable: Bool
+    public let expectedContractVersion: Int?
+    public let contractCompatible: Bool
+    public let compatibilityStatus: String
+    public let compatibilityMessage: String?
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.checkedAt = try? c.decodeIfPresent(String.self, forKey: .checkedAt)
+        self.installedCoreVersion = try? c.decodeIfPresent(String.self, forKey: .installedCoreVersion)
+        self.installedContractVersion = try? c.decodeIfPresent(Int.self, forKey: .installedContractVersion)
+        self.activeBinaryPath = try? c.decodeIfPresent(String.self, forKey: .activeBinaryPath)
+        self.usingManagedBinary = (try? c.decodeIfPresent(Bool.self, forKey: .usingManagedBinary)) ?? false
+        self.canRollback = (try? c.decodeIfPresent(Bool.self, forKey: .canRollback)) ?? false
+        self.autoUpdateEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .autoUpdateEnabled)) ?? false
+        self.latestCoreVersion = try? c.decodeIfPresent(String.self, forKey: .latestCoreVersion)
+        self.coreUpdateAvailable = (try? c.decodeIfPresent(Bool.self, forKey: .coreUpdateAvailable)) ?? false
+        self.currentKaizenVersion = try? c.decodeIfPresent(String.self, forKey: .currentKaizenVersion)
+        self.latestKaizenVersion = try? c.decodeIfPresent(String.self, forKey: .latestKaizenVersion)
+        self.kaizenUpdateAvailable = (try? c.decodeIfPresent(Bool.self, forKey: .kaizenUpdateAvailable)) ?? false
+        self.expectedContractVersion = try? c.decodeIfPresent(Int.self, forKey: .expectedContractVersion)
+        self.contractCompatible = (try? c.decodeIfPresent(Bool.self, forKey: .contractCompatible)) ?? true
+        self.compatibilityStatus = (try? c.decodeIfPresent(String.self, forKey: .compatibilityStatus)) ?? "up_to_date"
+        self.compatibilityMessage = try? c.decodeIfPresent(String.self, forKey: .compatibilityMessage)
+    }
+}
+
+public struct KaizenCoreDiagnostics: Codable, Sendable, Equatable {
+    public let kaizenMangal: KaizenCoreBinaryStatus
+    public let versionCheck: KaizenCoreVersionCheck?
+}
+
+/// Clave de configuración de Kaizen Core (`GET /api/v1/system/core` -> `config[]`)
+public struct KaizenCoreConfigItem: Identifiable, Sendable, Equatable {
+    public var id: String { key }
+    public let key: String
+    public let value: String
+    public let valueType: String // "string", "number", "boolean"
+    public let description: String?
+
+    public init(key: String, value: String, valueType: String = "string", description: String? = nil) {
+        self.key = key
+        self.value = value
+        self.valueType = valueType
+        self.description = description
+    }
+}
+
+/// Respuesta completa de `GET /api/v1/system/core`
+public struct KaizenCoreSystemResponse: Sendable, Equatable {
+    public let diagnostics: KaizenCoreDiagnostics
+    public let config: [KaizenCoreConfigItem]
+
+    public init(diagnostics: KaizenCoreDiagnostics, config: [KaizenCoreConfigItem]) {
+        self.diagnostics = diagnostics
+        self.config = config
+    }
+}
+
+/// Resultado de `POST /api/v1/system/core` (`update` / `rollback`)
+public struct KaizenCoreMutationResult: Codable, Sendable, Equatable {
+    public let success: Bool
+    public let updated: Bool?
+    public let message: String?
+    public let version: String?
+    public let error: String?
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.success = (try? c.decodeIfPresent(Bool.self, forKey: .success)) ?? false
+        self.updated = try? c.decodeIfPresent(Bool.self, forKey: .updated)
+        self.message = try? c.decodeIfPresent(String.self, forKey: .message)
+        self.version = try? c.decodeIfPresent(String.self, forKey: .version)
+        self.error = try? c.decodeIfPresent(String.self, forKey: .error)
+    }
+}
+
+// MARK: - AI Studio Server-Side Scraper Test (`trpc/sources.testScraper`)
+
+/// Resultado de `POST /api/trpc/sources.testScraper`
+public struct ScraperTestResult: Sendable, Equatable {
+    public let success: Bool
+    public let failedPhase: String? // "search" | "chapters" | "pages"
+    public let logs: [String]
+    public let searchResultsCount: Int
+    public let errorKey: String?
+    public let errorDetail: String?
+
+    public init(
+        success: Bool,
+        failedPhase: String? = nil,
+        logs: [String] = [],
+        searchResultsCount: Int = 0,
+        errorKey: String? = nil,
+        errorDetail: String? = nil
+    ) {
+        self.success = success
+        self.failedPhase = failedPhase
+        self.logs = logs
+        self.searchResultsCount = searchResultsCount
+        self.errorKey = errorKey
+        self.errorDetail = errorDetail
     }
 }

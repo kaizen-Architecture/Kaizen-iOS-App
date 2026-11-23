@@ -22,6 +22,12 @@ public struct MangaSourcesManagementSheet: View {
     @State private var isSearching: Bool = false
     @State private var isAdding: Bool = false
     @State private var addError: String?
+
+    // Better Source Advisor por manga (#4)
+    @State private var advisorReport: MangaBetterSourceReport?
+    @State private var isLoadingAdvisor: Bool = false
+    @State private var advisorError: String?
+    @State private var isSwitchingAdvisorSource: String?
     
     private var isEn: Bool {
         appState.currentLanguage == "en"
@@ -117,6 +123,100 @@ public struct MangaSourcesManagementSheet: View {
                             Text(isEn ? "Kaizen downloads chapters in priority order. If a scraper fails or is blocked, alternative sources are used automatically." : "Kaizen descarga los capítulos en orden de prioridad. Si una fuente falla o sufre bloqueos, se recurre automáticamente a las siguientes.")
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
+                        }
+
+                        Section {
+                            Button {
+                                Task { await runPerMangaAdvisor() }
+                            } label: {
+                                HStack(spacing: 10) {
+                                    if isLoadingAdvisor {
+                                        ProgressView().tint(.purple)
+                                    } else {
+                                        Image(systemName: "wand.and.stars")
+                                            .foregroundStyle(.purple)
+                                    }
+                                    Text(
+                                        isLoadingAdvisor
+                                            ? (isEn ? "Comparing active sources..." : "Comparando fuentes activas...")
+                                            : (isEn ? "Find Better Source" : "Buscar Mejor Fuente")
+                                    )
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.white)
+                                    Spacer()
+                                }
+                            }
+                            .disabled(isLoadingAdvisor)
+                            .listRowBackground(Color.purple.opacity(0.12))
+
+                            if let advisorError {
+                                Text(advisorError)
+                                    .font(.caption)
+                                    .foregroundStyle(.red)
+                                    .listRowBackground(Color.red.opacity(0.1))
+                            }
+
+                            if let report = advisorReport {
+                                if report.suggestions.isEmpty {
+                                    Text(
+                                        isEn
+                                            ? "Current source (\(report.currentSource), Ch. \(report.currentMaxChapter)) already has the highest chapter count."
+                                            : "La fuente actual (\(report.currentSource), Cap. \(report.currentMaxChapter)) ya tiene el mayor número de capítulos."
+                                    )
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .listRowBackground(Color.white.opacity(0.03))
+                                } else {
+                                    ForEach(report.suggestions) { suggestion in
+                                        HStack(spacing: 10) {
+                                            VStack(alignment: .leading, spacing: 3) {
+                                                HStack(spacing: 6) {
+                                                    Text(suggestion.source)
+                                                        .font(.subheadline.weight(.bold))
+                                                        .foregroundStyle(.white)
+                                                    Text("+\(suggestion.chapterGain) \(isEn ? "ch." : "caps.")")
+                                                        .font(.caption2.weight(.black))
+                                                        .padding(.horizontal, 7)
+                                                        .padding(.vertical, 2)
+                                                        .background(Color.green.opacity(0.2), in: Capsule())
+                                                        .foregroundStyle(.green)
+                                                }
+                                                Text(suggestion.matchedTitle)
+                                                    .font(.caption2)
+                                                    .foregroundStyle(.secondary)
+                                                    .lineLimit(1)
+                                                Text(
+                                                    isEn
+                                                        ? "Max Ch. \(suggestion.remoteMaxChapter) · \(suggestion.remoteTotalEntries) entries"
+                                                        : "Máx. Cap. \(suggestion.remoteMaxChapter) · \(suggestion.remoteTotalEntries) entradas"
+                                                )
+                                                .font(.caption2)
+                                                .foregroundStyle(.cyan)
+                                            }
+                                            Spacer()
+                                            Button {
+                                                Task { await applyAdvisorSuggestion(suggestion) }
+                                            } label: {
+                                                if isSwitchingAdvisorSource == suggestion.source {
+                                                    ProgressView().scaleEffect(0.75).tint(.cyan)
+                                                } else {
+                                                    Text(isEn ? "Switch" : "Cambiar")
+                                                        .font(.caption.weight(.bold))
+                                                        .padding(.horizontal, 10)
+                                                        .padding(.vertical, 6)
+                                                        .background(Color.cyan.opacity(0.2), in: Capsule())
+                                                        .foregroundStyle(.cyan)
+                                                }
+                                            }
+                                            .buttonStyle(.plain)
+                                            .disabled(isSwitchingAdvisorSource != nil)
+                                        }
+                                        .listRowBackground(Color.white.opacity(0.04))
+                                    }
+                                }
+                            }
+                        } header: {
+                            Text(isEn ? "Better Source Advisor" : "Asesor de Mejor Fuente")
                         }
                     }
                     .scrollContentBackground(.hidden)
@@ -389,6 +489,41 @@ public struct MangaSourcesManagementSheet: View {
             } catch {
                 errorMessage = error.localizedDescription
             }
+        }
+    }
+
+    private func runPerMangaAdvisor() async {
+        guard let session = appState.session else { return }
+        isLoadingAdvisor = true
+        advisorError = nil
+        defer { isLoadingAdvisor = false }
+        do {
+            advisorReport = try await apiClient.suggestBetterSources(
+                serverUrl: session.serverUrl,
+                token: session.apiToken,
+                mangaId: manga.id
+            )
+        } catch {
+            advisorError = error.localizedDescription
+        }
+    }
+
+    private func applyAdvisorSuggestion(_ suggestion: MangaBetterSourceSuggestion) async {
+        guard let session = appState.session else { return }
+        isSwitchingAdvisorSource = suggestion.source
+        defer { isSwitchingAdvisorSource = nil }
+        do {
+            try await apiClient.switchBetterSource(
+                serverUrl: session.serverUrl,
+                token: session.apiToken,
+                mangaId: manga.id,
+                newSource: suggestion.source,
+                newSourceTitle: suggestion.matchedTitle
+            )
+            await loadSources()
+            onUpdate()
+        } catch {
+            advisorError = error.localizedDescription
         }
     }
 }

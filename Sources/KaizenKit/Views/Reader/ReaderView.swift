@@ -394,103 +394,43 @@ public struct ReaderView: View {
 
     @ViewBuilder
     private func webtoonScrollBase(proxy: ScrollViewProxy) -> some View {
-        if #available(iOS 18.0, macOS 15.0, *) {
-            webtoonScrollContent(proxy: proxy)
-                .onScrollGeometryChange(for: CGFloat.self) { geo in
-                    -(geo.contentOffset.y + geo.contentInsets.top)
-                } action: { _, overscroll in
-                    handleTopOverscroll(overscroll)
-                }
-        } else {
-            webtoonScrollContent(proxy: proxy)
-                .onPreferenceChange(ReaderTopOffsetKey.self) { minY in
-                    handleTopOverscroll(minY)
-                }
+        let scrollView = ScrollView(.vertical, showsIndicators: false) {
+            webtoonScrollInnerContent
         }
-    }
+        .scrollBounceBehavior(.always)
 
-    private func webtoonScrollContent(proxy: ScrollViewProxy) -> some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            LazyVStack(spacing: 0) {
-                if #available(iOS 18.0, macOS 15.0, *) {
-                    EmptyView()
-                } else {
-                    GeometryReader { g in
-                        let minY = g.frame(in: .named("webtoonReaderScroll")).minY
-                        Color.clear.preference(key: ReaderTopOffsetKey.self, value: minY)
+        Group {
+            if #available(iOS 18.0, macOS 15.0, *) {
+                scrollView
+                    .onScrollGeometryChange(for: CGFloat.self) { geo in
+                        -(geo.contentOffset.y + geo.contentInsets.top)
+                    } action: { _, overscroll in
+                        handleTopOverscroll(overscroll)
                     }
-                    .frame(height: 1)
-                }
-
-                ForEach(Array(store.pages.enumerated()), id: \.offset) { index, urlString in
-                    ReaderPageView(
-                        pageIndex: index + 1,
-                        totalPages: store.pages.count,
-                        url: URL(string: urlString),
-                        token: appState.session?.apiToken,
-                        isEn: isEn,
-                        readerTheme: store.readerTheme,
-                        onSingleTap: toggleHUD
-                    )
-                    .id(index + 1)
-                    .onAppear {
-                        if !store.isBufferingChapter && !isRestoringInitialPage && store.currentPage != (index + 1) {
-                            store.currentPage = index + 1
+                    .onScrollPhaseChange { oldPhase, newPhase in
+                        if oldPhase == .interacting,
+                           newPhase != .interacting,
+                           topPullOffset > 45 {
+                            triggerAutoPreviousChapter()
                         }
                     }
-                }
-
-                EndOfChapterCard(
-                    currentChapterIndex: store.currentChapterIndex,
-                    hasNextChapter: store.hasNextChapter,
-                    nextChapterName: store.nextChapter?.fileName ?? ((isEn ? "Chapter " : "Capítulo ") + "\(store.currentChapterIndex + 1)"),
-                    isEn: isEn,
-                    onReportCorrupt: {
-                        Task {
-                            await store.reportCorruptChapter(apiClient: apiClient, session: appState.session, isEn: isEn)
-                        }
+            } else {
+                scrollView
+                    .onPreferenceChange(ReaderTopOffsetKey.self) { minY in
+                        handleTopOverscroll(minY)
                     }
-                ) {
-                    triggerAutoNextChapter()
-                }
-                .onAppear {
-                    if !store.pages.isEmpty && !store.isBufferingChapter && !isRestoringInitialPage {
-                        store.currentPage = store.pages.count
-                    }
-                }
-
-                if !store.pages.isEmpty && !store.isBufferingChapter && !isRestoringInitialPage && store.hasNextChapter {
-                    VStack(spacing: 10) {
-                        ProgressView().tint(.cyan)
-                        Text(isEn ? "Scrolling to next chapter..." : "Deslizando al siguiente capítulo...")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.cyan)
-                        if let next = store.nextChapter {
-                            Text(next.displayName)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .frame(height: 100)
-                    .frame(maxWidth: .infinity)
-                    .onAppear {
-                        triggerAutoNextChapter()
-                    }
-
-                    Spacer().frame(height: 120)
-                } else {
-                    Spacer().frame(height: 160)
-                }
             }
         }
         .id(store.currentChapterId)
-        .scrollBounceBehavior(.always)
         .coordinateSpace(name: "webtoonReaderScroll")
         .overlay(alignment: .top) {
-            if store.hasPreviousChapter && topPullOffset > 15 {
+            if store.hasPreviousChapter && topPullOffset > 12 {
                 previousChapterPullIndicator
                     .padding(.top, store.isHUDVisible ? 68 : 12)
             }
+        }
+        .onChange(of: store.currentChapterId) { _, _ in
+            topPullOffset = 0
         }
         .onChange(of: sliderTargetPage) { _, targetPage in
             guard let targetPage else { return }
@@ -513,8 +453,82 @@ public struct ReaderView: View {
         }
     }
 
+    private var webtoonScrollInnerContent: some View {
+        LazyVStack(spacing: 0) {
+            if #available(iOS 18.0, macOS 15.0, *) {
+                EmptyView()
+            } else {
+                GeometryReader { g in
+                    let minY = g.frame(in: .named("webtoonReaderScroll")).minY
+                    Color.clear.preference(key: ReaderTopOffsetKey.self, value: minY)
+                }
+                .frame(height: 1)
+            }
+
+            ForEach(Array(store.pages.enumerated()), id: \.offset) { index, urlString in
+                ReaderPageView(
+                    pageIndex: index + 1,
+                    totalPages: store.pages.count,
+                    url: URL(string: urlString),
+                    token: appState.session?.apiToken,
+                    isEn: isEn,
+                    readerTheme: store.readerTheme,
+                    onSingleTap: toggleHUD
+                )
+                .id(index + 1)
+                .onAppear {
+                    if !store.isBufferingChapter && !isRestoringInitialPage && store.currentPage != (index + 1) {
+                        store.currentPage = index + 1
+                    }
+                }
+            }
+
+            EndOfChapterCard(
+                currentChapterIndex: store.currentChapterIndex,
+                hasNextChapter: store.hasNextChapter,
+                nextChapterName: store.nextChapter?.fileName ?? ((isEn ? "Chapter " : "Capítulo ") + "\(store.currentChapterIndex + 1)"),
+                isEn: isEn,
+                onReportCorrupt: {
+                    Task {
+                        await store.reportCorruptChapter(apiClient: apiClient, session: appState.session, isEn: isEn)
+                    }
+                }
+            ) {
+                triggerAutoNextChapter()
+            }
+            .onAppear {
+                if !store.pages.isEmpty && !store.isBufferingChapter && !isRestoringInitialPage {
+                    store.currentPage = store.pages.count
+                }
+            }
+
+            if !store.pages.isEmpty && !store.isBufferingChapter && !isRestoringInitialPage && store.hasNextChapter {
+                VStack(spacing: 10) {
+                    ProgressView().tint(.cyan)
+                    Text(isEn ? "Scrolling to next chapter..." : "Deslizando al siguiente capítulo...")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.cyan)
+                    if let next = store.nextChapter {
+                        Text(next.displayName)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .frame(height: 100)
+                .frame(maxWidth: .infinity)
+                .onAppear {
+                    triggerAutoNextChapter()
+                }
+
+                Spacer().frame(height: 120)
+            } else {
+                Spacer().frame(height: 160)
+            }
+        }
+    }
+
     private func handleTopOverscroll(_ rawOffset: CGFloat) {
-        guard store.hasPreviousChapter, !store.isBufferingChapter, !isRestoringInitialPage else {
+        guard store.hasPreviousChapter, !store.isBufferingChapter, !isRestoringInitialPage, !isTransitioningChapter else {
             if topPullOffset != 0 { topPullOffset = 0 }
             return
         }
@@ -522,7 +536,7 @@ public struct ReaderView: View {
         if abs(clamped - topPullOffset) > 1 || (clamped == 0 && topPullOffset != 0) {
             topPullOffset = clamped
         }
-        if clamped > 55 {
+        if clamped > 60 {
             triggerAutoPreviousChapter()
         }
     }

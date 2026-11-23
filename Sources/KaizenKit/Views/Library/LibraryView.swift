@@ -754,6 +754,13 @@ public struct MangaDetailView: View {
     @State private var showDeleteChapterAlert: Bool = false
     @State private var adminActionToast: String?
     
+    // Selección múltiple / por rango de capítulos (#9)
+    @State private var isSelectingChapters: Bool = false
+    @State private var selectedChapterIds: Set<Int> = []
+    @State private var rangeAnchorChapterId: Int? = nil
+    @State private var isRunningBatchAction: Bool = false
+    @State private var showBatchDeleteAlert: Bool = false
+    
     public init(manga: Manga, apiClient: KaizenAPIClient) {
         self.manga = manga
         self.apiClient = apiClient
@@ -1103,6 +1110,30 @@ public struct MangaDetailView: View {
             Button(isEn ? "Cancel" : "Cancelar", role: .cancel) {}
         } message: {
             Text(isEn ? "Create a custom reading library and automatically add this manga to it." : "Crea una librería de lectura y asigna este manga inmediatamente.")
+        }
+        .alert(
+            isEn ? "Delete \(selectedChapterIds.count) Chapters" : "Eliminar \(selectedChapterIds.count) Capítulos",
+            isPresented: $showBatchDeleteAlert
+        ) {
+            Button(isEn ? "Delete Files & Chapters" : "Eliminar Capítulos y Archivos", role: .destructive) {
+                executeBatchAction(.delete, deleteFiles: true)
+            }
+            Button(isEn ? "Unlink Only (Keep Files)" : "Solo Desvincular (Conservar Archivos)") {
+                executeBatchAction(.delete, deleteFiles: false)
+            }
+            Button(isEn ? "Cancel" : "Cancelar", role: .cancel) {}
+        } message: {
+            Text(
+                isEn
+                    ? "Are you sure you want to delete \(selectedChapterIds.count) selected chapters from the server?"
+                    : "¿Seguro que quieres eliminar los \(selectedChapterIds.count) capítulos seleccionados del servidor?"
+            )
+        }
+        .safeAreaInset(edge: .bottom) {
+            if isSelectingChapters {
+                batchSelectionBar
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
         }
     }
     
@@ -2097,21 +2128,60 @@ public struct MangaDetailView: View {
                 .buttonStyle(.plain)
                 
                 if !chapters.isEmpty {
-                    Button {
-                        markAllAsRead()
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "checkmark")
-                            Text(isEn ? "Mark all" : "Marcar todo")
+                    if isSelectingChapters {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                exitChapterSelection()
+                            }
+                        } label: {
+                            Text(isEn ? "Done" : "Listo")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(Color.cyan.opacity(0.28), in: RoundedRectangle(cornerRadius: 10))
                         }
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(.cyan)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(Color.cyan.opacity(0.14), in: RoundedRectangle(cornerRadius: 10))
+                        .buttonStyle(.plain)
+                    } else {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                isSelectingChapters = true
+                                selectedChapterIds.removeAll()
+                                rangeAnchorChapterId = nil
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "checklist")
+                                Text(isEn ? "Select" : "Seleccionar")
+                            }
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Color.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
+                        }
+                        .buttonStyle(.plain)
+
+                        Button {
+                            markAllAsRead()
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "checkmark")
+                                Text(isEn ? "Mark all" : "Marcar todo")
+                            }
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.cyan)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Color.cyan.opacity(0.14), in: RoundedRectangle(cornerRadius: 10))
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
+            }
+            
+            if isSelectingChapters {
+                chapterSelectionControlsBar
             }
             
             if chapters.count > 6 {
@@ -2171,9 +2241,22 @@ public struct MangaDetailView: View {
     // MARK: - Fila de Capítulo Sin Repetir Número + Menú Contextual Limpio
     
     private func chapterCardRow(_ chapter: Chapter) -> some View {
-        HStack(spacing: 12) {
+        let isSelected = selectedChapterIds.contains(chapter.id)
+        let isAnchor = rangeAnchorChapterId == chapter.id
+        return HStack(spacing: 12) {
+            if isSelectingChapters {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundStyle(isAnchor ? Color.indigo : (isSelected ? Color.cyan : Color.secondary))
+                    .frame(width: 24)
+            }
+
             Button {
-                readingChapter = chapter
+                if isSelectingChapters {
+                    handleChapterSelectionTap(chapter)
+                } else {
+                    readingChapter = chapter
+                }
             } label: {
                 HStack(spacing: 12) {
                     chapterNumberBadge(chapter)
@@ -2184,14 +2267,49 @@ public struct MangaDetailView: View {
             }
             .buttonStyle(.plain)
             
-            chapterTrailingActions(chapter)
+            if isSelectingChapters {
+                if isAnchor {
+                    Text(isEn ? "Range start" : "Inicio rango")
+                        .font(.caption2.weight(.bold))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.indigo.opacity(0.25), in: Capsule())
+                        .foregroundStyle(.indigo)
+                } else if rangeAnchorChapterId == nil {
+                    Button {
+                        startRangeSelection(from: chapter)
+                    } label: {
+                        Text(isEn ? "Range" : "Rango")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.indigo)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 5)
+                            .background(Color.indigo.opacity(0.14), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+            } else {
+                chapterTrailingActions(chapter)
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
-        .background(Color.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 14))
+        .background(
+            isSelectingChapters && isSelected
+                ? Color.cyan.opacity(0.12)
+                : Color.white.opacity(0.035),
+            in: RoundedRectangle(cornerRadius: 14)
+        )
         .overlay(
             RoundedRectangle(cornerRadius: 14)
-                .stroke(chapter.isRead ? Color.cyan.opacity(0.14) : Color.white.opacity(0.06), lineWidth: 1)
+                .stroke(
+                    isSelectingChapters && isAnchor
+                        ? Color.indigo.opacity(0.85)
+                        : (isSelectingChapters && isSelected
+                            ? Color.cyan.opacity(0.6)
+                            : (chapter.isRead ? Color.cyan.opacity(0.14) : Color.white.opacity(0.06))),
+                    lineWidth: (isSelectingChapters && (isSelected || isAnchor)) ? 1.5 : 1
+                )
         )
         .contextMenu {
             chapterContextMenuItems(chapter)
@@ -2239,6 +2357,16 @@ public struct MangaDetailView: View {
                     .foregroundStyle(.cyan)
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
+            }
+            
+            if let source = chapter.source, !source.isEmpty {
+                Text(source)
+                    .font(.caption2.weight(.medium))
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .background(Color.white.opacity(0.08), in: Capsule())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
         }
     }
@@ -2338,6 +2466,14 @@ public struct MangaDetailView: View {
     @ViewBuilder
     private func chapterContextMenuItems(_ chapter: Chapter) -> some View {
         Button {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                startRangeSelection(from: chapter)
+            }
+        } label: {
+            Label(isEn ? "Select range from here" : "Seleccionar rango desde aquí", systemImage: "line.3.horizontal.decrease.circle")
+        }
+
+        Button {
             toggleChapterRead(chapter)
         } label: {
             Label(
@@ -2368,6 +2504,278 @@ public struct MangaDetailView: View {
                 showDeleteChapterAlert = true
             } label: {
                 Label(isEn ? "Delete Chapter from Server" : "Eliminar del servidor", systemImage: "trash")
+            }
+        }
+    }
+
+    // MARK: - Controles y Barra Flotante de Selección Múltiple / Rango (#9)
+
+    private var chapterSelectionControlsBar: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text(
+                    isEn
+                        ? "\(selectedChapterIds.count) selected"
+                        : "\(selectedChapterIds.count) seleccionados"
+                )
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.cyan)
+
+                Spacer()
+
+                Button {
+                    if selectedChapterIds.count == filteredChapters.count {
+                        selectedChapterIds.removeAll()
+                        rangeAnchorChapterId = nil
+                    } else {
+                        selectedChapterIds = Set(filteredChapters.map(\.id))
+                        rangeAnchorChapterId = nil
+                    }
+                } label: {
+                    Text(
+                        selectedChapterIds.count == filteredChapters.count
+                            ? (isEn ? "Clear" : "Ninguno")
+                            : (isEn ? "Select all" : "Todos")
+                    )
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(Color.white.opacity(0.08), in: Capsule())
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    let unreadIds = filteredChapters.filter { !$0.isRead }.map(\.id)
+                    selectedChapterIds = Set(unreadIds)
+                    rangeAnchorChapterId = nil
+                } label: {
+                    Text(isEn ? "Unread" : "No leídos")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Color.white.opacity(0.08), in: Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+
+            if let anchorId = rangeAnchorChapterId,
+               let anchorChapter = filteredChapters.first(where: { $0.id == anchorId }) {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.left.and.right.circle.fill")
+                        .foregroundStyle(.indigo)
+                    Text(
+                        isEn
+                            ? "Range start: Ch. \(anchorChapter.index). Tap the end chapter to select all in between."
+                            : "Inicio de rango: Cap. \(anchorChapter.index). Toca el capítulo final para seleccionar el bloque."
+                    )
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.white.opacity(0.9))
+                    Spacer(minLength: 4)
+                    Button {
+                        rangeAnchorChapterId = nil
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(Color.indigo.opacity(0.18), in: RoundedRectangle(cornerRadius: 10))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(Color.indigo.opacity(0.45), lineWidth: 1)
+                )
+            } else {
+                Text(
+                    isEn
+                        ? "Tap chapters to toggle, or tap \"Range\" on any row to select a continuous block."
+                        : "Toca capítulos para marcarlos, o pulsa \"Rango\" en cualquier fila para seleccionar un bloque completo."
+                )
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
+        }
+        .padding(12)
+        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 14))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(Color.cyan.opacity(0.22), lineWidth: 1)
+        )
+    }
+
+    private var batchSelectionBar: some View {
+        let disabled = selectedChapterIds.isEmpty || isRunningBatchAction
+        return VStack(spacing: 8) {
+            if isRunningBatchAction {
+                HStack(spacing: 8) {
+                    ProgressView().tint(.cyan).scaleEffect(0.8)
+                    Text(isEn ? "Applying batch action..." : "Aplicando acción en lote...")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.cyan)
+                }
+            }
+
+            HStack(spacing: 8) {
+                batchActionButton(
+                    title: isEn ? "Read" : "Leídos",
+                    icon: "checkmark.circle",
+                    tint: .cyan,
+                    disabled: disabled
+                ) {
+                    executeBatchAction(.markRead)
+                }
+
+                batchActionButton(
+                    title: isEn ? "Unread" : "No leídos",
+                    icon: "circle",
+                    tint: .white,
+                    disabled: disabled
+                ) {
+                    executeBatchAction(.markUnread)
+                }
+
+                batchActionButton(
+                    title: isEn ? "Corrupt" : "Corruptos",
+                    icon: "flag",
+                    tint: .orange,
+                    disabled: disabled
+                ) {
+                    executeBatchAction(.reportCorrupt)
+                }
+
+                if appState.isManagement {
+                    batchActionButton(
+                        title: isEn ? "Redownload" : "Redescargar",
+                        icon: "arrow.triangle.2.circlepath",
+                        tint: .indigo,
+                        disabled: disabled
+                    ) {
+                        executeBatchAction(.redownload)
+                    }
+
+                    batchActionButton(
+                        title: isEn ? "Delete" : "Borrar",
+                        icon: "trash",
+                        tint: .red,
+                        disabled: disabled
+                    ) {
+                        showBatchDeleteAlert = true
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .kaizenGlass(interactive: true, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .padding(.horizontal, 14)
+        .padding(.bottom, 8)
+    }
+
+    private func batchActionButton(
+        title: String,
+        icon: String,
+        tint: Color,
+        disabled: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.subheadline.weight(.semibold))
+                Text(title)
+                    .font(.system(size: 10, weight: .semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .foregroundStyle(disabled ? Color.secondary.opacity(0.5) : tint)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 6)
+            .background(
+                disabled ? Color.white.opacity(0.03) : tint.opacity(0.12),
+                in: RoundedRectangle(cornerRadius: 12)
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+    }
+
+    private func startRangeSelection(from chapter: Chapter) {
+        isSelectingChapters = true
+        rangeAnchorChapterId = chapter.id
+        selectedChapterIds.insert(chapter.id)
+    }
+
+    private func handleChapterSelectionTap(_ chapter: Chapter) {
+        if let anchorId = rangeAnchorChapterId,
+           let startPos = filteredChapters.firstIndex(where: { $0.id == anchorId }),
+           let endPos = filteredChapters.firstIndex(where: { $0.id == chapter.id }) {
+            let lower = min(startPos, endPos)
+            let upper = max(startPos, endPos)
+            for item in filteredChapters[lower...upper] {
+                selectedChapterIds.insert(item.id)
+            }
+            rangeAnchorChapterId = nil
+            return
+        }
+
+        if selectedChapterIds.contains(chapter.id) {
+            selectedChapterIds.remove(chapter.id)
+        } else {
+            selectedChapterIds.insert(chapter.id)
+        }
+    }
+
+    private func exitChapterSelection() {
+        isSelectingChapters = false
+        selectedChapterIds.removeAll()
+        rangeAnchorChapterId = nil
+    }
+
+    private func executeBatchAction(_ action: ChapterBatchAction, deleteFiles: Bool = true) {
+        guard let session = appState.session else { return }
+        let ids = Array(selectedChapterIds)
+        guard !ids.isEmpty else { return }
+
+        isRunningBatchAction = true
+        Task {
+            defer { isRunningBatchAction = false }
+            do {
+                let result = try await apiClient.executeChapterBatch(
+                    serverUrl: session.serverUrl,
+                    token: session.apiToken,
+                    mangaId: currentManga.id,
+                    action: action,
+                    chapterIds: ids,
+                    deleteFiles: deleteFiles
+                )
+                let count = result.processedCount
+                switch action {
+                case .markRead:
+                    adminActionToast = isEn ? "\(count) chapters marked as read." : "\(count) capítulos marcados como leídos."
+                case .markUnread:
+                    adminActionToast = isEn ? "\(count) chapters marked as unread." : "\(count) capítulos marcados como no leídos."
+                case .reportCorrupt:
+                    adminActionToast = isEn ? "\(count) chapters reported corrupt. Audit scheduled." : "\(count) capítulos reportados como corruptos. Auditoría programada."
+                case .delete:
+                    adminActionToast = isEn ? "\(count) chapters deleted from server." : "\(count) capítulos eliminados del servidor."
+                case .redownload:
+                    adminActionToast = isEn ? "\(count) chapters queued for redownload." : "\(count) capítulos encolados para redescarga."
+                }
+                if !result.failedIds.isEmpty {
+                    let failedMsg = isEn
+                        ? " (\(result.failedIds.count) failed)"
+                        : " (\(result.failedIds.count) fallaron)"
+                    adminActionToast = (adminActionToast ?? "") + failedMsg
+                }
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    exitChapterSelection()
+                }
+                await loadDetail()
+            } catch {
+                errorMessage = error.localizedDescription
             }
         }
     }
