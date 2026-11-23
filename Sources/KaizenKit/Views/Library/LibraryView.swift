@@ -744,6 +744,7 @@ public struct MangaDetailView: View {
     @State private var configuredSources: [MangaConfiguredSource] = []
     @State private var isLoadingSources: Bool = false
     @State private var showSourcesSheet: Bool = false
+    @State private var showSourcesFromAdminSheet: Bool = false
     @State private var showAdminSheet: Bool = false
     @State private var showRedownloadRangeAlert: Bool = false
     @State private var rangeStartChapter: String = "1"
@@ -909,6 +910,14 @@ public struct MangaDetailView: View {
             Button(isEn ? "Cancel" : "Cancelar", role: .cancel) {}
         } message: {
             Text(isEn ? "This will remove the series from your Kaizen library." : "Esto eliminará la serie de tu catálogo de Kaizen.")
+        }
+        .sheet(isPresented: $showSourcesFromAdminSheet) {
+            MangaSourcesManagementSheet(manga: currentManga, apiClient: apiClient) {
+                Task {
+                    await appState.loadLibrary(client: apiClient, force: true)
+                    await loadDetail()
+                }
+            }
         }
         }
         .presentationDetents([.medium, .large])
@@ -1839,7 +1848,7 @@ public struct MangaDetailView: View {
             Spacer()
             
             Button {
-                showSourcesSheet = true
+                showSourcesFromAdminSheet = true
             } label: {
                 Text(isEn ? "Configure" : "Configurar")
                     .font(.caption2.weight(.semibold))
@@ -1927,7 +1936,7 @@ public struct MangaDetailView: View {
                             .foregroundStyle(.secondary)
                         Spacer()
                         Button {
-                            showSourcesSheet = true
+                            showSourcesFromAdminSheet = true
                         } label: {
                             HStack(spacing: 4) {
                                 Image(systemName: "plus.circle.fill")
