@@ -690,7 +690,7 @@ public actor KaizenAPIClient {
     
     public func searchMangaRemote(serverUrl: URL, token: String, keyword: String, source: String) async throws -> [RemoteSearchResult] {
         var req = request(try trpcQueryURL(serverUrl, procedure: "manga.search", input: ["keyword": keyword, "source": source]), token: token)
-        req.timeoutInterval = 60 // Permite búsquedas globales en múltiples fuentes sin timeout prematuro
+        req.timeoutInterval = 180 // Permite búsquedas globales en múltiples fuentes sin timeout prematuro
         let (data, http) = try await send(req)
         guard (200...299).contains(http.statusCode) else { throw KaizenError.server(status: http.statusCode) }
         guard let items = trpcRawData(data) as? [[String: Any]] else { return [] }
@@ -1138,7 +1138,8 @@ public actor KaizenAPIClient {
             token: token,
             json: ["json": ["mangaId": mangaId]]
         )
-        req.timeoutInterval = 60
+        // Searching ~20 active sources across multiple synonyms can legitimately take 1-4 minutes
+        req.timeoutInterval = 300
         let (data, http) = try await send(req)
         guard (200...299).contains(http.statusCode) else {
             throw KaizenError.server(status: http.statusCode)

@@ -138,7 +138,7 @@ public struct MangaSourcesManagementSheet: View {
                                     }
                                     Text(
                                         isLoadingAdvisor
-                                            ? (isEn ? "Comparing active sources..." : "Comparando fuentes activas...")
+                                            ? (isEn ? "Scanning all active sources (1–3 min)..." : "Escaneando todas las fuentes (1–3 min)...")
                                             : (isEn ? "Find Better Source" : "Buscar Mejor Fuente")
                                     )
                                     .font(.subheadline.weight(.semibold))
