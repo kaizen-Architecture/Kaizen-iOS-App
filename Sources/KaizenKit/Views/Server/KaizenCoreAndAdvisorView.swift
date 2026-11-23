@@ -185,6 +185,8 @@ public struct KaizenCoreView: View {
                 } label: {
                     Label(isEn ? "Check Now" : "Comprobar", systemImage: "arrow.clockwise")
                         .font(.caption.weight(.bold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
                         .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
@@ -198,6 +200,8 @@ public struct KaizenCoreView: View {
                 } label: {
                     Label(isEn ? "Update Core" : "Actualizar Core", systemImage: "arrow.down.circle.fill")
                         .font(.caption.weight(.bold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
                         .background(Color.cyan.opacity(0.22), in: RoundedRectangle(cornerRadius: 12))
@@ -212,6 +216,8 @@ public struct KaizenCoreView: View {
                     } label: {
                         Label(isEn ? "Rollback" : "Revertir", systemImage: "arrow.uturn.backward")
                             .font(.caption.weight(.bold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 10)
                             .background(Color.orange.opacity(0.2), in: RoundedRectangle(cornerRadius: 12))
@@ -797,12 +803,14 @@ public struct BetterSourceAdvisorView: View {
                         Text("\(rec.currentSource) (Ch. \(rec.currentMaxChapter))")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
+                            .lineLimit(1)
                         Image(systemName: "arrow.right")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                         Text("\(rec.bestSource) (Ch. \(rec.bestMaxChapter))")
                             .font(.caption2.weight(.bold))
                             .foregroundStyle(.green)
+                            .lineLimit(1)
                     }
                 }
 

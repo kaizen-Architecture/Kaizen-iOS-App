@@ -2093,12 +2093,14 @@ public struct MangaDetailView: View {
     // MARK: - Sección de Capítulos Sin Redundancia
     
     private var chaptersSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
                     Text(isEn ? "Chapters" : "Capítulos")
                         .font(.title3.weight(.bold))
                         .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
                     
                     Text("\(filteredChapters.count)")
                         .font(.caption.weight(.bold))
@@ -2106,76 +2108,94 @@ public struct MangaDetailView: View {
                         .padding(.vertical, 3)
                         .background(Color.cyan.opacity(0.15), in: Capsule())
                         .foregroundStyle(.cyan)
-                }
-                
-                Spacer()
-                
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        sortNewestFirst.toggle()
-                    }
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: sortNewestFirst ? "arrow.down" : "arrow.up")
-                        Text(sortNewestFirst ? (isEn ? "Newest" : "Recientes") : (isEn ? "Oldest" : "Primeros"))
-                    }
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
-                }
-                .buttonStyle(.plain)
-                
-                if !chapters.isEmpty {
-                    if isSelectingChapters {
-                        Button {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                exitChapterSelection()
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                    
+                    Spacer(minLength: 8)
+                    
+                    if !chapters.isEmpty {
+                        if isSelectingChapters {
+                            Button {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    exitChapterSelection()
+                                }
+                            } label: {
+                                Text(isEn ? "Done" : "Listo")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(.white)
+                                    .lineLimit(1)
+                                    .fixedSize(horizontal: true, vertical: false)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                                    .background(Color.cyan.opacity(0.28), in: RoundedRectangle(cornerRadius: 10))
                             }
-                        } label: {
-                            Text(isEn ? "Done" : "Listo")
+                            .buttonStyle(.plain)
+                        } else {
+                            Button {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    isSelectingChapters = true
+                                    selectedChapterIds.removeAll()
+                                    rangeAnchorChapterId = nil
+                                }
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "checklist")
+                                    Text(isEn ? "Select" : "Seleccionar")
+                                }
                                 .font(.caption.weight(.bold))
                                 .foregroundStyle(.white)
-                                .padding(.horizontal, 12)
+                                .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
+                                .padding(.horizontal, 10)
                                 .padding(.vertical, 6)
-                                .background(Color.cyan.opacity(0.28), in: RoundedRectangle(cornerRadius: 10))
+                                .background(Color.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
-                    } else {
+                    }
+                }
+                
+                if !isSelectingChapters {
+                    HStack(spacing: 8) {
                         Button {
                             withAnimation(.easeInOut(duration: 0.2)) {
-                                isSelectingChapters = true
-                                selectedChapterIds.removeAll()
-                                rangeAnchorChapterId = nil
+                                sortNewestFirst.toggle()
                             }
                         } label: {
                             HStack(spacing: 4) {
-                                Image(systemName: "checklist")
-                                Text(isEn ? "Select" : "Seleccionar")
+                                Image(systemName: sortNewestFirst ? "arrow.down" : "arrow.up")
+                                Text(sortNewestFirst ? (isEn ? "Newest" : "Recientes") : (isEn ? "Oldest" : "Primeros"))
                             }
-                            .font(.caption.weight(.bold))
+                            .font(.caption.weight(.semibold))
                             .foregroundStyle(.white)
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 6)
-                            .background(Color.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
+                            .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
                         }
                         .buttonStyle(.plain)
-
-                        Button {
-                            markAllAsRead()
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "checkmark")
-                                Text(isEn ? "Mark all" : "Marcar todo")
+                        
+                        if !chapters.isEmpty {
+                            Button {
+                                markAllAsRead()
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "checkmark")
+                                    Text(isEn ? "Mark all" : "Marcar todo")
+                                }
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(.cyan)
+                                .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(Color.cyan.opacity(0.14), in: RoundedRectangle(cornerRadius: 10))
                             }
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(.cyan)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(Color.cyan.opacity(0.14), in: RoundedRectangle(cornerRadius: 10))
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
+                        
+                        Spacer(minLength: 0)
                     }
                 }
             }
@@ -2251,7 +2271,7 @@ public struct MangaDetailView: View {
         }()
         let rowLineWidth: CGFloat = (isSelectingChapters && (isSelected || isAnchor)) ? 1.5 : 1
 
-        return HStack(spacing: 12) {
+        return HStack(spacing: 10) {
             if isSelectingChapters {
                 let iconColor: Color = isAnchor ? .indigo : (isSelected ? .cyan : .secondary)
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
@@ -2267,14 +2287,15 @@ public struct MangaDetailView: View {
                     readingChapter = chapter
                 }
             } label: {
-                HStack(spacing: 12) {
+                HStack(spacing: 10) {
                     chapterNumberBadge(chapter)
                     chapterStatusMetadata(chapter)
-                    Spacer(minLength: 0)
                 }
+                .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
             
             if isSelectingChapters {
                 chapterSelectionRowTrailing(chapter, isAnchor: isAnchor)
@@ -2282,6 +2303,7 @@ public struct MangaDetailView: View {
                 chapterTrailingActions(chapter)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
         .background(rowBg, in: RoundedRectangle(cornerRadius: 14))
@@ -2341,36 +2363,37 @@ public struct MangaDetailView: View {
     }
     
     private func chapterStatusMetadata(_ chapter: Chapter) -> some View {
-        HStack(spacing: 8) {
-            if let formattedSize = chapter.formattedSize {
-                Text(formattedSize)
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
-            }
-            
-            if !chapter.isRead && chapter.lastReadPage > 0 {
-                Text(isEn ? "Page \(chapter.lastReadPage)" : "Pág. \(chapter.lastReadPage)")
-                    .font(.caption2.weight(.bold))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Color.cyan.opacity(0.16), in: Capsule())
-                    .foregroundStyle(.cyan)
-                    .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                if let formattedSize = chapter.formattedSize {
+                    Text(formattedSize)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                }
+                
+                if !chapter.isRead && chapter.lastReadPage > 0 {
+                    Text(isEn ? "Page \(chapter.lastReadPage)" : "Pág. \(chapter.lastReadPage)")
+                        .font(.caption2.weight(.bold))
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2)
+                        .background(Color.cyan.opacity(0.16), in: Capsule())
+                        .foregroundStyle(.cyan)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                }
             }
             
             if let source = chapter.source, !source.isEmpty {
                 Text(source)
                     .font(.caption2.weight(.medium))
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 2)
-                    .background(Color.white.opacity(0.08), in: Capsule())
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.secondary.opacity(0.85))
                     .lineLimit(1)
+                    .truncationMode(.tail)
             }
         }
+        .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
     }
     
     private func chapterTrailingActions(_ chapter: Chapter) -> some View {
