@@ -2243,11 +2243,20 @@ public struct MangaDetailView: View {
     private func chapterCardRow(_ chapter: Chapter) -> some View {
         let isSelected = selectedChapterIds.contains(chapter.id)
         let isAnchor = rangeAnchorChapterId == chapter.id
+        let rowBg: Color = (isSelectingChapters && isSelected) ? Color.cyan.opacity(0.12) : Color.white.opacity(0.035)
+        let rowStroke: Color = {
+            if isSelectingChapters && isAnchor { return Color.indigo.opacity(0.85) }
+            if isSelectingChapters && isSelected { return Color.cyan.opacity(0.6) }
+            return chapter.isRead ? Color.cyan.opacity(0.14) : Color.white.opacity(0.06)
+        }()
+        let rowLineWidth: CGFloat = (isSelectingChapters && (isSelected || isAnchor)) ? 1.5 : 1
+
         return HStack(spacing: 12) {
             if isSelectingChapters {
+                let iconColor: Color = isAnchor ? .indigo : (isSelected ? .cyan : .secondary)
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .font(.title3)
-                    .foregroundStyle(isAnchor ? Color.indigo : (isSelected ? Color.cyan : Color.secondary))
+                    .foregroundStyle(iconColor)
                     .frame(width: 24)
             }
 
@@ -2268,51 +2277,44 @@ public struct MangaDetailView: View {
             .buttonStyle(.plain)
             
             if isSelectingChapters {
-                if isAnchor {
-                    Text(isEn ? "Range start" : "Inicio rango")
-                        .font(.caption2.weight(.bold))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.indigo.opacity(0.25), in: Capsule())
-                        .foregroundStyle(.indigo)
-                } else if rangeAnchorChapterId == nil {
-                    Button {
-                        startRangeSelection(from: chapter)
-                    } label: {
-                        Text(isEn ? "Range" : "Rango")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.indigo)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 5)
-                            .background(Color.indigo.opacity(0.14), in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-                }
+                chapterSelectionRowTrailing(chapter, isAnchor: isAnchor)
             } else {
                 chapterTrailingActions(chapter)
             }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
-        .background(
-            isSelectingChapters && isSelected
-                ? Color.cyan.opacity(0.12)
-                : Color.white.opacity(0.035),
-            in: RoundedRectangle(cornerRadius: 14)
-        )
+        .background(rowBg, in: RoundedRectangle(cornerRadius: 14))
         .overlay(
             RoundedRectangle(cornerRadius: 14)
-                .stroke(
-                    isSelectingChapters && isAnchor
-                        ? Color.indigo.opacity(0.85)
-                        : (isSelectingChapters && isSelected
-                            ? Color.cyan.opacity(0.6)
-                            : (chapter.isRead ? Color.cyan.opacity(0.14) : Color.white.opacity(0.06))),
-                    lineWidth: (isSelectingChapters && (isSelected || isAnchor)) ? 1.5 : 1
-                )
+                .stroke(rowStroke, lineWidth: rowLineWidth)
         )
         .contextMenu {
             chapterContextMenuItems(chapter)
+        }
+    }
+
+    @ViewBuilder
+    private func chapterSelectionRowTrailing(_ chapter: Chapter, isAnchor: Bool) -> some View {
+        if isAnchor {
+            Text(isEn ? "Range start" : "Inicio rango")
+                .font(.caption2.weight(.bold))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color.indigo.opacity(0.25), in: Capsule())
+                .foregroundStyle(.indigo)
+        } else if rangeAnchorChapterId == nil {
+            Button {
+                startRangeSelection(from: chapter)
+            } label: {
+                Text(isEn ? "Range" : "Rango")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.indigo)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(Color.indigo.opacity(0.14), in: Capsule())
+            }
+            .buttonStyle(.plain)
         }
     }
     
