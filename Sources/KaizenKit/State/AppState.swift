@@ -61,6 +61,12 @@ public final class AppState {
     public var activeDownloadCount: Int {
         downloadQueueJobs.filter { $0.status == "active" }.count
     }
+
+    // MARK: - Better Source Advisor por Manga en Segundo Plano
+    public var perMangaAdvisorLoadingIds: Set<Int> = []
+    public var perMangaAdvisorReports: [Int: MangaBetterSourceReport] = [:]
+    public var perMangaAdvisorErrors: [Int: String] = [:]
+    public var perMangaAdvisorBanner: String? = nil
     
     public var waitingDownloadCount: Int {
         downloadQueueJobs.filter { $0.status == "waiting" }.count
@@ -594,6 +600,56 @@ public final class AppState {
             try? await Task.sleep(for: .seconds(3.5))
             if !Task.isCancelled {
                 self.chapterCheckToastMessage = nil
+            }
+        }
+    }
+
+    /// Ejecuta el Better Source Advisor de un manga en segundo plano desacoplado del modal,
+    /// guardando el resultado en caché y mostrando un aviso global al terminar.
+    public func startBackgroundBetterSourceScan(for manga: Manga, client: KaizenAPIClient) {
+        guard let session = self.session else { return }
+        guard !perMangaAdvisorLoadingIds.contains(manga.id) else { return }
+
+        let mangaId = manga.id
+        let mangaTitle = manga.title
+        let isEn = currentLanguage == "en"
+
+        perMangaAdvisorLoadingIds.insert(mangaId)
+        perMangaAdvisorErrors[mangaId] = nil
+
+        Task {
+            defer {
+                self.perMangaAdvisorLoadingIds.remove(mangaId)
+            }
+            do {
+                let report = try await client.suggestBetterSources(
+                    serverUrl: session.serverUrl,
+                    token: session.apiToken,
+                    mangaId: mangaId
+                )
+                self.perMangaAdvisorReports[mangaId] = report
+                let count = report.suggestions.count
+                if count > 0 {
+                    let best = report.suggestions.first
+                    let detail = best.map { "\($0.source) (+\($0.chapterGain))" } ?? ""
+                    self.perMangaAdvisorBanner = isEn
+                        ? "Better source ready for \(mangaTitle): \(detail)"
+                        : "Mejor fuente lista para \(mangaTitle): \(detail)"
+                } else {
+                    self.perMangaAdvisorBanner = isEn
+                        ? "\(mangaTitle): current source is already the best."
+                        : "\(mangaTitle): la fuente actual ya es la mejor."
+                }
+            } catch {
+                self.perMangaAdvisorErrors[mangaId] = error.localizedDescription
+                self.perMangaAdvisorBanner = isEn
+                    ? "Source scan failed for \(mangaTitle)."
+                    : "Error al buscar mejores fuentes para \(mangaTitle)."
+            }
+
+            try? await Task.sleep(for: .seconds(6))
+            if !Task.isCancelled {
+                self.perMangaAdvisorBanner = nil
             }
         }
     }

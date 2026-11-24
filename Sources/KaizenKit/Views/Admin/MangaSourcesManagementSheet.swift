@@ -23,11 +23,20 @@ public struct MangaSourcesManagementSheet: View {
     @State private var isAdding: Bool = false
     @State private var addError: String?
 
-    // Better Source Advisor por manga (#4)
-    @State private var advisorReport: MangaBetterSourceReport?
-    @State private var isLoadingAdvisor: Bool = false
-    @State private var advisorError: String?
+    // Better Source Advisor por manga (#4) — estado de cambio de fuente
     @State private var isSwitchingAdvisorSource: String?
+
+    private var isLoadingAdvisor: Bool {
+        appState.perMangaAdvisorLoadingIds.contains(manga.id)
+    }
+
+    private var advisorReport: MangaBetterSourceReport? {
+        appState.perMangaAdvisorReports[manga.id]
+    }
+
+    private var advisorError: String? {
+        appState.perMangaAdvisorErrors[manga.id]
+    }
     
     private var isEn: Bool {
         appState.currentLanguage == "en"
@@ -127,7 +136,7 @@ public struct MangaSourcesManagementSheet: View {
 
                         Section {
                             Button {
-                                Task { await runPerMangaAdvisor() }
+                                appState.startBackgroundBetterSourceScan(for: manga, client: apiClient)
                             } label: {
                                 HStack(spacing: 10) {
                                     if isLoadingAdvisor {
@@ -136,13 +145,20 @@ public struct MangaSourcesManagementSheet: View {
                                         Image(systemName: "wand.and.stars")
                                             .foregroundStyle(.purple)
                                     }
-                                    Text(
-                                        isLoadingAdvisor
-                                            ? (isEn ? "Scanning all active sources (1–3 min)..." : "Escaneando todas las fuentes (1–3 min)...")
-                                            : (isEn ? "Find Better Source" : "Buscar Mejor Fuente")
-                                    )
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(.white)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(
+                                            isLoadingAdvisor
+                                                ? (isEn ? "Scanning in background..." : "Escaneando en segundo plano...")
+                                                : (isEn ? "Find Better Source" : "Buscar Mejor Fuente")
+                                        )
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(.white)
+                                        if isLoadingAdvisor {
+                                            Text(isEn ? "You can close this sheet and keep reading — you'll be notified when ready." : "Puedes cerrar esta ventana y seguir leyendo; te avisaremos al terminar.")
+                                                .font(.caption2)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    }
                                     Spacer()
                                 }
                             }
@@ -492,22 +508,6 @@ public struct MangaSourcesManagementSheet: View {
         }
     }
 
-    private func runPerMangaAdvisor() async {
-        guard let session = appState.session else { return }
-        isLoadingAdvisor = true
-        advisorError = nil
-        defer { isLoadingAdvisor = false }
-        do {
-            advisorReport = try await apiClient.suggestBetterSources(
-                serverUrl: session.serverUrl,
-                token: session.apiToken,
-                mangaId: manga.id
-            )
-        } catch {
-            advisorError = error.localizedDescription
-        }
-    }
-
     private func applyAdvisorSuggestion(_ suggestion: MangaBetterSourceSuggestion) async {
         guard let session = appState.session else { return }
         isSwitchingAdvisorSource = suggestion.source
@@ -520,10 +520,11 @@ public struct MangaSourcesManagementSheet: View {
                 newSource: suggestion.source,
                 newSourceTitle: suggestion.matchedTitle
             )
+            appState.perMangaAdvisorErrors[manga.id] = nil
             await loadSources()
             onUpdate()
         } catch {
-            advisorError = error.localizedDescription
+            appState.perMangaAdvisorErrors[manga.id] = error.localizedDescription
         }
     }
 }

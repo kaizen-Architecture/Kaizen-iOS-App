@@ -16,6 +16,33 @@ public struct RootAppView: View {
             } else {
                 // iPhone: barra flotante · iPadOS: barra lateral colapsable (sidebarAdaptable)
                 MainTabsView(apiClient: apiClient)
+                    .overlay(alignment: .top) {
+                        if let banner = appState.perMangaAdvisorBanner {
+                            HStack(spacing: 8) {
+                                Image(systemName: "wand.and.stars")
+                                    .foregroundStyle(.purple)
+                                Text(banner)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.white)
+                                    .lineLimit(2)
+                                Spacer(minLength: 4)
+                                Button {
+                                    appState.perMangaAdvisorBanner = nil
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundStyle(.secondary)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .kaizenGlass(interactive: true, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .padding(.horizontal, 16)
+                            .padding(.top, 8)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                        }
+                    }
+                    .animation(.spring(response: 0.3, dampingFraction: 0.85), value: appState.perMangaAdvisorBanner)
             }
         }
         .environment(\.locale, Locale(identifier: appState.currentLanguage))
