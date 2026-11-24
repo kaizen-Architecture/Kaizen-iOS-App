@@ -133,4 +133,40 @@ final class BatchAndCoreModelsTests: XCTestCase {
         XCTAssertTrue(lua.contains("page:close()"))
         XCTAssertTrue(lua.contains("table.insert("))
     }
+
+    func testMangaBetterSourceScanStatusDecoding() throws {
+        let json = """
+        {
+            "mangaId": 42,
+            "isRunning": true,
+            "cancelled": false,
+            "processedSources": 7,
+            "totalSources": 20,
+            "currentSource": "MangaKatana",
+            "currentQuery": "Goblin's Ascent",
+            "currentSourceName": "MangaDex",
+            "currentMaxChapter": 45,
+            "failedSources": ["WeebCentral_Dbg"],
+            "suggestions": [
+                {
+                    "source": "Kingofshojo",
+                    "matchedTitle": "Goblin's Ascent",
+                    "remoteMaxChapter": 62,
+                    "remoteTotalEntries": 64,
+                    "chapterGain": 17
+                }
+            ]
+        }
+        """.data(using: .utf8)!
+
+        let status = try JSONDecoder().decode(MangaBetterSourceScanStatus.self, from: json)
+        XCTAssertEqual(status.mangaId, 42)
+        XCTAssertTrue(status.isRunning)
+        XCTAssertEqual(status.processedSources, 7)
+        XCTAssertEqual(status.totalSources, 20)
+        XCTAssertEqual(status.progressRatio, 0.35, accuracy: 0.001)
+        XCTAssertEqual(status.currentSource, "MangaKatana")
+        XCTAssertEqual(status.failedSources, ["WeebCentral_Dbg"])
+        XCTAssertEqual(status.suggestions.first?.chapterGain, 17)
+    }
 }

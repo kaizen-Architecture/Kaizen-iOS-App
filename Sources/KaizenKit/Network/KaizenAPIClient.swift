@@ -1131,6 +1131,77 @@ public actor KaizenAPIClient {
         await KaizenLogger.shared.info("Advisor", "Fuente principal cambiada a '\(newSource)' para manga \(mangaId).")
     }
 
+    // MARK: - Per-Manga Async Better Source Advisor (REST v1 - Kaizen PR #59)
+
+    public func fetchMangaBetterSourceScanStatus(
+        serverUrl: URL,
+        token: String,
+        mangaId: Int
+    ) async throws -> MangaBetterSourceScanStatus {
+        let req = request(
+            try endpoint(serverUrl, path: "/api/v1/mangas/\(mangaId)/better-sources"),
+            token: token
+        )
+        let (data, http) = try await send(req)
+        try checkREST(http)
+        return try decoder.decode(MangaBetterSourceScanStatus.self, from: data)
+    }
+
+    public func startMangaBetterSourceScan(
+        serverUrl: URL,
+        token: String,
+        mangaId: Int
+    ) async throws {
+        let req = try request(
+            try endpoint(serverUrl, path: "/api/v1/mangas/\(mangaId)/better-sources"),
+            method: "POST",
+            token: token,
+            json: ["action": "start"]
+        )
+        let (_, http) = try await send(req)
+        try checkREST(http)
+    }
+
+    public func cancelMangaBetterSourceScan(
+        serverUrl: URL,
+        token: String,
+        mangaId: Int
+    ) async throws {
+        let req = try request(
+            try endpoint(serverUrl, path: "/api/v1/mangas/\(mangaId)/better-sources"),
+            method: "POST",
+            token: token,
+            json: ["action": "cancel"]
+        )
+        let (_, http) = try await send(req)
+        try checkREST(http)
+    }
+
+    public func switchMangaBetterSource(
+        serverUrl: URL,
+        token: String,
+        mangaId: Int,
+        newSource: String,
+        newSourceTitle: String? = nil
+    ) async throws {
+        var payload: [String: Any] = [
+            "action": "switch",
+            "newSource": newSource
+        ]
+        if let newSourceTitle, !newSourceTitle.isEmpty {
+            payload["newSourceTitle"] = newSourceTitle
+        }
+        let req = try request(
+            try endpoint(serverUrl, path: "/api/v1/mangas/\(mangaId)/better-sources"),
+            method: "POST",
+            token: token,
+            json: payload
+        )
+        let (_, http) = try await send(req)
+        try checkREST(http)
+        await KaizenLogger.shared.info("Advisor", "Fuente principal cambiada a '\(newSource)' para manga \(mangaId).")
+    }
+
     public func suggestBetterSources(serverUrl: URL, token: String, mangaId: Int) async throws -> MangaBetterSourceReport {
         var req = try request(
             try endpoint(serverUrl, path: "/api/trpc/manga.suggestBetterSources"),

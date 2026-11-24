@@ -23,15 +23,15 @@ public struct MangaSourcesManagementSheet: View {
     @State private var isAdding: Bool = false
     @State private var addError: String?
 
-    // Better Source Advisor por manga (#4) — estado de cambio de fuente
+    // Better Source Advisor por manga (#4 / Kaizen PR #59)
     @State private var isSwitchingAdvisorSource: String?
 
-    private var isLoadingAdvisor: Bool {
-        appState.perMangaAdvisorLoadingIds.contains(manga.id)
+    private var advisorStatus: MangaBetterSourceScanStatus? {
+        appState.perMangaAdvisorStatus[manga.id]
     }
 
-    private var advisorReport: MangaBetterSourceReport? {
-        appState.perMangaAdvisorReports[manga.id]
+    private var isLoadingAdvisor: Bool {
+        appState.perMangaAdvisorLoadingIds.contains(manga.id) || (advisorStatus?.isRunning == true)
     }
 
     private var advisorError: String? {
@@ -135,35 +135,66 @@ public struct MangaSourcesManagementSheet: View {
                         }
 
                         Section {
-                            Button {
-                                appState.startBackgroundBetterSourceScan(for: manga, client: apiClient)
-                            } label: {
-                                HStack(spacing: 10) {
-                                    if isLoadingAdvisor {
+                            if isLoadingAdvisor {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    HStack(spacing: 8) {
                                         ProgressView().tint(.purple)
-                                    } else {
-                                        Image(systemName: "wand.and.stars")
-                                            .foregroundStyle(.purple)
-                                    }
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(
-                                            isLoadingAdvisor
-                                                ? (isEn ? "Scanning in background..." : "Escaneando en segundo plano...")
-                                                : (isEn ? "Find Better Source" : "Buscar Mejor Fuente")
-                                        )
-                                        .font(.subheadline.weight(.semibold))
-                                        .foregroundStyle(.white)
-                                        if isLoadingAdvisor {
-                                            Text(isEn ? "You can close this sheet and keep reading — you'll be notified when ready." : "Puedes cerrar esta ventana y seguir leyendo; te avisaremos al terminar.")
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            if let st = advisorStatus, st.totalSources > 0 {
+                                                let srcText = st.currentSource.map { " · \($0)" } ?? ""
+                                                Text(
+                                                    isEn
+                                                        ? "Scanning \(st.processedSources)/\(st.totalSources)\(srcText)"
+                                                        : "Escaneando \(st.processedSources)/\(st.totalSources)\(srcText)"
+                                                )
+                                                .font(.subheadline.weight(.semibold))
+                                                .foregroundStyle(.white)
+                                                .lineLimit(1)
+                                            } else {
+                                                Text(isEn ? "Starting live source scan..." : "Iniciando escaneo en vivo...")
+                                                    .font(.subheadline.weight(.semibold))
+                                                    .foregroundStyle(.white)
+                                            }
+                                            Text(isEn ? "Runs in background — you can close this sheet." : "Corre en segundo plano; puedes cerrar esta ventana.")
                                                 .font(.caption2)
                                                 .foregroundStyle(.secondary)
                                         }
+                                        Spacer()
+                                        Button(role: .destructive) {
+                                            appState.cancelBackgroundBetterSourceScan(mangaId: manga.id, client: apiClient)
+                                        } label: {
+                                            Text(isEn ? "Cancel" : "Cancelar")
+                                                .font(.caption.weight(.bold))
+                                                .padding(.horizontal, 10)
+                                                .padding(.vertical, 5)
+                                                .background(Color.red.opacity(0.2), in: Capsule())
+                                                .foregroundStyle(.red)
+                                        }
+                                        .buttonStyle(.plain)
                                     }
-                                    Spacer()
+
+                                    if let st = advisorStatus, st.totalSources > 0 {
+                                        ProgressView(value: st.progressRatio)
+                                            .tint(.purple)
+                                    }
                                 }
+                                .padding(.vertical, 4)
+                                .listRowBackground(Color.purple.opacity(0.12))
+                            } else {
+                                Button {
+                                    appState.startBackgroundBetterSourceScan(for: manga, client: apiClient)
+                                } label: {
+                                    HStack(spacing: 10) {
+                                        Image(systemName: "wand.and.stars")
+                                            .foregroundStyle(.purple)
+                                        Text(isEn ? "Find Better Source" : "Buscar Mejor Fuente")
+                                            .font(.subheadline.weight(.semibold))
+                                            .foregroundStyle(.white)
+                                        Spacer()
+                                    }
+                                }
+                                .listRowBackground(Color.purple.opacity(0.12))
                             }
-                            .disabled(isLoadingAdvisor)
-                            .listRowBackground(Color.purple.opacity(0.12))
 
                             if let advisorError {
                                 Text(advisorError)
@@ -172,18 +203,20 @@ public struct MangaSourcesManagementSheet: View {
                                     .listRowBackground(Color.red.opacity(0.1))
                             }
 
-                            if let report = advisorReport {
-                                if report.suggestions.isEmpty {
+                            if let st = advisorStatus {
+                                if st.suggestions.isEmpty && !st.isRunning && (st.finishedAt != nil || st.totalSources > 0) {
                                     Text(
-                                        isEn
-                                            ? "Current source (\(report.currentSource), Ch. \(report.currentMaxChapter)) already has the highest chapter count."
-                                            : "La fuente actual (\(report.currentSource), Cap. \(report.currentMaxChapter)) ya tiene el mayor número de capítulos."
+                                        st.cancelled
+                                            ? (isEn ? "Scan cancelled." : "Escaneo cancelado.")
+                                            : (isEn
+                                                ? "Current source (\(st.currentSourceName), Ch. \(st.currentMaxChapter)) already has the highest chapter count."
+                                                : "La fuente actual (\(st.currentSourceName), Cap. \(st.currentMaxChapter)) ya tiene el mayor número de capítulos.")
                                     )
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                                     .listRowBackground(Color.white.opacity(0.03))
                                 } else {
-                                    ForEach(report.suggestions) { suggestion in
+                                    ForEach(st.suggestions) { suggestion in
                                         HStack(spacing: 10) {
                                             VStack(alignment: .leading, spacing: 3) {
                                                 HStack(spacing: 6) {
@@ -257,6 +290,7 @@ public struct MangaSourcesManagementSheet: View {
             }
             .task {
                 await loadSources()
+                await appState.refreshMangaBetterSourceStatus(for: manga, client: apiClient)
             }
             .sheet(isPresented: $showAddSourceSheet) {
                 addSourceModal
@@ -513,15 +547,26 @@ public struct MangaSourcesManagementSheet: View {
         isSwitchingAdvisorSource = suggestion.source
         defer { isSwitchingAdvisorSource = nil }
         do {
-            try await apiClient.switchBetterSource(
-                serverUrl: session.serverUrl,
-                token: session.apiToken,
-                mangaId: manga.id,
-                newSource: suggestion.source,
-                newSourceTitle: suggestion.matchedTitle
-            )
+            do {
+                try await apiClient.switchMangaBetterSource(
+                    serverUrl: session.serverUrl,
+                    token: session.apiToken,
+                    mangaId: manga.id,
+                    newSource: suggestion.source,
+                    newSourceTitle: suggestion.matchedTitle
+                )
+            } catch KaizenError.server(status: 404) {
+                try await apiClient.switchBetterSource(
+                    serverUrl: session.serverUrl,
+                    token: session.apiToken,
+                    mangaId: manga.id,
+                    newSource: suggestion.source,
+                    newSourceTitle: suggestion.matchedTitle
+                )
+            }
             appState.perMangaAdvisorErrors[manga.id] = nil
             await loadSources()
+            await appState.refreshMangaBetterSourceStatus(for: manga, client: apiClient)
             onUpdate()
         } catch {
             appState.perMangaAdvisorErrors[manga.id] = error.localizedDescription

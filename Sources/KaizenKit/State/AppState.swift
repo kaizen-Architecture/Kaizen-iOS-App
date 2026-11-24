@@ -62,9 +62,9 @@ public final class AppState {
         downloadQueueJobs.filter { $0.status == "active" }.count
     }
 
-    // MARK: - Better Source Advisor por Manga en Segundo Plano
+    // MARK: - Better Source Advisor por Manga en Segundo Plano (Live REST v1 + fallback)
     public var perMangaAdvisorLoadingIds: Set<Int> = []
-    public var perMangaAdvisorReports: [Int: MangaBetterSourceReport] = [:]
+    public var perMangaAdvisorStatus: [Int: MangaBetterSourceScanStatus] = [:]
     public var perMangaAdvisorErrors: [Int: String] = [:]
     public var perMangaAdvisorBanner: String? = nil
     
@@ -604,51 +604,181 @@ public final class AppState {
         }
     }
 
-    /// Ejecuta el Better Source Advisor de un manga en segundo plano desacoplado del modal,
-    /// guardando el resultado en caché y mostrando un aviso global al terminar.
+    /// Consulta el estado actual del escaneo en el servidor (compartido con Web UI).
+    /// Si ya hay un escaneo corriendo en el servidor, reengancha el polling automáticamente.
+    public func refreshMangaBetterSourceStatus(for manga: Manga, client: KaizenAPIClient) async {
+        guard let session = self.session else { return }
+        do {
+            let status = try await client.fetchMangaBetterSourceScanStatus(
+                serverUrl: session.serverUrl,
+                token: session.apiToken,
+                mangaId: manga.id
+            )
+            self.perMangaAdvisorStatus[manga.id] = status
+            if status.isRunning && !perMangaAdvisorLoadingIds.contains(manga.id) {
+                pollBackgroundBetterSourceScan(mangaId: manga.id, mangaTitle: manga.title, client: client)
+            }
+        } catch {
+            // Silencioso si el servidor aún no soporta `/api/v1/mangas/{id}/better-sources`
+        }
+    }
+
+    /// Arranca el Better Source Advisor asíncrono por manga (`/api/v1/mangas/{id}/better-sources`),
+    /// haciendo polling cada 2s para mostrar fuente actual y sugerencias en streaming,
+    /// con fallback transparente a `trpc/manga.suggestBetterSources` en servidores antiguos.
     public func startBackgroundBetterSourceScan(for manga: Manga, client: KaizenAPIClient) {
         guard let session = self.session else { return }
         guard !perMangaAdvisorLoadingIds.contains(manga.id) else { return }
 
         let mangaId = manga.id
         let mangaTitle = manga.title
-        let isEn = currentLanguage == "en"
-
         perMangaAdvisorLoadingIds.insert(mangaId)
         perMangaAdvisorErrors[mangaId] = nil
 
         Task {
-            defer {
-                self.perMangaAdvisorLoadingIds.remove(mangaId)
-            }
             do {
-                let report = try await client.suggestBetterSources(
+                try await client.startMangaBetterSourceScan(
                     serverUrl: session.serverUrl,
                     token: session.apiToken,
                     mangaId: mangaId
                 )
-                self.perMangaAdvisorReports[mangaId] = report
-                let count = report.suggestions.count
-                if count > 0 {
-                    let best = report.suggestions.first
-                    let detail = best.map { "\($0.source) (+\($0.chapterGain))" } ?? ""
-                    self.perMangaAdvisorBanner = isEn
-                        ? "Better source ready for \(mangaTitle): \(detail)"
-                        : "Mejor fuente lista para \(mangaTitle): \(detail)"
+                let initial = try await client.fetchMangaBetterSourceScanStatus(
+                    serverUrl: session.serverUrl,
+                    token: session.apiToken,
+                    mangaId: mangaId
+                )
+                self.perMangaAdvisorStatus[mangaId] = initial
+                if initial.isRunning {
+                    await self.runPollingLoop(mangaId: mangaId, mangaTitle: mangaTitle, client: client)
                 } else {
-                    self.perMangaAdvisorBanner = isEn
-                        ? "\(mangaTitle): current source is already the best."
-                        : "\(mangaTitle): la fuente actual ya es la mejor."
+                    self.perMangaAdvisorLoadingIds.remove(mangaId)
+                    self.announceAdvisorCompletion(mangaTitle: mangaTitle, status: initial)
+                }
+            } catch KaizenError.server(status: 404) {
+                // Fallback para servidores Kaizen <= v2.1.0 sin endpoint asíncrono por manga
+                await self.runLegacyBetterSourceScan(mangaId: mangaId, mangaTitle: mangaTitle, client: client)
+            } catch {
+                self.perMangaAdvisorLoadingIds.remove(mangaId)
+                self.perMangaAdvisorErrors[mangaId] = error.localizedDescription
+                self.showAdvisorBanner(
+                    currentLanguage == "en"
+                        ? "Source scan failed for \(mangaTitle)."
+                        : "Error al buscar mejores fuentes para \(mangaTitle)."
+                )
+            }
+        }
+    }
+
+    public func cancelBackgroundBetterSourceScan(mangaId: Int, client: KaizenAPIClient) {
+        guard let session = self.session else { return }
+        Task {
+            do {
+                try await client.cancelMangaBetterSourceScan(
+                    serverUrl: session.serverUrl,
+                    token: session.apiToken,
+                    mangaId: mangaId
+                )
+                if let updated = try? await client.fetchMangaBetterSourceScanStatus(
+                    serverUrl: session.serverUrl,
+                    token: session.apiToken,
+                    mangaId: mangaId
+                ) {
+                    self.perMangaAdvisorStatus[mangaId] = updated
                 }
             } catch {
                 self.perMangaAdvisorErrors[mangaId] = error.localizedDescription
-                self.perMangaAdvisorBanner = isEn
+            }
+            self.perMangaAdvisorLoadingIds.remove(mangaId)
+        }
+    }
+
+    private func pollBackgroundBetterSourceScan(mangaId: Int, mangaTitle: String, client: KaizenAPIClient) {
+        guard !perMangaAdvisorLoadingIds.contains(mangaId) else { return }
+        perMangaAdvisorLoadingIds.insert(mangaId)
+        Task {
+            await self.runPollingLoop(mangaId: mangaId, mangaTitle: mangaTitle, client: client)
+        }
+    }
+
+    private func runPollingLoop(mangaId: Int, mangaTitle: String, client: KaizenAPIClient) async {
+        defer { self.perMangaAdvisorLoadingIds.remove(mangaId) }
+        while let session = self.session, !Task.isCancelled {
+            try? await Task.sleep(for: .seconds(2))
+            do {
+                let status = try await client.fetchMangaBetterSourceScanStatus(
+                    serverUrl: session.serverUrl,
+                    token: session.apiToken,
+                    mangaId: mangaId
+                )
+                self.perMangaAdvisorStatus[mangaId] = status
+                if !status.isRunning {
+                    self.announceAdvisorCompletion(mangaTitle: mangaTitle, status: status)
+                    return
+                }
+            } catch {
+                // Reintentar en el siguiente ciclo salvo error fatal
+                continue
+            }
+        }
+    }
+
+    private func runLegacyBetterSourceScan(mangaId: Int, mangaTitle: String, client: KaizenAPIClient) async {
+        defer { self.perMangaAdvisorLoadingIds.remove(mangaId) }
+        guard let session = self.session else { return }
+        do {
+            let report = try await client.suggestBetterSources(
+                serverUrl: session.serverUrl,
+                token: session.apiToken,
+                mangaId: mangaId
+            )
+            let converted = MangaBetterSourceScanStatus(
+                mangaId: mangaId,
+                isRunning: false,
+                cancelled: false,
+                processedSources: report.suggestions.count,
+                totalSources: report.suggestions.count,
+                currentSourceName: report.currentSource,
+                currentMaxChapter: report.currentMaxChapter,
+                suggestions: report.suggestions
+            )
+            self.perMangaAdvisorStatus[mangaId] = converted
+            self.announceAdvisorCompletion(mangaTitle: mangaTitle, status: converted)
+        } catch {
+            self.perMangaAdvisorErrors[mangaId] = error.localizedDescription
+            self.showAdvisorBanner(
+                currentLanguage == "en"
                     ? "Source scan failed for \(mangaTitle)."
                     : "Error al buscar mejores fuentes para \(mangaTitle)."
-            }
+            )
+        }
+    }
 
+    private func announceAdvisorCompletion(mangaTitle: String, status: MangaBetterSourceScanStatus) {
+        let isEn = currentLanguage == "en"
+        if status.cancelled {
+            showAdvisorBanner(
+                isEn ? "Source scan cancelled for \(mangaTitle)." : "Escaneo cancelado para \(mangaTitle)."
+            )
+        } else if let best = status.suggestions.first {
+            showAdvisorBanner(
+                isEn
+                    ? "Better source ready for \(mangaTitle): \(best.source) (+\(best.chapterGain))"
+                    : "Mejor fuente lista para \(mangaTitle): \(best.source) (+\(best.chapterGain))"
+            )
+        } else {
+            showAdvisorBanner(
+                isEn
+                    ? "\(mangaTitle): current source is already the best."
+                    : "\(mangaTitle): la fuente actual ya es la mejor."
+            )
+        }
+    }
+
+    private func showAdvisorBanner(_ message: String) {
+        self.perMangaAdvisorBanner = message
+        Task {
             try? await Task.sleep(for: .seconds(6))
-            if !Task.isCancelled {
+            if !Task.isCancelled && self.perMangaAdvisorBanner == message {
                 self.perMangaAdvisorBanner = nil
             }
         }

@@ -72,6 +72,7 @@ public final class ReaderStore {
     
     public var reportMessage: String?
     public var isReportingCorrupt: Bool = false
+    public var hasReachedChapterEnd: Bool = false
     
     public func loadPages(apiClient: KaizenAPIClient, session: UserSession?) async {
         isBufferingChapter = true
@@ -224,6 +225,7 @@ public final class ReaderStore {
         currentChapterId = next.id
         currentChapterIndex = next.index
         currentPage = 1
+        hasReachedChapterEnd = false
         pages = []
         isBufferingChapter = true
         await loadPages(apiClient: apiClient, session: session)
@@ -234,20 +236,25 @@ public final class ReaderStore {
         currentChapterId = prev.id
         currentChapterIndex = prev.index
         currentPage = 1
+        hasReachedChapterEnd = false
         pages = []
         isBufferingChapter = true
         await loadPages(apiClient: apiClient, session: session)
     }
     
-    public func saveProgress(apiClient: KaizenAPIClient, session: UserSession?) async {
+    public func saveProgress(apiClient: KaizenAPIClient, session: UserSession?, forceRead: Bool = false) async {
         guard !pages.isEmpty else { return }
-        let isFullyRead = currentPage >= pages.count
+        let isFullyRead = forceRead || hasReachedChapterEnd || currentPage >= pages.count
+        if isFullyRead {
+            hasReachedChapterEnd = true
+        }
+        let reportedPage = isFullyRead ? pages.count : currentPage
         
         // Registrar en el gestor offline (sincroniza en vivo si hay red o encola diferido si no hay conexión)
         OfflineStorageManager.shared.recordOfflineReading(
             mangaId: mangaId,
             chapterId: currentChapterId,
-            page: currentPage,
+            page: reportedPage,
             totalPages: pages.count,
             isRead: isFullyRead,
             apiClient: apiClient,
@@ -260,7 +267,7 @@ public final class ReaderStore {
             token: session.apiToken,
             mangaId: mangaId,
             chapterId: currentChapterId,
-            page: currentPage,
+            page: reportedPage,
             isRead: isFullyRead ? true : nil
         )
     }
@@ -498,7 +505,12 @@ public struct ReaderView: View {
             }
             .onAppear {
                 if !store.pages.isEmpty && !store.isBufferingChapter && !isRestoringInitialPage {
+                    store.hasReachedChapterEnd = true
                     store.currentPage = store.pages.count
+                    recordHistory()
+                    Task {
+                        await store.saveProgress(apiClient: apiClient, session: appState.session, forceRead: true)
+                    }
                 }
             }
 
@@ -572,6 +584,15 @@ public struct ReaderView: View {
                 }
             )
             .tag(store.pages.count + 1)
+            .onAppear {
+                if !store.pages.isEmpty && !store.isBufferingChapter {
+                    store.hasReachedChapterEnd = true
+                    recordHistory()
+                    Task {
+                        await store.saveProgress(apiClient: apiClient, session: appState.session, forceRead: true)
+                    }
+                }
+            }
         }
         .tabViewStyle(.page(indexDisplayMode: .never))
         .environment(\.layoutDirection, store.readerMode == .horizontalRTL ? .rightToLeft : .leftToRight)
@@ -626,7 +647,14 @@ public struct ReaderView: View {
     private var topHUDBar: some View {
         HStack(spacing: 14) {
             Button {
-                dismiss()
+                Task {
+                    await store.saveProgress(
+                        apiClient: apiClient,
+                        session: appState.session,
+                        forceRead: store.hasReachedChapterEnd
+                    )
+                    dismiss()
+                }
             } label: {
                 Image(systemName: "xmark")
                     .font(.footnote.weight(.bold))

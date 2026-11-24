@@ -977,7 +977,7 @@ public struct BetterSourceScanStatus: Codable, Sendable, Equatable {
     }
 }
 
-/// Sugerencia por manga individual (`trpc/manga.suggestBetterSources`)
+/// Sugerencia por manga individual (`GET /api/v1/mangas/{id}/better-sources` y `trpc/manga.suggestBetterSources`)
 public struct MangaBetterSourceSuggestion: Identifiable, Codable, Sendable, Equatable {
     public var id: String { source }
     public let source: String
@@ -998,6 +998,84 @@ public struct MangaBetterSourceSuggestion: Identifiable, Codable, Sendable, Equa
         self.remoteMaxChapter = remoteMaxChapter
         self.remoteTotalEntries = remoteTotalEntries
         self.chapterGain = chapterGain
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.source = try c.decode(String.self, forKey: .source)
+        self.matchedTitle = (try? c.decodeIfPresent(String.self, forKey: .matchedTitle)) ?? ""
+        self.remoteMaxChapter = (try? c.decodeIfPresent(Int.self, forKey: .remoteMaxChapter)) ?? 0
+        self.remoteTotalEntries = (try? c.decodeIfPresent(Int.self, forKey: .remoteTotalEntries)) ?? self.remoteMaxChapter
+        self.chapterGain = (try? c.decodeIfPresent(Int.self, forKey: .chapterGain)) ?? 0
+    }
+}
+
+/// Estado en vivo del escaneo asíncrono por manga (`GET /api/v1/mangas/{id}/better-sources`, Kaizen PR #59)
+public struct MangaBetterSourceScanStatus: Codable, Sendable, Equatable {
+    public let mangaId: Int
+    public let isRunning: Bool
+    public let cancelled: Bool
+    public let processedSources: Int
+    public let totalSources: Int
+    public let currentSource: String?
+    public let currentQuery: String?
+    public let currentSourceName: String
+    public let currentMaxChapter: Int
+    public let failedSources: [String]
+    public let startedAt: String?
+    public let finishedAt: String?
+    public let suggestions: [MangaBetterSourceSuggestion]
+
+    public var progressRatio: Double {
+        guard totalSources > 0 else { return 0 }
+        return min(1.0, max(0.0, Double(processedSources) / Double(totalSources)))
+    }
+
+    public init(
+        mangaId: Int,
+        isRunning: Bool = false,
+        cancelled: Bool = false,
+        processedSources: Int = 0,
+        totalSources: Int = 0,
+        currentSource: String? = nil,
+        currentQuery: String? = nil,
+        currentSourceName: String = "",
+        currentMaxChapter: Int = 0,
+        failedSources: [String] = [],
+        startedAt: String? = nil,
+        finishedAt: String? = nil,
+        suggestions: [MangaBetterSourceSuggestion] = []
+    ) {
+        self.mangaId = mangaId
+        self.isRunning = isRunning
+        self.cancelled = cancelled
+        self.processedSources = processedSources
+        self.totalSources = totalSources
+        self.currentSource = currentSource
+        self.currentQuery = currentQuery
+        self.currentSourceName = currentSourceName
+        self.currentMaxChapter = currentMaxChapter
+        self.failedSources = failedSources
+        self.startedAt = startedAt
+        self.finishedAt = finishedAt
+        self.suggestions = suggestions
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.mangaId = (try? c.decodeIfPresent(Int.self, forKey: .mangaId)) ?? 0
+        self.isRunning = (try? c.decodeIfPresent(Bool.self, forKey: .isRunning)) ?? false
+        self.cancelled = (try? c.decodeIfPresent(Bool.self, forKey: .cancelled)) ?? false
+        self.processedSources = (try? c.decodeIfPresent(Int.self, forKey: .processedSources)) ?? 0
+        self.totalSources = (try? c.decodeIfPresent(Int.self, forKey: .totalSources)) ?? 0
+        self.currentSource = try? c.decodeIfPresent(String.self, forKey: .currentSource)
+        self.currentQuery = try? c.decodeIfPresent(String.self, forKey: .currentQuery)
+        self.currentSourceName = (try? c.decodeIfPresent(String.self, forKey: .currentSourceName)) ?? ""
+        self.currentMaxChapter = (try? c.decodeIfPresent(Int.self, forKey: .currentMaxChapter)) ?? 0
+        self.failedSources = (try? c.decodeIfPresent([String].self, forKey: .failedSources)) ?? []
+        self.startedAt = try? c.decodeIfPresent(String.self, forKey: .startedAt)
+        self.finishedAt = try? c.decodeIfPresent(String.self, forKey: .finishedAt)
+        self.suggestions = (try? c.decodeIfPresent([MangaBetterSourceSuggestion].self, forKey: .suggestions)) ?? []
     }
 }
 
